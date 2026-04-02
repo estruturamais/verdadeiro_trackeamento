@@ -1,0 +1,32 @@
+name = "tracking-worker"
+main = "src/worker/index.js"
+compatibility_date = "2024-01-01"
+workers_dev = false
+
+routes = [
+  { pattern = "{YOUR_DOMAIN}/collect/*", zone_name = "{YOUR_DOMAIN}" },
+  { pattern = "{YOUR_DOMAIN}/tracking/*", zone_name = "{YOUR_DOMAIN}" },
+  { pattern = "{YOUR_DOMAIN}/scripts/*", zone_name = "{YOUR_DOMAIN}" },
+  { pattern = "{YOUR_DOMAIN}/g/*", zone_name = "{YOUR_DOMAIN}" }
+]
+
+# Descomente para habilitar cron de retenção de dados (requer workers_dev subdomain ativo)
+# [triggers]
+# crons = ["0 3 * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "tracking_db"
+database_id = "{YOUR_D1_DATABASE_ID}"
+
+[vars]
+# Cole aqui o JSON do config.example.json preenchido com seus valores reais.
+# IMPORTANTE: Não inclua access tokens ou api secrets aqui — use wrangler secret put.
+SITE_CONFIG = '{}'
+
+# Secrets a configurar via CLI (nunca em arquivo):
+# wrangler secret put META_ACCESS_TOKEN
+# wrangler secret put META_ACCESS_TOKEN_PURCHASE   (só se usar dual-pixel)
+# wrangler secret put TIKTOK_ACCESS_TOKEN
+# wrangler secret put GA4_API_SECRET
+# wrangler secret put LOG_BEARER_TOKEN
