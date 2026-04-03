@@ -1,4 +1,4 @@
-import { getNestedValue } from '../utils/helpers.js';
+import { getNestedValue } from '../shared/helpers.js';
 
 export function parseKirvano(body) {
   // Currency: extrair primeira palavra do total_price (ex: "BRL 97.00" → "BRL")

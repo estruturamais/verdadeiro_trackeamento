@@ -1,4 +1,4 @@
-import { logEvent } from '../utils/logger.js';
+import { logEvent } from '../shared/logger.js';
 
 const TIKTOK_EVENT_NAMES = {
   page_view: 'Pageview', contact: 'Contact', lead: 'SubmitForm',

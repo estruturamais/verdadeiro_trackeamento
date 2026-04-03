@@ -1,4 +1,4 @@
-import { getNestedValue } from '../utils/helpers.js';
+import { getNestedValue } from '../shared/helpers.js';
 
 // TODO: Completar com payload real do gateway
 export function parsePerfectPay(body) {

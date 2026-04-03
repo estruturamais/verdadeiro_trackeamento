@@ -1,4 +1,4 @@
-import { getConfig, detectSiteId } from '../utils/config.js';
+import { getConfig, detectSiteId } from '../shared/config.js';
 
 export async function handleLogs(request, env) {
   const url = new URL(request.url);

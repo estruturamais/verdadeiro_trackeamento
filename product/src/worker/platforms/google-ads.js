@@ -1,4 +1,4 @@
-import { logEvent } from '../utils/logger.js';
+import { logEvent } from '../shared/logger.js';
 
 export async function sendGoogleAdsConversion(googleAdsConfig, eventName, hashed, body, env, siteId) {
   await logEvent(env.DB, {

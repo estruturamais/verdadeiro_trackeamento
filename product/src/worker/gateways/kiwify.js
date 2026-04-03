@@ -1,4 +1,4 @@
-import { getNestedValue } from '../utils/helpers.js';
+import { getNestedValue } from '../shared/helpers.js';
 
 export function parseKiwify(body) {
   // Value: formato em centavos sem ponto — regex: (.+)(\d{2})$ → $1.$2

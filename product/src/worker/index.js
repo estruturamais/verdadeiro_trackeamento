@@ -1,7 +1,7 @@
 import { handleServeGA4Script, handleGA4CollectProxy } from './routes/ga4-proxy.js';
 import { handleServeWebJs } from './routes/serve-webjs.js';
-import { handleCollectEvent } from './routes/collect-event.js';
-import { handleWebhook } from './routes/collect-webhook.js';
+import { handleCollectEvent } from './collect/event.js';
+import { handleWebhook } from './collect/webhook.js';
 import { handleDebug } from './routes/debug.js';
 import { handleLogs } from './routes/logs.js';
 

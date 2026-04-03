@@ -1,6 +1,6 @@
-import { getConfig, detectSiteId } from '../utils/config.js';
-import { hashPII } from '../utils/hash.js';
-import { generateId } from '../utils/helpers.js';
+import { getConfig, detectSiteId } from '../shared/config.js';
+import { hashPII } from '../shared/hash.js';
+import { generateId } from '../shared/helpers.js';
 import { getUserStore } from '../store/user-store.js';
 
 export async function handleDebug(request, env) {

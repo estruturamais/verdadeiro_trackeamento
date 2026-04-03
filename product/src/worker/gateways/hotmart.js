@@ -1,4 +1,4 @@
-import { getNestedValue } from '../utils/helpers.js';
+import { getNestedValue } from '../shared/helpers.js';
 
 export function parseHotmart(body) {
   return {

@@ -1,6 +1,6 @@
-import { getConfig, detectSiteId } from '../utils/config.js';
-import { parseCookies, generateId } from '../utils/helpers.js';
-import WEB_JS_TEMPLATE from '../../web/web-template.txt';
+import { getConfig, detectSiteId } from '../shared/config.js';
+import { parseCookies, generateId } from '../shared/helpers.js';
+import WEB_JS_TEMPLATE from '../web-template.txt';
 
 function getRootDomain(request) {
   const host = request.headers.get('host') || '';

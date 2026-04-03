@@ -1,5 +1,5 @@
-import { logEvent } from '../utils/logger.js';
-import { EVENT_NAMES } from '../../shared/event-names.js';
+import { logEvent } from '../shared/logger.js';
+import { EVENT_NAMES } from '../shared/event-names.js';
 
 export async function sendGA4Event(ga4Config, eventName, eventId, body, clientIp, userAgent, env, siteId) {
   const apiSecret = ga4Config?.api_secret || env.GA4_API_SECRET;
