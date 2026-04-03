@@ -214,6 +214,40 @@ curl https://{dominio}/tracking/web.js | head -5
 
 ---
 
+### 0.12 — Ativar retencao automatica de dados
+
+Explicar: "Vou ativar a limpeza automatica do banco de dados. Ela roda toda madrugada e apaga dados antigos para o banco nunca ultrapassar os limites do plano gratuito."
+
+Abrir o `wrangler.toml` e descomentar a secao `[triggers]`:
+
+```toml
+[triggers]
+crons = ["0 3 * * *"]
+```
+
+Em seguida, fazer re-deploy para registrar o cron:
+
+```bash
+npx wrangler deploy
+```
+
+**O que a retencao faz (ja implementado no Worker):**
+- Deleta registros da tabela `events` com mais de 30 dias (coluna `timestamp`)
+- Deleta registros da tabela `webhook_raw` com mais de 30 dias (coluna `timestamp`)
+- Deleta registros da tabela `user_store` nao atualizados ha mais de 90 dias (coluna `updated_at`)
+
+**IMPORTANTE:** A delecao usa as colunas de data (`timestamp`, `updated_at`) — nunca o `id`. IDs nao sao sequenciais de forma confiavel no D1 sem `sqlite_sequence`, entao usar `id` para identificar registros "antigos" seria um erro.
+
+**Verificar se o cron foi registrado:**
+
+```bash
+npx wrangler triggers list
+```
+
+Deve aparecer o cron `0 3 * * *` associado ao Worker.
+
+---
+
 ## Atualizacao da memoria apos Step 0
 
 Apos verificacao bem-sucedida, atualizar o `tracking_memory.md`:
@@ -248,5 +282,6 @@ Apos verificacao bem-sucedida, atualizar o `tracking_memory.md`:
 - Worker `tracking-worker` deployado na Cloudflare
 - Banco D1 `tracking_db` criado com 3 tabelas: `user_store`, `events`, `webhook_raw`
 - Rotas configuradas para o dominio do cliente (4 patterns)
+- Cron trigger `0 3 * * *` ativo (retencao automatica de dados, executa diariamente as 03:00 UTC)
 - `curl https://{dominio}/tracking/web.js` retorna `(function()`
 - `tracking_memory.md` atualizado com `infra_status: deployada` e Step 0 marcado como concluido

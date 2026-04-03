@@ -13,7 +13,19 @@ Voce nao executa os steps diretamente — voce orquestra as skills especializada
 ### Se `tracking_memory.md` NAO existe (primeira vez):
 
 1. Criar o arquivo `tracking_memory.md` copiando o template de `.claude/memory_template.md`
-2. Exibir o seguinte resumo em linguagem simples:
+2. Exibir checklist de pre-requisitos e aguardar confirmacao de todos antes de prosseguir:
+
+> Antes de comecar, confirme que voce tem acesso a estas tres coisas:
+>
+> - [ ] **Conta Cloudflare com o dominio** — o dominio do site ja adicionado na Cloudflare (ou acesso para adiciona-lo agora)
+> - [ ] **Edicao do site** — poder editar o codigo-fonte ou as configuracoes de scripts do site (para instalarmos um pequeno script no `<head>`)
+> - [ ] **Plataformas de anuncios** — acesso aos paineis das plataformas que voce usa (Meta Ads, Google Ads, etc.) para coletar IDs e tokens durante a configuracao
+>
+> Os tres precisam estar disponiveis para o setup funcionar. Confirma que tem os tres?
+
+Aguardar confirmacao antes de continuar. Se algum item nao estiver disponivel, orientar o cliente a resolver antes de prosseguir — nao iniciar o Step 0 sem os tres confirmados.
+
+3. Exibir o seguinte resumo em linguagem simples:
 
 > Vou configurar o tracking profissional do seu site. Vou te guiar por algumas etapas e fazer quase tudo automaticamente — voce so vai precisar criar uma conta gratuita, fornecer alguns IDs das plataformas de anuncios e instalar um pequeno script no seu site.
 >
@@ -138,14 +150,15 @@ Ao final de cada step, atualizar a secao "Status do workflow":
 ```
 tracking_workflow.md  (este arquivo — condutor)
      |
-     +-- .claude/skills/infra.md       (Step 0 — uma vez)
+     +-- .claude/skills/infra.md           (Step 0 — uma vez)
      |
      +-- .claude/skills/overview.md        (Steps 1-6 — sempre)
           |
-          +-- .claude/skills/meta.md     (se Meta Ads confirmado)
-          +-- .claude/skills/tiktok.md   (se TikTok Ads confirmado)
-          +-- .claude/skills/ga4.md           (se GA4 confirmado)
-          +-- .claude/skills/google_ads.md   (se Google Ads confirmado)
+          +-- .claude/skills/meta.md        (se Meta Ads confirmado)
+          +-- .claude/skills/tiktok.md      (se TikTok Ads confirmado)
+          +-- .claude/skills/ga4.md         (se GA4 confirmado)
+          +-- .claude/skills/google_ads.md  (se Google Ads confirmado)
+          +-- .claude/skills/new_gateway.md (se gateway sem parser completo)
 ```
 
 Template de memoria: `.claude/memory_template.md`

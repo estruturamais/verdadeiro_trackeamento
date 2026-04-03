@@ -208,9 +208,11 @@ const accessToken = pixelType === 'purchase'
 |---|---|---|
 | `pixel_id` | Config JSON (`SITE_CONFIG`) | — |
 | `pixel_id_purchase` | Config JSON (`SITE_CONFIG`) | — |
-| `purchase_trigger_event` | Config JSON (`SITE_CONFIG`) | — |
+| `purchase_trigger_event` | Config JSON (`SITE_CONFIG`) — apenas quando `pixel_id_purchase` ativo | — |
 | `access_token` | Wrangler secret | `META_ACCESS_TOKEN` |
 | `access_token_purchase` | Wrangler secret | `META_ACCESS_TOKEN_PURCHASE` |
+
+**Sobre `purchase_trigger_event`:** sem `pixel_id_purchase` configurado, este campo e ignorado silenciosamente. Omitir quando o cliente nao tiver segundo pixel ativo.
 
 **NUNCA incluir access tokens no Config JSON.** Configurar via:
 ```bash

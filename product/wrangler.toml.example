@@ -10,9 +10,10 @@ routes = [
   { pattern = "{YOUR_DOMAIN}/g/*", zone_name = "{YOUR_DOMAIN}" }
 ]
 
-# Descomente para habilitar cron de retenção de dados (requer workers_dev subdomain ativo)
-# [triggers]
-# crons = ["0 3 * * *"]
+# Retencao automatica de dados — executa diariamente as 03:00 UTC
+# Apaga eventos e webhooks com mais de 30 dias, user_store sem atualizacao ha mais de 90 dias
+[triggers]
+crons = ["0 3 * * *"]
 
 [[d1_databases]]
 binding = "DB"

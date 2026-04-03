@@ -60,8 +60,10 @@ export async function handleWebhook(request, env, gateway) {
     ).bind(String(webhookData.order_id), config.site_id || '', gateway).run();
   }
 
-  // 4. Consultar user_store
-  const storeResult = await getUserStore(env.DB, webhookData.marca_user);
+  // 4. Consultar user_store (apenas se marca_user presente — comprador organico nao tem xcod/sck)
+  const storeResult = webhookData.marca_user
+    ? await getUserStore(env.DB, webhookData.marca_user)
+    : null;
 
   // 5. Merge fdv
   const merged = fdvMerge(storeResult, webhookData);
@@ -121,6 +123,13 @@ export async function handleWebhook(request, env, gateway) {
   }
 
   await Promise.allSettled(promises);
+
+  // Marcar webhook como processado (apenas quando ha order_id para identificar o registro)
+  if (webhookData.order_id) {
+    await env.DB.prepare(
+      'UPDATE webhook_raw SET processed = 1 WHERE site_id = ? AND gateway = ? AND order_id = ?'
+    ).bind(config.site_id || '', gateway, String(webhookData.order_id)).run();
+  }
 
   return new Response(
     JSON.stringify({ status: 'processed' }),

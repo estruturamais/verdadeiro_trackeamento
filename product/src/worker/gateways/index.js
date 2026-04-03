@@ -25,11 +25,11 @@ export const GATEWAY_PARSERS = {
 };
 
 export const APPROVAL_EVENTS = {
-  hotmart:    { field: 'data.event',           value: 'PURCHASE_APPROVED' },
+  hotmart:    { field: 'event',                value: 'PURCHASE_APPROVED' },
   kiwify:     { field: 'webhook_event_type',   value: 'order_approved' },
   kirvano:    { field: 'event',                value: 'SALE_APPROVED' },
   lastlink:   { field: 'Event',                value: 'Purchase_Order_Confirmed' },
-  pagtrust:   { field: 'data.event',           value: 'PURCHASE_APPROVED' },
+  pagtrust:   { field: 'event',                value: 'PURCHASE_APPROVED' },
   // Sem validacao de evento confirmada — aceitar qualquer payload (skeleton)
   ticto:      null,
   eduzz:      null,

@@ -25,7 +25,7 @@ Gateway POST /collect/webhook/{gateway}
   → Validar APPROVAL_EVENT do gateway
   → Parser do gateway → webhookData
   → Dedup por order_id
-  → getUserStore → fdvMerge (enriquece com dados do user_store)
+  → getUserStore → fdvMerge (enriquece com dados do user_store SE marca_user presente; sem xcod/sck o evento e enviado com PII do webhook)
   → hashPII → Promise.allSettled([meta, tiktok, ga4, gads])
 ```
 
@@ -188,7 +188,8 @@ Ler `config.example.json` para a estrutura base. Preencher com os dados do `trac
 - TikTok: incluir `access_token` no config JSON (excecao — ver Step 3 acima)
 - Meta: nao incluir `access_token` nem `access_token_purchase` — sao wrangler secrets
 - GA4: nao incluir `api_secret` — e wrangler secret
-- Omitir `pixel_id_purchase` se dual-pixel nao estiver ativo
+- Omitir `pixel_id_purchase` se o cliente nao tiver um segundo pixel configurado
+- Omitir `purchase_trigger_event` quando nao houver `pixel_id_purchase` — este campo so tem efeito com segundo pixel ativo (define qual evento browser dispara Purchase nesse segundo pixel)
 - Omitir plataformas nao confirmadas completamente
 - Incluir apenas os gateways detectados no Step 2 em `gateways` e `gateways_config`
 
@@ -324,6 +325,8 @@ Delegar para a skill especialista de cada plataforma confirmada:
 
 ### Webhooks de gateway — apenas se modelo for infoproduto
 
+> Para gateways com parser incompleto (ticto, eduzz, perfectpay, payt) ou para um gateway nao listado abaixo, invocar `.claude/skills/new_gateway.md` antes de continuar.
+
 Instruir o cliente a configurar a URL de webhook no painel do gateway detectado:
 
 | Gateway    | Onde configurar              | URL do webhook                                     |
@@ -337,6 +340,32 @@ Instruir o cliente a configurar a URL de webhook no painel do gateway detectado:
 | PerfectPay | Configuracoes > Webhook      | `https://{dominio}/collect/webhook/perfectpay`     |
 | PagTrust   | Configuracoes > Integracao   | `https://{dominio}/collect/webhook/pagtrust`       |
 | Payt       | Configuracoes > Webhook      | `https://{dominio}/collect/webhook/payt`           |
+
+### 5.4 Validacao de webhooks (apenas infoproduto)
+
+Apos o cliente configurar a URL de webhook no painel do gateway e realizar uma compra de teste (ou usar a simulacao de webhook do gateway, quando disponivel), verificar no D1:
+
+```bash
+npx wrangler d1 execute tracking_db --remote --command "SELECT gateway, order_id, processed, error FROM webhook_raw WHERE site_id = '{site_id}' ORDER BY id DESC LIMIT 5;"
+```
+
+**Criterios de sucesso:**
+- `processed = 1` e `error = null`: webhook recebido, validado e eventos disparados para as plataformas
+- `order_id` preenchido: parser do gateway extraiu o identificador da compra corretamente
+
+**Diagnostico por resultado:**
+
+| `processed` | `order_id` | Causa provavel |
+|---|---|---|
+| `0` | preenchido | Evento de aprovacao filtrado — verificar se o gateway estava em modo de teste ou se o evento enviado nao era uma compra aprovada |
+| `0` | `null` | Parser nao extraiu order_id — gateway skeleton (eduzz, ticto, perfectpay, payt) ainda nao tem parser completo |
+| Linha ausente | — | Webhook nao chegou ao Worker — verificar URL configurada no painel do gateway e se o dominio esta correto |
+
+Se `processed = 0` com `order_id` preenchido e o evento era uma compra real aprovada, verificar a tabela `events` para detalhes do erro por plataforma:
+
+```bash
+npx wrangler d1 execute tracking_db --remote --command "SELECT event_name, platform, status_code, error_message FROM events WHERE site_id = '{site_id}' ORDER BY id DESC LIMIT 10;"
+```
 
 ---
 
@@ -362,6 +391,44 @@ Instruir o cliente a configurar a URL de webhook no painel do gateway detectado:
 > - {plataforma}: {descricao simples, ex: "Meta Ads: recebe todos os eventos para otimizar seus anuncios"}
 >
 > Voce pode subir sua campanha normalmente. Os dados aparecem em cada plataforma em poucos minutos (Meta e TikTok) ou ate 24h (Google Ads).
+
+---
+
+**Apos a mensagem para o cliente, exibir bloco de referencia tecnica (para o operador):**
+
+---
+
+### Referencia tecnica da configuracao
+
+**Dominio trackeado:** `{dominio}`
+**Script instalado em:** todas as paginas de `{dominio}` onde o `<script src="https://{dominio}/tracking/web.js">` foi adicionado ao `<head>`
+
+**Plataformas configuradas e eventos por plataforma:**
+
+| Plataforma | Eventos configurados |
+|---|---|
+| {plataforma, ex: Meta Ads} | {lista de eventos canonicos, ex: page_view, lead, purchase} |
+| {plataforma} | {eventos} |
+
+**Sobre a cobertura do tracking:**
+O tracking funciona automaticamente em todas as paginas com o script instalado, desde que os elementos da pagina sigam os mesmos padroes detectados no Step 2: mesmos seletores de formulario, mesmo padrao de links de checkout para o gateway, e mesmas URLs ou titulos de paginas de obrigado. Paginas com estrutura diferente precisam de mapeamento adicional.
+
+**Manutencao do banco de dados:**
+A retencao automatica esta ativa (cron diario as 03:00 UTC). Dados com mais de 30 dias sao removidos automaticamente das tabelas de eventos e webhooks. Para verificar o volume atual do banco:
+
+```bash
+npx wrangler d1 execute tracking_db --remote --command "SELECT COUNT(*) as eventos FROM events; SELECT COUNT(*) as webhooks FROM webhook_raw;"
+```
+
+Se necessario apagar manualmente dados antigos (ex: banco proximo do limite), usar sempre as colunas de data — nunca o `id`:
+
+```bash
+# Apagar eventos com mais de X dias
+npx wrangler d1 execute tracking_db --remote --command "DELETE FROM events WHERE timestamp < datetime('now', '-{X} days');"
+
+# Apagar webhooks com mais de X dias
+npx wrangler d1 execute tracking_db --remote --command "DELETE FROM webhook_raw WHERE timestamp < datetime('now', '-{X} days');"
+```
 
 ---
 
