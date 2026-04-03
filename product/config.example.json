@@ -3,19 +3,16 @@
   "debug": false,
   "platforms": {
     "ga4": {
-      "measurement_id": "G-ABC123DEF4",
-      "api_secret": "xYz1234AbCdEf"
+      "measurement_id": "G-ABC123DEF4"
     },
     "meta": {
       "pixel_id": "111111111111111",
-      "access_token": "EAABsbCS1IABCZ...",
       "pixel_id_purchase": "222222222222222",
-      "access_token_purchase": "EAABsbCS1IABCZ...",
       "purchase_trigger_event": "lead"
     },
     "tiktok": {
       "pixel_id": "CP1234567890ABCDEF",
-      "access_token": "abc123def456ghi789"
+      "access_token": "{EXCECAO: TikTok nao faz fallback para env — incluir o access_token aqui, nao como wrangler secret}"
     },
     "google_ads": {
       "conversion_id": "AW-123456789",
@@ -62,15 +59,9 @@
     "phone": "marca_phone",
     "name": "marca_name"
   },
-  "geolocation": {
-    "provider": "ipgeolocation",
-    "api_key": "abc123def456",
-    "fallback_provider": "visitorapi",
-    "fallback_api_key": "xyz789ghi012"
-  },
   "logging": {
     "enabled": true,
     "retention_days": 30,
-    "log_bearer_token": "meu-token-secreto-para-logs"
+    "log_bearer_token": "{token-secreto-opcional}"
   }
 }

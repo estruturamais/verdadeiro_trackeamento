@@ -91,7 +91,11 @@ npm install -g wrangler
 
 ### 0.5 — Autenticar wrangler na conta Cloudflare
 
-Explicar: "Agora vou conectar o wrangler a sua conta Cloudflare. Isso vai abrir o browser para voce autorizar — e so clicar em 'Allow'."
+Antes de executar o comando, orientar:
+
+> "Antes de continuar, confirme que voce esta logado na conta CORRETA da Cloudflare no seu navegador — a conta onde o Worker vai ficar hospedado. Se voce tiver mais de uma conta Cloudflare, faca logout das outras agora e deixe so a conta certa logada. Nao troque de navegador nem de aba durante a autorizacao. Me diga quando estiver pronto."
+
+Aguardar confirmacao antes de executar.
 
 ```bash
 npx wrangler login

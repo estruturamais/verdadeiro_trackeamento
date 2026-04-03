@@ -45,7 +45,7 @@ Campos `clientConfig` expostos ao browser (sem secrets), extraidos de `serve-web
 - `google_ads_label_contact`, `google_ads_label_lead`
 - `triggers`, `cookies`, `geolocation`, `gateways_config`, `custom_data`, `collect_url`
 
-### Mapeamento canonico de eventos (de `src/shared/event-names.js`)
+### Mapeamento canonico de eventos
 
 | Evento canonico   | Meta             | TikTok           | GA4            | Google Ads |
 |-------------------|------------------|------------------|----------------|------------|
@@ -56,6 +56,8 @@ Campos `clientConfig` expostos ao browser (sem secrets), extraidos de `serve-web
 | purchase          | Purchase         | Purchase         | purchase       | purchase   |
 
 `page_view` e `initiate_checkout` nao enviam para Google Ads.
+
+> Fonte canonica: `src/worker/shared/event-names.js`. Nomes especificos por plataforma (incluindo variacoes e campos obrigatorios de cada API) estao na skill de cada plataforma.
 
 ---
 
@@ -152,17 +154,21 @@ Apresentar recomendacao e aguardar confirmacao ou ajuste do cliente.
 Verificar `tracking_memory.md` ANTES de pedir qualquer dado. Pedir apenas o que falta.
 
 Delegar coleta para a skill especialista de cada plataforma confirmada:
-- Meta Ads → `tracking_meta_ads`
-- TikTok Ads → `tracking_tiktok_ads`
-- GA4 → `tracking_ga4`
-- Google Ads → `tracking_google_ads`
+- Meta Ads → `.claude/skills/meta.md`
+- TikTok Ads → `.claude/skills/tiktok.md`
+- GA4 → `.claude/skills/ga4.md`
+- Google Ads → `.claude/skills/google_ads.md`
 
 **Separacao obrigatoria:**
 
 | Tipo      | Campos                                            | Destino                          |
 |-----------|---------------------------------------------------|----------------------------------|
 | Publicos  | pixel_id, measurement_id, conversion_id, labels  | Config JSON no `SITE_CONFIG`     |
-| Secretos  | access_token, api_secret                          | `npx wrangler secret put`        |
+| Secretos  | access_token (Meta), api_secret (GA4)             | `npx wrangler secret put`        |
+
+**EXCECAO TikTok:** o `access_token` do TikTok vai no **config JSON** (`platforms.tiktok.access_token`) — NAO como wrangler secret. O codigo le `tiktokConfig.access_token` sem fallback para env. Ver `.claude/skills/tiktok.md` para detalhes.
+
+Antes de coletar credenciais, orientar o usuario a desativar configuracoes automaticas que causam dupla contagem. Ver `.claude/references/disable-auto-tracking.md`.
 
 Gravar cada dado recebido imediatamente no `tracking_memory.md`. Secrets: gravar apenas "CONFIGURADO (SECRETO)" — nunca o valor.
 
@@ -176,112 +182,15 @@ O agente executa este step inteiro. Cliente aguarda.
 
 ### 1. Gerar JSON de configuracao
 
-Seguir a estrutura completa de `config.example.json`. Incluir apenas plataformas confirmadas. Nunca incluir access_tokens ou api_secrets no JSON.
+Ler `config.example.json` para a estrutura base. Preencher com os dados do `tracking_memory.md`. Incluir apenas plataformas confirmadas e gateways detectados no Step 2.
 
-```json
-{
-  "site_id": "{site_id}",
-  "debug": false,
-  "platforms": {
-    "meta": {
-      "pixel_id": "{pixel_id}",
-      "pixel_id_purchase": "{se dual-pixel ativo — omitir chave se nao aplicavel}",
-      "purchase_trigger_event": "lead"
-    },
-    "tiktok": {
-      "pixel_id": "{pixel_id}"
-    },
-    "ga4": {
-      "measurement_id": "{G-XXXXXXXXXX}"
-    },
-    "google_ads": {
-      "conversion_id": "{AW-XXXXXXXXXX}",
-      "channel": "{web ou server}",
-      "conversion_label_contact": "{label}",
-      "conversion_label_lead": "{label}",
-      "conversion_label_purchase": "{label}"
-    }
-  },
-  "gateways": ["{lista de gateways detectados no Step 2}"],
-  "gateways_config": {
-    "hotmart": {
-      "domains": ["hotmart.com", "hotmart.com.br", "pay.hotmart.com", "go.hotmart.com"],
-      "caminho": "sck",
-      "indexador": "xcod",
-      "user_params": { "email": "email", "phone": "phonenumber", "name": "name" }
-    },
-    "kiwify": {
-      "domains": ["kiwify.com", "kiwify.com.br", "pay.kiwify.com.br"],
-      "caminho": "caminho",
-      "indexador": "sck"
-    },
-    "ticto": {
-      "domains": ["ticto.com.br", "ticto.app", "checkout.ticto.app", "checkout.ticto.com.br"],
-      "caminho": "caminho",
-      "indexador": "sck"
-    },
-    "kirvano": {
-      "domains": ["kirvano.com", "pay.kirvano.com"],
-      "caminho": "caminho",
-      "indexador": "src"
-    },
-    "eduzz": {
-      "domains": ["eduzz.com", "eduzz.com.br", "chk.eduzz.com", "sun.eduzz.com"],
-      "caminho": "caminho",
-      "indexador": "utm_medium"
-    },
-    "lastlink": {
-      "domains": ["lastlink.com", "lastlink.com.br", "pay.lastlink.com"],
-      "caminho": "caminho",
-      "indexador": "utm_id"
-    },
-    "perfectpay": {
-      "domains": ["perfectpay.com.br", "checkout.perfectpay.com.br"],
-      "caminho": "caminho",
-      "indexador": "utm_perfect"
-    },
-    "pagtrust": {
-      "domains": ["pagtrust.com", "pagtrust.com.br", "checkout.pagtrust.com.br"],
-      "caminho": "sck",
-      "indexador": "sck"
-    },
-    "payt": {
-      "domains": ["payt.com.br", "checkout.payt.com.br"],
-      "caminho": "caminho",
-      "indexador": "src"
-    }
-  },
-  "triggers": {
-    "lead": {
-      "type": "form_submit",
-      "selectors": { "elementor": true, "cf7": true, "generic": true }
-    },
-    "contact": {
-      "type": "link_click",
-      "match": "wa.me|api.whatsapp"
-    },
-    "initiate_checkout": {
-      "type": "link_click",
-      "match": "pay"
-    }
-  },
-  "custom_data": {},
-  "cookies": {
-    "user": "marca_user",
-    "email": "marca_email",
-    "phone": "marca_phone",
-    "name": "marca_name"
-  },
-  "geolocation": null,
-  "logging": {
-    "enabled": true,
-    "retention_days": 30,
-    "log_bearer_token": "{token secreto — opcional}"
-  }
-}
-```
-
-Incluir em `gateways_config` apenas os gateways detectados no Step 2.
+**Regras:**
+- TikTok: incluir `access_token` no config JSON (excecao — ver Step 3 acima)
+- Meta: nao incluir `access_token` nem `access_token_purchase` — sao wrangler secrets
+- GA4: nao incluir `api_secret` — e wrangler secret
+- Omitir `pixel_id_purchase` se dual-pixel nao estiver ativo
+- Omitir plataformas nao confirmadas completamente
+- Incluir apenas os gateways detectados no Step 2 em `gateways` e `gateways_config`
 
 ### 2. Atualizar SITE_CONFIG no wrangler.toml
 
@@ -307,12 +216,11 @@ echo "{access_token}" | npx wrangler secret put META_ACCESS_TOKEN
 # Meta Ads dual-pixel (apenas se dual-pixel ativo)
 echo "{access_token_purchase}" | npx wrangler secret put META_ACCESS_TOKEN_PURCHASE
 
-# TikTok Ads (apenas se TikTok confirmado)
-echo "{access_token}" | npx wrangler secret put TIKTOK_ACCESS_TOKEN
-
 # GA4 (apenas se GA4 confirmado)
 echo "{api_secret}" | npx wrangler secret put GA4_API_SECRET
 ```
+
+> **TikTok:** nao usar `wrangler secret put` para o access_token do TikTok — ele ja foi incluido no config JSON no passo 1 (excecao de arquitetura: o codigo nao le de env).
 
 Usar `echo | wrangler secret put` para evitar que o valor fique no historico do shell. Nunca exibir o valor do secret em mensagem de chat.
 
@@ -326,12 +234,20 @@ Marcar "Step 3b" como concluido no `tracking_memory.md`.
 
 ---
 
-## Step 4 — Validacao
+## Step 4 — Validacao autonoma
 
-### 4.1 Teste no browser
+O agente executa este step inteiro — sem pedir ao cliente para abrir browser (o script ainda nao esta instalado no site).
 
-Instruir o cliente:
-> "Acesse `{dominio}?debug=1` e abra o console do navegador (F12 > Console). Voce deve ver: `[Tracking] page_view fired - event_id: ...`. Me diga o que aparece."
+### 4.1 Verificar deploy e config (autonomo)
+
+```bash
+curl "https://{dominio}/tracking/web.js?site_id={site_id}" | head -3
+```
+
+Interpretar resultado:
+- `var __CONFIG__={"site_id":"{site_id}","meta_pixel_id":...}` com campos corretos → config OK
+- `__CONFIG__={}` ou campo de plataforma ausente → problema de config; diagnosticar com `.claude/references/site-config-format.md` antes de continuar
+- Erro de conexao (curl falha) → Worker nao esta acessivel; executar `npx wrangler deployments list` e re-deploy se necessario
 
 ### 4.2 Verificar tabela events no D1
 
@@ -350,18 +266,13 @@ page_view | google_analytics_4 | web | collect | 204 |
 
 Se `status_code = 0` com `error_message` preenchido: exibir o erro em linguagem simples e resolver antes de continuar.
 
-### 4.3 Validacao visual por plataforma
+Se a tabela `events` estiver vazia: normal nesta etapa — o script ainda nao esta instalado no site. Os eventos aparacerao apos o Step 5.
 
-Delegar para a skill especialista de cada plataforma confirmada:
-- Meta Ads → `tracking_meta_ads` (Events Manager > Testar Eventos)
-- GA4 → `tracking_ga4` (GA4 > DebugView)
-- TikTok Ads → `tracking_tiktok_ads` (Events Manager > Atividade recente)
-- Google Ads → `tracking_google_ads` (Google Tag Assistant ou painel com delay 3h)
+### 4.3 Criterios de sucesso desta etapa
+- curl retorna `__CONFIG__` com todos os campos das plataformas confirmadas
+- Worker acessivel (sem erro de conexao)
 
-### 4.4 Criterios de sucesso
-- `status_code` 200 ou 204 para cada plataforma na tabela `events`
-- Nenhum `error_message` preenchido
-- Confirmacao visual em ao menos uma plataforma
+> Validacao visual por plataforma e feita no Step 5, apos instalacao do script.
 
 ---
 
@@ -387,6 +298,29 @@ Deve ser o **primeiro elemento do `<head>`**, antes de qualquer outro script.
 | HTML estatico               | Primeira linha dentro de `<head>` em todos os HTMLs                          |
 | Next.js                     | `_document.js`, strategy `beforeInteractive`                                 |
 | React (CRA)                 | `public/index.html`, primeira linha do `<head>`                              |
+
+### 5.2 Confirmar no browser (apos instalacao)
+
+Instruir o cliente:
+> "Agora que o script esta instalado, acesse `{dominio}?debug=1` e abra o console do navegador (F12 > Console). Voce deve ver: `[Tracking] page_view fired - event_id: ...`. Me diga o que aparece."
+
+Apos confirmacao, verificar tabela `events` no D1:
+
+```bash
+npx wrangler d1 execute tracking_db --remote --command "SELECT event_name, platform, channel, source, status_code, error_message FROM events WHERE site_id = '{site_id}' ORDER BY id DESC LIMIT 20;"
+```
+
+Verificar: `status_code` 200 ou 204 para cada plataforma, nenhum `error_message`. Se algum evento falhar, diagnosticar e resolver antes de continuar.
+
+### 5.3 Validacao visual por plataforma
+
+Delegar para a skill especialista de cada plataforma confirmada:
+- Meta Ads → `.claude/skills/meta.md` (Events Manager > Testar Eventos)
+- GA4 → `.claude/skills/ga4.md` (GA4 > DebugView)
+- TikTok Ads → `.claude/skills/tiktok.md` (Events Manager > Atividade recente)
+- Google Ads → `.claude/skills/google_ads.md` (Google Tag Assistant ou painel com delay 3h)
+
+---
 
 ### Webhooks de gateway — apenas se modelo for infoproduto
 
@@ -433,13 +367,4 @@ Instruir o cliente a configurar a URL de webhook no painel do gateway detectado:
 
 ## Regras gerais durante o workflow
 
-1. **Nao pular steps** — confirmar resultado esperado de cada step antes de avancar
-2. **Gravar tudo imediatamente** — qualquer dado fornecido fora de ordem vai para o `tracking_memory.md` na hora
-3. **Verificar memoria antes de perguntar** — nunca pedir o que ja esta no `tracking_memory.md`
-4. **Nunca exibir secrets** — confirmar apenas "configurado", nunca repetir o valor
-5. **Explicar antes de executar** — antes de qualquer comando de terminal, explicar em linguagem simples o que vai acontecer e por que
-6. **Aguardar confirmacao em acoes invasivas** — wrangler.toml, deploy, secrets: explicar e aguardar "pode continuar" antes de executar
-7. **Linguagem simples na entrega** — Step 6 e para o cliente, sem jargao tecnico
-8. **Detectar e alertar conflitos** — scripts de tracking pre-existentes no site devem ser alertados antes de continuar
-9. **Um step de cada vez** — gravar antecipacoes no `tracking_memory.md` mas nao sair do step atual
-10. **Retomada de sessao** — se invocado com `tracking_memory.md` existente, exibir status e perguntar se quer continuar de onde parou
+As 10 regras gerais do workflow estao em `.claude/workflow.md`. Seguir sempre.

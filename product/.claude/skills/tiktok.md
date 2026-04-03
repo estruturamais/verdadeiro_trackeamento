@@ -167,9 +167,9 @@ Pedir os dois de uma vez:
 | Dado | Destino | Nome no sistema |
 |---|---|---|
 | `pixel_id` | Config JSON (`SITE_CONFIG` no `wrangler.toml`) | `platforms.tiktok.pixel_id` |
-| `access_token` | Wrangler secret | `TIKTOK_ACCESS_TOKEN` |
+| `access_token` | Config JSON (`SITE_CONFIG` no `wrangler.toml`) | `platforms.tiktok.access_token` |
 
-**Importante:** No codigo, `tiktokConfig.access_token` e usado diretamente — **nao faz fallback para env** (diferente de Meta, que usa `metaConfig.access_token || env.META_ACCESS_TOKEN`). O access_token do TikTok precisa estar no config.
+**EXCECAO obrigatoria:** O codigo le `tiktokConfig.access_token` diretamente do config — **nao faz fallback para `env.TIKTOK_ACCESS_TOKEN`** (diferente de Meta e GA4). Se o access_token for colocado como wrangler secret, o TikTok falha silenciosamente sem log. Colocar sempre no config JSON.
 
 Ao gravar no `tracking_memory.md`:
 - `pixel_id`: gravar o valor

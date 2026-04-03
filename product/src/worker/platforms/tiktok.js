@@ -6,7 +6,8 @@ const TIKTOK_EVENT_NAMES = {
 };
 
 export async function sendTikTokEvent(tiktokConfig, eventName, eventId, hashed, body, clientIp, userAgent, env, siteId) {
-  if (!tiktokConfig?.pixel_id || !tiktokConfig?.access_token) return;
+  const accessToken = tiktokConfig?.access_token || env?.TIKTOK_ACCESS_TOKEN;
+  if (!tiktokConfig?.pixel_id || !accessToken) return;
 
   const tiktokEventName = TIKTOK_EVENT_NAMES[eventName] || eventName;
 
@@ -48,7 +49,7 @@ export async function sendTikTokEvent(tiktokConfig, eventName, eventId, hashed, 
       {
         method: 'POST',
         headers: {
-          'Access-Token': tiktokConfig.access_token,
+          'Access-Token': accessToken,
           'Content-Type': 'application/json'
         },
         body: sentPayload
@@ -75,7 +76,8 @@ export async function sendTikTokEvent(tiktokConfig, eventName, eventId, hashed, 
 }
 
 export async function sendTikTokWebhook(tiktokConfig, eventName, hashed, merged, env, siteId) {
-  if (!tiktokConfig?.pixel_id || !tiktokConfig?.access_token) return;
+  const accessToken = tiktokConfig?.access_token || env?.TIKTOK_ACCESS_TOKEN;
+  if (!tiktokConfig?.pixel_id || !accessToken) return;
 
   const properties = {};
   if (merged.value) {
@@ -123,7 +125,7 @@ export async function sendTikTokWebhook(tiktokConfig, eventName, hashed, merged,
       {
         method: 'POST',
         headers: {
-          'Access-Token': tiktokConfig.access_token,
+          'Access-Token': accessToken,
           'Content-Type': 'application/json'
         },
         body: sentPayload

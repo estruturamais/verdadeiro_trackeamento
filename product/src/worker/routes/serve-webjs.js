@@ -32,12 +32,6 @@ export async function handleServeWebJs(request, env) {
     google_ads_label_lead: config.platforms?.google_ads?.conversion_label_lead,
     triggers: config.triggers,
     cookies: config.cookies,
-    geolocation: config.geolocation ? {
-      provider: config.geolocation.provider,
-      api_key: config.geolocation.api_key,
-      fallback_provider: config.geolocation.fallback_provider,
-      fallback_api_key: config.geolocation.fallback_api_key
-    } : null,
     gateways_config: config.gateways_config,
     custom_data: config.custom_data,
     collect_url: '/collect/event'

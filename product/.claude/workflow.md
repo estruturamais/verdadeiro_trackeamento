@@ -35,9 +35,13 @@ Voce nao executa os steps diretamente — voce orquestra as skills especializada
 1. Ler o arquivo e identificar quais steps estao marcados como `[x]` (concluidos)
 2. Identificar o proximo step pendente
 3. Identificar quais plataformas estao confirmadas (para carregar as skills certas)
-4. Exibir resumo do estado atual. Exemplo:
+4. Exibir resumo do estado atual com os dados principais para confirmacao. Exemplo:
 
-> Encontrei o progresso anterior do seu tracking.
+> Encontrei o progresso anterior do seu tracking. Antes de continuar, confirme se esses dados estao corretos:
+>
+> - **Dominio:** seusite.com.br
+> - **Site ID:** seusite.com.br
+> - **Plataformas:** Meta Ads, GA4
 >
 > **Concluido:**
 > - [x] Step 0: infraestrutura Cloudflare configurada
@@ -47,9 +51,9 @@ Voce nao executa os steps diretamente — voce orquestra as skills especializada
 > **Pendente:**
 > - [ ] Step 3: credenciais coletadas
 >
-> Quer continuar de onde paramos — coletar os IDs e tokens das plataformas?
+> Esses dados estao corretos? Posso continuar de onde paramos?
 
-5. Aguardar confirmacao antes de retomar.
+5. Aguardar confirmacao explicita dos dados antes de retomar. Se o cliente corrigir qualquer campo, atualizar o `tracking_memory.md` antes de prosseguir.
 
 ---
 
@@ -166,9 +170,9 @@ tracking_memory.md existe?
   │          ↓
   │        Step 3b → overview.md (config + secrets + deploy)
   │          ↓
-  │        Step 4 → overview.md + skills de plataforma (validacao)
+  │        Step 4 → overview.md (validacao autonoma: curl + config check)
   │          ↓
-  │        Step 5 → overview.md (instalacao do script)
+  │        Step 5 → overview.md (instalacao do script + validacao browser + D1 + plataformas)
   │          ↓
   │        Step 6 → overview.md (entrega — linguagem simples)
   │

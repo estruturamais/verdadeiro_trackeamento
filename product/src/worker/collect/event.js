@@ -14,6 +14,11 @@ export async function handleCollectEvent(request, env) {
 
   const clientIp = request.headers.get('CF-Connecting-IP') || '';
   const userAgent = request.headers.get('User-Agent') || '';
+  const cf = request.cf || {};
+  const cfCountry = (cf.country || '').toLowerCase();
+  const cfCity = (cf.city || '').toLowerCase();
+  const cfState = (cf.region || '').toLowerCase();
+  const cfZip = cf.postalCode || '';
   const marcaUser = body.marca_user || '';
   const eventName = body.event;
   const eventId = body.event_id;
@@ -36,10 +41,10 @@ export async function handleCollectEvent(request, env) {
       email: body.user_data?.email || '',
       phone: body.user_data?.phone || '',
       fullname: [body.user_data?.first_name, body.user_data?.last_name].filter(Boolean).join(' '),
-      city: body.user_data?.city || '',
-      state: body.user_data?.state || '',
-      country: body.user_data?.country || '',
-      zip: body.user_data?.zip || ''
+      city: body.user_data?.city || cfCity,
+      state: body.user_data?.state || cfState,
+      country: body.user_data?.country || cfCountry,
+      zip: body.user_data?.zip || cfZip
     });
   } catch (e) {
     console.error('[collect-event] upsertUserStore failed:', e);
@@ -61,10 +66,10 @@ export async function handleCollectEvent(request, env) {
     phone: body.user_data?.phone,
     first_name: body.user_data?.first_name,
     last_name: body.user_data?.last_name,
-    city: body.user_data?.city,
-    state: body.user_data?.state,
-    country: body.user_data?.country,
-    zip: body.user_data?.zip,
+    city: body.user_data?.city || cfCity,
+    state: body.user_data?.state || cfState,
+    country: body.user_data?.country || cfCountry,
+    zip: body.user_data?.zip || cfZip,
     external_id: marcaUser
   });
 
