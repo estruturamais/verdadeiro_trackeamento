@@ -143,7 +143,7 @@ npm run db:create
 
 Explicar: "Vou configurar as rotas do Worker para o seu dominio."
 
-Abrir `wrangler.toml` e substituir o dominio atual (`estruturamais.com`) pelo dominio do cliente em todos os 4 patterns:
+Abrir `wrangler.toml` e substituir `{YOUR_DOMAIN}` pelo dominio do cliente em todos os 4 patterns:
 
 ```toml
 routes = [
