@@ -4,7 +4,6 @@ import { handleCollectEvent } from './routes/collect-event.js';
 import { handleWebhook } from './routes/collect-webhook.js';
 import { handleDebug } from './routes/debug.js';
 import { handleLogs } from './routes/logs.js';
-import testeClaude from '../static/teste-claude.html';
 
 function getCorsHeaders(origin) {
   return {
@@ -30,10 +29,6 @@ export default {
     }
 
     try {
-      // Páginas estáticas
-      if ((path === '/teste-claude' || path === '/teste-claude/') && method === 'GET') {
-        return new Response(testeClaude, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
-      }
 
       // GET /scripts/ga.js → proxy gtag.js
       if (path === '/scripts/ga.js' && method === 'GET') {

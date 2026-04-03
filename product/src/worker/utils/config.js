@@ -4,6 +4,8 @@ export async function getConfig(siteId, env) {
       const config = typeof env.SITE_CONFIG === 'string'
         ? JSON.parse(env.SITE_CONFIG)
         : env.SITE_CONFIG;
+      // Support both map format {"site_id": {...}} and direct format
+      if (siteId && config[siteId]) return config[siteId];
       return config;
     }
 

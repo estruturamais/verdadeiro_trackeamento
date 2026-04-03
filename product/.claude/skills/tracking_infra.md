@@ -234,7 +234,7 @@ Apos verificacao bem-sucedida, atualizar o `tracking_memory.md`:
 2. **Explicar antes de executar** — em linguagem simples, sem jargao tecnico desnecessario
 3. **Gravar imediatamente** — qualquer dado fornecido (dominio, database_id) vai para o `tracking_memory.md` na hora
 4. **Nao continuar com erro** — se 0.11 falhar, diagnosticar antes de passar para o Step 1
-5. **Nunca referenciar `site_config` D1 table** — o mecanismo de config e `SITE_CONFIG` no `[vars]` do `wrangler.toml`
+5. **Nunca referenciar `site_config` D1 table** — o mecanismo de config e `SITE_CONFIG` no `[vars]` do `wrangler.toml`. Para formato correto e bugs comuns: ver `.claude/references/site-config-format.md`
 6. **Opcao npm run** — sempre que existir script equivalente no `package.json`, mencionar como alternativa
 
 ---

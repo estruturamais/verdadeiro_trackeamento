@@ -100,6 +100,8 @@ Apos resposta:
 - **Contact Form 7:** presenca de `wpcf7`
 - **HTML generico:** `form[action]` sem os acima
 
+> Se Elementor detectado: ver `.claude/references/elementor-form-lead.md` para contexto de deteccao de lead (causas raiz, estrategia em 2 passos, 4 metodos de deteccao).
+
 ### Links de checkout (dominios dos 9 gateways, de `src/web/web-template.txt`)
 
 | Gateway    | Dominios para detectar                                             |
@@ -291,6 +293,8 @@ SITE_CONFIG = '{json_completo_em_uma_linha_sem_quebras}'
 ```
 
 O JSON deve ser serializado em uma unica linha (sem quebras de linha) para o wrangler.toml aceitar corretamente.
+
+> Para bugs comuns de formato do SITE_CONFIG (map vs objeto direto, snake_case vs camelCase, diagnostico via curl): ver `.claude/references/site-config-format.md`.
 
 ### 3. Configurar wrangler secrets
 

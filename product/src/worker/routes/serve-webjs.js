@@ -10,7 +10,7 @@ function getRootDomain(request) {
 
 export async function handleServeWebJs(request, env) {
   const url = new URL(request.url);
-  const siteId = url.searchParams.get('site_id') || detectSiteId(request, env);
+  const siteId = url.searchParams.get('site_id') || url.searchParams.get('siteId') || detectSiteId(request, env);
   const config = await getConfig(siteId, env);
 
   // Extrair ou gerar marca_user
@@ -50,7 +50,7 @@ export async function handleServeWebJs(request, env) {
   return new Response(script, {
     headers: {
       'Content-Type': 'application/javascript; charset=utf-8',
-      'Cache-Control': 'public, max-age=3600',
+      'Cache-Control': 'no-cache',
       'Set-Cookie': `marca_user=${marcaUser};Path=/;Max-Age=63072000;HttpOnly;SameSite=Lax;Secure;Domain=${getRootDomain(request)}`
     }
   });
