@@ -121,6 +121,11 @@
       domains: ['payt.com.br', 'checkout.payt.com.br'],
       caminho: 'caminho',
       indexador: 'src'
+    },
+    hubla: {
+      domains: ['hubla.com.br', 'pay.hubla.com.br', 'checkout.hubla.com.br'],
+      caminho: 'caminho',
+      indexador: 'xcod'
     }
   };
 
