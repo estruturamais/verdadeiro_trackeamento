@@ -37,10 +37,19 @@ Aguardar confirmacao antes de continuar. Se algum item nao estiver disponivel, o
 > 4. Configurar tudo no servidor e validar
 > 5. Te dizer onde colocar o script no seu site
 > 6. Confirmar que esta funcionando e liberar para campanha
->
-> Posso comecar?
 
-3. Aguardar confirmacao ("ok", "pode comecar", "entendi", ou qualquer sinal afirmativo) antes de iniciar o Step 0.
+4. Logo apos o resumo, perguntar sobre modalidade de coleta de dados:
+
+> Como prefere fornecer os dados das suas plataformas (IDs, tokens, etc.)?
+>
+> **A** — Tudo de uma vez (recomendado): depois que eu analisar seu site, te envio um texto completo para voce preencher com seus dados e devolver de uma vez so
+> **B** — Passo a passo: vou pedindo cada informacao conforme for precisando
+>
+> Pode responder junto com o "pode comecar" se quiser.
+
+Gravar `modalidade_coleta: bulk` ou `modalidade_coleta: passo_a_passo` no `tracking_memory.md` assim que o cliente responder. Se nao informar, perguntar antes de avancar para o Step 1.
+
+5. Aguardar confirmacao ("ok", "pode comecar", "entendi", ou qualquer sinal afirmativo) antes de iniciar o Step 0.
 
 ### Se `tracking_memory.md` JA existe (retomada de sessao):
 
@@ -66,6 +75,42 @@ Aguardar confirmacao antes de continuar. Se algum item nao estiver disponivel, o
 > Esses dados estao corretos? Posso continuar de onde paramos?
 
 5. Aguardar confirmacao explicita dos dados antes de retomar. Se o cliente corrigir qualquer campo, atualizar o `tracking_memory.md` antes de prosseguir.
+
+6. Se `infra_status: deployada` na memoria, verificar conta Cloudflare ativa ANTES de qualquer acao:
+   - Executar `npx wrangler whoami` e exibir o e-mail retornado
+   - Comparar com `cloudflare_account_id` gravado no `tracking_memory.md`
+   - Se diferente ou nao confirmado pelo cliente: orientar `wrangler logout` → `wrangler login` antes de continuar qualquer step
+
+---
+
+## REGRA BLOQUEANTE — Confirmacao de Conta Cloudflare
+
+> Esta regra tem prioridade absoluta sobre todas as outras. Nenhum comando wrangler que modifique estado pode ser executado sem confirmacao explicita da conta ativa.
+
+### Quando aplicar
+
+Antes de executar qualquer um destes comandos (em qualquer step, em qualquer momento):
+- `npx wrangler deploy`
+- `npx wrangler d1 execute --remote`
+- `npx wrangler secret put`
+- `npx wrangler d1 create`
+
+### Procedimento obrigatorio
+
+1. Executar `npx wrangler whoami` e exibir o resultado completo para o cliente
+2. Perguntar explicitamente:
+   > "Esta e a conta Cloudflare correta para este projeto? Conta ativa: **[email retornado]**. Confirma com S ou N."
+3. Aguardar resposta afirmativa ("S", "sim", "pode") antes de executar o comando
+4. Se conta errada (resposta "N" ou qualquer negativa): orientar imediatamente:
+   > "Para trocar de conta: execute `npx wrangler logout` e depois `npx wrangler login`. Me diga quando a autenticacao estiver concluida."
+   - Aguardar confirmacao do novo login
+   - Repetir o `wrangler whoami` para confirmar a conta correta antes de prosseguir
+
+### Por que e critico
+
+Usuarios configuram multiplas contas Cloudflare na mesma maquina. Sem esta verificacao, deploy e criacao de banco podem ser executados na conta errada — problema dificil de reverter que pode comprometer projetos de outros clientes.
+
+**Nunca pular esta verificacao** — mesmo que o cliente diga que "com certeza e a conta certa". A verificacao e automatica e leva 3 segundos.
 
 ---
 
@@ -95,6 +140,7 @@ Apos o Step 1 (plataformas confirmadas no `tracking_memory.md`), carregar apenas
 | TikTok Ads            | `.claude/skills/tiktok.md`   |
 | GA4                   | `.claude/skills/ga4.md`          |
 | Google Ads            | `.claude/skills/google_ads.md`   |
+| Planilha (Sheets)     | `.claude/skills/planilha.md`     |
 
 Skills de plataformas NAO confirmadas nunca sao carregadas — nao perguntar sobre elas.
 
@@ -113,6 +159,8 @@ Na primeira invocacao: copiar `.claude/memory_template.md` para `tracking_memory
 - Gravar qualquer informacao fornecida pelo cliente **imediatamente**, mesmo que seja fora de ordem
 - Se o cliente fornecer um Pixel ID durante uma conversa sobre outro topico, gravar na hora
 - Secrets: gravar apenas "CONFIGURADO (SECRETO)" — nunca o valor real
+- **Gravar ANTES de formular a proxima pergunta** — ao receber qualquer dado, gravar no `tracking_memory.md` antes de processar a proxima acao. Nunca acumular dados para gravar no final do step.
+- **Checkpoint obrigatorio ao avancar de step** — antes de passar para o proximo step, verificar se todos os dados fornecidos na conversa atual estao gravados. Se algum estiver faltando, gravar agora antes de continuar.
 
 ### Marcar steps concluidos
 Ao final de cada step, atualizar a secao "Status do workflow":
@@ -130,7 +178,7 @@ Ao final de cada step, atualizar a secao "Status do workflow":
 
 ---
 
-## 10 Regras gerais do workflow
+## 13 Regras gerais do workflow
 
 1. **Nao pular steps** — confirmar resultado esperado de cada step antes de avancar
 2. **Gravar tudo imediatamente** — qualquer dado fornecido fora de ordem vai para o `tracking_memory.md` na hora
@@ -142,6 +190,9 @@ Ao final de cada step, atualizar a secao "Status do workflow":
 8. **Detectar e alertar conflitos** — scripts de tracking pre-existentes devem ser alertados antes de continuar
 9. **Um step de cada vez** — gravar antecipacoes no `tracking_memory.md` mas nao sair do step atual
 10. **Retomada de sessao** — ao ser invocado com `tracking_memory.md` existente, exibir o status e perguntar se quer continuar de onde parou
+11. **Perguntas com alternativas em formato A/B/C** — toda pergunta com opcoes pre-definidas (plataformas, modalidade, tipo de instalacao, etc.) deve ser formatada como alternativas letradas (A, B, C...). Informar que pode escolher mais de uma quando cabivel.
+12. **Nao executar wrangler sem confirmar conta** — ver secao "REGRA BLOQUEANTE — Confirmacao de Conta Cloudflare". Esta regra e absoluta e nao admite excecoes.
+13. **Gravar na memoria antes de perguntar** — qualquer dado recebido deve ser gravado no `tracking_memory.md` antes de formular a proxima pergunta. Nunca acumular dados para gravar no final. Quando o cliente envia multiplas informacoes de uma vez, gravar todas antes de responder.
 
 ---
 
@@ -159,6 +210,7 @@ tracking_workflow.md  (este arquivo — condutor)
           +-- .claude/skills/ga4.md         (se GA4 confirmado)
           +-- .claude/skills/google_ads.md  (se Google Ads confirmado)
           +-- .claude/skills/new_gateway.md (se gateway sem parser completo)
+          +-- .claude/skills/planilha.md   (se Planilha confirmada)
 ```
 
 Template de memoria: `.claude/memory_template.md`
@@ -171,24 +223,34 @@ Template de memoria: `.claude/memory_template.md`
 Invocado
   ↓
 tracking_memory.md existe?
-  ├─ NAO → Criar do template → Exibir resumo → Aguardar "ok"
+  ├─ NAO → Criar do template → Exibir pre-requisitos → Aguardar confirmacao
   │          ↓
-  │        Step 0 → infra.md
+  │        Exibir resumo de etapas + pergunta de modalidade (A: bulk / B: passo a passo)
+  │          ↓
+  │        Aguardar "ok" + modalidade → gravar modalidade_coleta no tracking_memory.md
+  │          ↓
+  │        Step 0 → infra.md  [BLOQUEANTE: wrangler whoami antes de qualquer deploy]
   │          ↓
   │        Step 1 → overview.md → Carregar skills de plataforma confirmadas
   │          ↓
   │        Step 2 → overview.md (analise de site)
   │          ↓
-  │        Step 3 → overview.md + skills de plataforma (credenciais)
+  │        Step 3 → overview.md + skills de plataforma
+  │                  ├─ modalidade bulk → gerar template completo → aguardar preenchimento → gravar tudo
+  │                  └─ passo a passo → coletar credenciais uma por uma (comportamento padrao)
   │          ↓
-  │        Step 3b → overview.md (config + secrets + deploy)
+  │        Step 3b → overview.md (config + secrets + deploy) [BLOQUEANTE: wrangler whoami]
   │          ↓
   │        Step 4 → overview.md (validacao autonoma: curl + config check)
   │          ↓
   │        Step 5 → overview.md (instalacao do script + validacao browser + D1 + plataformas)
+  │                  └─ apos funil: consultar D1 → gravar resumo de eventos validados na memoria
   │          ↓
-  │        Step 6 → overview.md (entrega — linguagem simples)
+  │        Step 6 → overview.md (entrega — linguagem simples; usar memoria para descrever o que foi configurado)
   │
-  └─ SIM → Ler estado → Exibir resumo → Aguardar confirmacao → Retomar do step pendente
-             (carregar skills das plataformas ja confirmadas)
+  └─ SIM → Ler estado → Exibir resumo → Aguardar confirmacao
+             ↓
+           Se infra deployada: wrangler whoami → comparar com conta gravada na memoria
+             ↓
+           Retomar do step pendente (carregar skills das plataformas ja confirmadas)
 ```

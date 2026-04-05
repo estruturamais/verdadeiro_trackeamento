@@ -63,16 +63,23 @@ Campos `clientConfig` expostos ao browser (sem secrets), extraidos de `serve-web
 
 ## Step 1 — Confirmar plataformas
 
-Pergunta unica cobrindo todas as plataformas:
+Pergunta unica cobrindo todas as plataformas em formato de alternativas:
 
-> "Voce usa alguma dessas plataformas? Pode marcar todas que usar:
-> - Meta Ads (Facebook / Instagram Ads)
-> - TikTok Ads
-> - Google Ads
-> - Google Analytics 4 (GA4)"
+> "Voce usa alguma dessas plataformas? Pode escolher mais de uma:
+>
+> **A** — Meta Ads (Facebook / Instagram Ads)
+> **B** — TikTok Ads
+> **C** — Google Ads
+> **D** — Google Analytics 4 (GA4)
+> **E** — Planilha Google Sheets (para salvar leads automaticamente)
+>
+> Responda com as letras. Exemplo: A, D"
 
-Se Meta Ads confirmado, fazer follow-up:
-> "Voce usa um pixel separado so para rastrear compras (pixel de vendas)? Se nao sabe, pode dizer nao."
+Se Meta Ads confirmado, fazer follow-up em formato de alternativa:
+> "Voce usa um pixel separado so para rastrear compras (pixel de vendas)?
+>
+> **A** — Sim, tenho um pixel especifico para compras
+> **B** — Nao (ou nao sei)"
 
 Apos resposta:
 - Registrar plataformas confirmadas no `tracking_memory.md`
@@ -153,11 +160,52 @@ Apresentar recomendacao e aguardar confirmacao ou ajuste do cliente.
 
 Verificar `tracking_memory.md` ANTES de pedir qualquer dado. Pedir apenas o que falta.
 
+### Verificar modalidade de coleta
+
+Ler `modalidade_coleta` do `tracking_memory.md`:
+
+**Se `modalidade_coleta: bulk`** — gerar e exibir o template abaixo, preenchendo dinamicamente com base nas plataformas confirmadas no Step 1 e eventos confirmados no Step 2. Aguardar o cliente devolver o template preenchido. Ao receber, gravar TODOS os dados de uma vez no `tracking_memory.md` antes de continuar.
+
+```
+==============================
+DADOS PARA CONFIGURAÇÃO DO TRACKING
+==============================
+
+DOMÍNIO: {dominio do Step 2}
+
+PLATAFORMAS: {listar as confirmadas no Step 1}
+
+PÁGINA DE TESTE (URL completa que você vai usar nos anúncios):
+→ 
+
+EVENTOS CONFIGURADOS:
+{listar eventos confirmados no Step 2 com descrição do trigger, ex:}
+→ page_view: toda vez que alguém abre a página
+→ lead: quando o formulário é enviado
+→ {demais eventos}
+
+--- {PLATAFORMA A, se confirmada} ---
+{campos específicos desta plataforma, conforme skill correspondente}
+→ {campo 1 público — ex: Pixel ID}:
+→ {campo 2 secreto — ex: Access Token}:
+
+--- {PLATAFORMA B, se confirmada} ---
+→ {campos desta plataforma}:
+
+==============================
+```
+
+> Dica de preenchimento a incluir na mensagem:
+> "Preencha os dados após cada '→' e cole aqui de volta. Para campos marcados como 'secreto', fique tranquilo — eles nao ficam gravados no chat e vao direto para um cofre seguro no servidor."
+
+**Se `modalidade_coleta: passo_a_passo`** — seguir o fluxo padrao abaixo.
+
 Delegar coleta para a skill especialista de cada plataforma confirmada:
 - Meta Ads → `.claude/skills/meta.md`
 - TikTok Ads → `.claude/skills/tiktok.md`
 - GA4 → `.claude/skills/ga4.md`
 - Google Ads → `.claude/skills/google_ads.md`
+- Planilha → `.claude/skills/planilha.md`
 
 **Separacao obrigatoria:**
 
@@ -313,6 +361,35 @@ npx wrangler d1 execute tracking_db --remote --command "SELECT event_name, platf
 
 Verificar: `status_code` 200 ou 204 para cada plataforma, nenhum `error_message`. Se algum evento falhar, diagnosticar e resolver antes de continuar.
 
+### 5.2a — Solicitar funil de conversao completo
+
+Apos confirmacao do page_view no browser, instruir o cliente a percorrer o funil completo:
+
+> "Otimo! Agora preciso que voce simule o caminho completo de um visitante no seu site — acesse a pagina, preencha o formulario (ou clique no botao de compra), conclua o processo de checkout se houver. Use dados de teste. Me avise quando terminar cada etapa."
+
+Aguardar confirmacao do cliente de que completou o funil.
+
+### 5.2b — Verificar e gravar eventos validados na memoria
+
+Apos o cliente confirmar que completou o funil, consultar o D1 para todos os eventos do site:
+
+```bash
+npx wrangler d1 execute tracking_db --remote --command "SELECT event_name, platform, channel, source, status_code, error_message, timestamp FROM events WHERE site_id = '{site_id}' ORDER BY timestamp DESC LIMIT 50;"
+```
+
+Com base no resultado, gravar imediatamente no `tracking_memory.md` a secao de validacao:
+
+```markdown
+## Validacao Step 5
+- data_validacao: {data e hora da consulta}
+- eventos_confirmados:
+  - {event_name} → {plataformas com status_code 200/204}: OK
+  - {event_name com erro} → {plataforma}: ERRO — {error_message}
+- status_geral: {OK se todos 200/204 | PARCIAL se algum falhou | ERRO se nenhum chegou}
+```
+
+Se algum evento retornou erro: diagnosticar e resolver antes de continuar para o Step 6.
+
 ### 5.3 Validacao visual por plataforma
 
 Delegar para a skill especialista de cada plataforma confirmada:
@@ -320,6 +397,7 @@ Delegar para a skill especialista de cada plataforma confirmada:
 - GA4 → `.claude/skills/ga4.md` (GA4 > DebugView)
 - TikTok Ads → `.claude/skills/tiktok.md` (Events Manager > Atividade recente)
 - Google Ads → `.claude/skills/google_ads.md` (Google Tag Assistant ou painel com delay 3h)
+- Planilha → `.claude/skills/planilha.md` (verificar linha inserida na planilha + D1 com `platform = 'sheets'`)
 
 ---
 
@@ -374,6 +452,8 @@ npx wrangler d1 execute tracking_db --remote --command "SELECT event_name, platf
 **Tom:** breve, objetivo, focado no que o cliente ganha. Sem jargao tecnico.
 
 **NAO mencionar:** Cloudflare, Worker, D1, Wrangler, CAPI, Measurement Protocol, SHA-256, event_id, marca_user, endpoints, beacon.
+
+**Fonte dos dados para a mensagem:** usar `tracking_memory.md` — especificamente as secoes de plataformas confirmadas, eventos confirmados e `Validacao Step 5`. Nao raspar arquivos de config para montar a entrega; a memoria e a fonte canonica do que foi configurado e validado.
 
 **Estrutura da mensagem de entrega:**
 
