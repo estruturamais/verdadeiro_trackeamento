@@ -822,7 +822,11 @@
     }
   }
 
+  var _firedOnPage = {};
+
   function fireTrigger(eventName, eventData) {
+    if (_firedOnPage[eventName]) return;
+    _firedOnPage[eventName] = true;
     try {
       var event_id = generateEventId();
       var userData = getUserData(eventData);
@@ -1095,103 +1099,6 @@
 
   try { initForms(); } catch(e) {}
 
-  // ============================================================
-  // MODULE 6 — Geolocation (SPEC 2.6)
-  // ============================================================
-
-  function parseGeoResponse(data, provider) {
-    if (provider === 'ipgeolocation') {
-      return {
-        country: (data.country_code2 || '').toLowerCase(),
-        state: (data.state_prov || '').toLowerCase(),
-        city: (data.city || '').toLowerCase(),
-        ip: data.ip || ''
-      };
-    }
-    if (provider === 'visitorapi') {
-      return {
-        country: (data.countryCode || '').toLowerCase(),
-        state: (data.region || '').toLowerCase(),
-        city: (data.city || '').toLowerCase(),
-        ip: data.ipAddress || ''
-      };
-    }
-    return { country: '', state: '', city: '', ip: '' };
-  }
-
-  function saveGeoCookies(geo) {
-    var maxAge = 2592000; // 30 dias
-    if (geo.country) document.cookie = 'marca_country=' + geo.country + ';path=/;max-age=' + maxAge + ';SameSite=Lax';
-    if (geo.state) document.cookie = 'marca_state=' + geo.state + ';path=/;max-age=' + maxAge + ';SameSite=Lax';
-    if (geo.city) document.cookie = 'marca_city=' + encodeURIComponent(geo.city) + ';path=/;max-age=' + maxAge + ';SameSite=Lax';
-    if (geo.ip) document.cookie = 'marca_ip_address=' + geo.ip + ';path=/;max-age=' + maxAge + ';SameSite=Lax';
-  }
-
-  function tryFallbackGeo(provider, apiKey, timeout) {
-    var url;
-    if (provider === 'visitorapi') {
-      url = 'https://api.visitorapi.com/api/?pid=' + apiKey;
-    } else if (provider === 'ipgeolocation') {
-      url = 'https://api.ipgeolocation.io/ipgeo?apiKey=' + apiKey + '&fields=geo,ip';
-    }
-    fetch(url)
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        clearTimeout(timeout);
-        var geo = parseGeoResponse(data, provider);
-        saveGeoCookies(geo);
-        fireTrigger('page_view', { geo: geo });
-      })
-      .catch(function() {
-        clearTimeout(timeout);
-        fireTrigger('page_view', {});
-      });
-  }
-
-  function initGeolocation() {
-    if (getCookie('marca_country')) {
-      fireTrigger('page_view', {});
-      return;
-    }
-
-    var timeout = setTimeout(function() {
-      fireTrigger('page_view', {});
-    }, 3000);
-
-    var apiKey = __CONFIG__.geolocation && __CONFIG__.geolocation.api_key;
-    var provider = __CONFIG__.geolocation && __CONFIG__.geolocation.provider;
-
-    if (!apiKey || !provider) {
-      clearTimeout(timeout);
-      fireTrigger('page_view', {});
-      return;
-    }
-
-    var url;
-    if (provider === 'ipgeolocation') {
-      url = 'https://api.ipgeolocation.io/ipgeo?apiKey=' + apiKey + '&fields=geo,ip';
-    } else if (provider === 'visitorapi') {
-      url = 'https://api.visitorapi.com/api/?pid=' + apiKey;
-    }
-
-    fetch(url)
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        clearTimeout(timeout);
-        var geo = parseGeoResponse(data, provider);
-        saveGeoCookies(geo);
-        fireTrigger('page_view', { geo: geo });
-      })
-      .catch(function() {
-        if (__CONFIG__.geolocation.fallback_provider && __CONFIG__.geolocation.fallback_api_key) {
-          tryFallbackGeo(__CONFIG__.geolocation.fallback_provider, __CONFIG__.geolocation.fallback_api_key, timeout);
-        } else {
-          clearTimeout(timeout);
-          fireTrigger('page_view', {});
-        }
-      });
-  }
-
-  try { initGeolocation(); } catch(e) {}
+  try { fireTrigger('page_view', {}); } catch(e) {}
 
 })();
