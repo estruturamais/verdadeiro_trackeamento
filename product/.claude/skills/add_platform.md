@@ -22,8 +22,8 @@ Se a plataforma nao foi especificada no slash command, perguntar:
 
 Apos confirmar a plataforma:
 1. Carregar a skill especializada correspondente:
-   - Meta Ads → `.claude/skills/meta.md`
-   - TikTok Ads → `.claude/skills/tiktok.md`
+   - Meta Ads → `.claude/skills/meta_ads.md`
+   - TikTok Ads → `.claude/skills/tiktok_ads.md`
    - GA4 → `.claude/skills/ga4.md`
    - Google Ads → `.claude/skills/google_ads.md`
    - Sheets → `.claude/skills/planilha.md`
@@ -115,8 +115,8 @@ Nunca pedir aprovacao de comandos tecnicos — executar → exibir resultado →
 ```
 add_platform.md (este arquivo — condutor)
      |
-     +-- .claude/skills/meta.md        (se Meta Ads)
-     +-- .claude/skills/tiktok.md      (se TikTok Ads)
+     +-- .claude/skills/meta_ads.md    (se Meta Ads)
+     +-- .claude/skills/tiktok_ads.md  (se TikTok Ads)
      +-- .claude/skills/ga4.md         (se GA4)
      +-- .claude/skills/google_ads.md  (se Google Ads)
      +-- .claude/skills/planilha.md    (se Sheets)

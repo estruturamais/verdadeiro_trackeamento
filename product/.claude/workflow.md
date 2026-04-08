@@ -215,8 +215,8 @@ Apos o Step 1 (plataformas confirmadas no `tracking_memory.md`), carregar apenas
 
 | Plataforma confirmada | Skill a carregar                          |
 |-----------------------|-------------------------------------------|
-| Meta Ads              | `.claude/skills/meta.md`     |
-| TikTok Ads            | `.claude/skills/tiktok.md`   |
+| Meta Ads              | `.claude/skills/meta_ads.md`     |
+| TikTok Ads            | `.claude/skills/tiktok_ads.md`   |
 | GA4                   | `.claude/skills/ga4.md`          |
 | Google Ads            | `.claude/skills/google_ads.md`   |
 | Planilha (Sheets)     | `.claude/skills/planilha.md`     |
@@ -285,8 +285,8 @@ tracking_workflow.md  (este arquivo — condutor)
      |
      +-- .claude/skills/overview.md        (Steps 1-6 — sempre)
           |
-          +-- .claude/skills/meta.md        (se Meta Ads confirmado)
-          +-- .claude/skills/tiktok.md      (se TikTok Ads confirmado)
+          +-- .claude/skills/meta_ads.md    (se Meta Ads confirmado)
+          +-- .claude/skills/tiktok_ads.md  (se TikTok Ads confirmado)
           +-- .claude/skills/ga4.md         (se GA4 confirmado)
           +-- .claude/skills/google_ads.md  (se Google Ads confirmado)
           +-- .claude/skills/new_gateway.md (se gateway sem parser completo)

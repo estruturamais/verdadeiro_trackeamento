@@ -203,8 +203,8 @@ EVENTOS CONFIGURADOS:
 **Se `modalidade_coleta: passo_a_passo`** — seguir o fluxo padrao abaixo.
 
 Delegar coleta para a skill especialista de cada plataforma confirmada:
-- Meta Ads → `.claude/skills/meta.md`
-- TikTok Ads → `.claude/skills/tiktok.md`
+- Meta Ads → `.claude/skills/meta_ads.md`
+- TikTok Ads → `.claude/skills/tiktok_ads.md`
 - GA4 → `.claude/skills/ga4.md`
 - Google Ads → `.claude/skills/google_ads.md`
 - Planilha → `.claude/skills/planilha.md`
@@ -216,7 +216,7 @@ Delegar coleta para a skill especialista de cada plataforma confirmada:
 | Publicos  | pixel_id, measurement_id, conversion_id, labels  | Config JSON no `SITE_CONFIG`     |
 | Secretos  | access_token (Meta), api_secret (GA4)             | `npx wrangler secret put`        |
 
-**EXCECAO TikTok:** o `access_token` do TikTok vai no **config JSON** (`platforms.tiktok.access_token`) — NAO como wrangler secret. O codigo le `tiktokConfig.access_token` sem fallback para env. Ver `.claude/skills/tiktok.md` para detalhes.
+**EXCECAO TikTok:** o `access_token` do TikTok vai no **config JSON** (`platforms.tiktok.access_token`) — NAO como wrangler secret. O codigo le `tiktokConfig.access_token` sem fallback para env. Ver `.claude/skills/tiktok_ads.md` para detalhes.
 
 Antes de coletar credenciais, orientar o usuario a desativar configuracoes automaticas que causam dupla contagem. Ver `.claude/references/disable-auto-tracking.md`.
 
@@ -392,9 +392,9 @@ Se algum evento retornou erro: diagnosticar e resolver antes de continuar para o
 ### 5.3 Validacao visual por plataforma
 
 Delegar para a skill especialista de cada plataforma confirmada:
-- Meta Ads → `.claude/skills/meta.md` (Events Manager > Testar Eventos)
+- Meta Ads → `.claude/skills/meta_ads.md` (Events Manager > Testar Eventos)
 - GA4 → `.claude/skills/ga4.md` (GA4 > DebugView)
-- TikTok Ads → `.claude/skills/tiktok.md` (Events Manager > Atividade recente)
+- TikTok Ads → `.claude/skills/tiktok_ads.md` (Events Manager > Atividade recente)
 - Google Ads → `.claude/skills/google_ads.md` (Google Tag Assistant ou painel com delay 3h)
 - Planilha → `.claude/skills/planilha.md` (verificar linha inserida na planilha + D1 com `platform = 'sheets'`)
 
