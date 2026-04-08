@@ -239,7 +239,7 @@
     }
 
     var existingParams = new URLSearchParams(newUrl.search);
-    var utms = getUtmData();
+    var pageUtms = getUtmData();
     var isExternal = getRootDomain(newUrl.hostname) !== getRootDomain(window.location.hostname);
 
     // User data from cookies (inline — avoids naming conflict with Module 4 getUserData)
@@ -248,10 +248,14 @@
     var name = getCookie('marca_name') || '';
     var userId = getAamaisId();
 
-    Object.keys(utms).forEach(function(key) {
-      if (utms[key]) {
-        existingParams.set(key, utms[key]);
-      }
+    // UTMs do link de destino tem prioridade; se ausentes, usa UTMs da pagina atual
+    var UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'utm_id'];
+    var utms = {};
+    UTM_KEYS.forEach(function(key) {
+      utms[key] = existingParams.get(key) || pageUtms[key] || '';
+    });
+    UTM_KEYS.forEach(function(key) {
+      if (utms[key]) existingParams.set(key, utms[key]);
     });
 
     if (isExternal) {
