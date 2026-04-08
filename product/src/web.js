@@ -246,7 +246,7 @@
     var email = getCookie('marca_email') || '';
     var phone = getCookie('marca_phone') || '';
     var name = getCookie('marca_name') || '';
-    var userId = getAamaisId();
+    var userId = __MARCA_USER__ || getAamaisId();
 
     // UTMs do link de destino tem prioridade; se ausentes, usa UTMs da pagina atual
     var UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'utm_id'];
