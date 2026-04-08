@@ -78,11 +78,90 @@ Gravar `modalidade_coleta: bulk` ou `modalidade_coleta: passo_a_passo` no `track
 
 > "Qual e o dominio do projeto? Ex: seusite.com.br"
 
-3. REGRA BLOQUEANTE — confirmar conta Cloudflare:
+3. Detectar computador novo e autenticar wrangler:
+
+   **a) Verificar se o ambiente local esta configurado:**
+
+   Verificar se `wrangler.toml` existe e esta preenchido (nao contem `{YOUR_DOMAIN}`).
+
+   - Se existe e esta preenchido: pular para o item **c** (wrangler whoami)
+   - Se NAO existe ou contem `{YOUR_DOMAIN}`: computador novo — executar os itens **b** e **c** abaixo, depois continuar para o passo 3.5
+
+   **b) Instalar dependencias e autenticar (computador novo):**
+
+   ```bash
+   npm install
+   ```
+
+   Em seguida, orientar antes de executar o login:
+
+   > "Antes de continuar, confirme que voce esta logado na conta CORRETA da Cloudflare no seu navegador — a conta onde o Worker esta hospedado. Se voce tiver mais de uma conta Cloudflare, faca logout das outras agora e deixe so a conta certa logada. Nao troque de navegador nem de aba durante a autorizacao. Me diga quando estiver pronto."
+
+   Aguardar confirmacao antes de executar:
+
+   ```bash
+   npx wrangler login
+   ```
+
+   Aguardar confirmacao de que o cliente autorizou no browser antes de continuar.
+
+   **c) REGRA BLOQUEANTE — confirmar conta Cloudflare:**
    - Executar `npx wrangler whoami`
    - Exibir resultado completo para o cliente
    - Perguntar: "Esta e a conta Cloudflare correta para este projeto? Confirma com S ou N."
    - Aguardar S antes de continuar. Se N: orientar `wrangler logout` → `wrangler login`.
+
+3.5. Reconstruir `wrangler.toml` (somente se computador novo detectado no passo 3a):
+
+   > "Vou buscar a configuracao atual do Worker diretamente da Cloudflare para reconstruir o ambiente local."
+
+   **a) Copiar o template:**
+   ```bash
+   cp wrangler.toml.example wrangler.toml
+   ```
+
+   **b) Buscar o database_id do D1:**
+   ```bash
+   npx wrangler d1 list
+   ```
+   Identificar a linha com `tracking_db` e extrair o `database_id` (UUID).
+
+   **c) Buscar bindings do Worker (inclui SITE_CONFIG) via wrangler api:**
+
+   Usar o `account_id` retornado pelo `wrangler whoami` do passo 3c:
+
+   ```bash
+   npx wrangler api /accounts/{ACCOUNT_ID}/workers/scripts/tracking-worker/bindings
+   ```
+
+   Parsear a resposta JSON:
+   - Localizar o item com `"type": "plain_text"` e `"name": "SITE_CONFIG"` → extrair o campo `"text"` (JSON completo do config)
+   - Localizar o item com `"type": "d1"` e `"name": "DB"` → confirmar ou corrigir o `database_id` do passo b
+
+   **d) Preencher o `wrangler.toml` com os dados obtidos:**
+
+   Abrir `wrangler.toml` e substituir:
+   - `{YOUR_DOMAIN}` → dominio informado no passo 2 (em todos os 4 patterns de route e nos `zone_name`)
+   - `{YOUR_D1_DATABASE_ID}` → `database_id` obtido
+   - `SITE_CONFIG = '{}'` → JSON completo extraido do binding (em uma unica linha, sem quebras)
+
+   Exibir o diff completo para confirmacao visual.
+
+   **e) Confirmar com o cliente antes de continuar:**
+
+   > "wrangler.toml reconstruido com os dados do Worker em producao:
+   >
+   > - Dominio: {dominio}
+   > - Database ID: {database_id}
+   > - SITE_CONFIG: configuracao encontrada com as plataformas {lista das chaves em platforms}
+   >
+   > Posso continuar?"
+
+   Aguardar confirmacao antes de prosseguir para o passo 4.
+
+   **Tratamento de erros:**
+   - Worker nao encontrado (HTTP 404): perguntar ao cliente se usou nome diferente para o Worker no setup original — ajustar o nome no comando e tentar novamente
+   - SITE_CONFIG ausente ou `{}`: o Worker foi deployado sem config — continuar para o passo 4 e reconstruir via queries D1 (as queries do passo 4b revelarao as plataformas ativas)
 
 4. Reconstruir `tracking_memory.md` a partir do estado implantado (Step 1 do fluxo de manutencao — executar antes de qualquer acao):
 
