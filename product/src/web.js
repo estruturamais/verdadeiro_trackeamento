@@ -142,10 +142,9 @@
     var utms = {};
 
     params.forEach(function(value, key) {
-      if (parametros.indexOf(key) === -1) {
-        parametros.push(key);
+      if (parametros.indexOf(key) !== -1) {
+        utms[key] = value;
       }
-      utms[key] = value;
     });
 
     if (referrer) {
@@ -226,6 +225,11 @@
     return null;
   }
 
+  function getRootDomain(hostname) {
+    var parts = hostname.split('.');
+    return parts.length >= 2 ? parts.slice(-2).join('.') : hostname;
+  }
+
   function addParamsToUrl(url) {
     var newUrl;
     try {
@@ -236,7 +240,7 @@
 
     var existingParams = new URLSearchParams(newUrl.search);
     var utms = getUtmData();
-    var isExternal = newUrl.hostname !== window.location.hostname;
+    var isExternal = getRootDomain(newUrl.hostname) !== getRootDomain(window.location.hostname);
 
     // User data from cookies (inline — avoids naming conflict with Module 4 getUserData)
     var email = getCookie('marca_email') || '';
@@ -262,6 +266,18 @@
       if (name) existingParams.set(userParams.name, name);
 
       if (gateway) {
+        // Remove params de tracking de todos os gateways para evitar contaminacao entre paginas
+        var UTM_SET = { utm_source: 1, utm_medium: 1, utm_campaign: 1, utm_term: 1, utm_content: 1, utm_id: 1 };
+        var PRESERVE_SET = { src: 1 };
+        var toClean = { indexador: 1, caminho: 1 };
+        for (var gn in GATEWAYS) {
+          if (!GATEWAYS.hasOwnProperty(gn)) continue;
+          var gc = GATEWAYS[gn];
+          if (!UTM_SET[gc.caminho] && !PRESERVE_SET[gc.caminho]) toClean[gc.caminho] = 1;
+          if (!UTM_SET[gc.indexador] && !PRESERVE_SET[gc.indexador]) toClean[gc.indexador] = 1;
+        }
+        Object.keys(toClean).forEach(function(p) { existingParams.delete(p); });
+
         var sckString = buildSckString(utms);
         existingParams.set(gateway.caminho, sckString);
         if (userId) {
