@@ -24,8 +24,8 @@ export async function handleServeWebJs(request, env) {
     debug: config.debug || false,
     ga4_measurement_id: config.platforms?.ga4?.measurement_id,
     meta_pixel_id: config.platforms?.meta?.pixel_id,
-    meta_pixel_id_purchase: config.platforms?.meta?.pixel_id_purchase,
-    meta_purchase_trigger_event: config.platforms?.meta?.purchase_trigger_event || 'lead',
+    meta_pixel_ids_mirror: config.platforms?.meta?.pixel_ids_mirror
+      ?? (config.platforms?.meta?.pixel_id_purchase ? [config.platforms.meta.pixel_id_purchase] : undefined),
     tiktok_pixel_id: config.platforms?.tiktok?.pixel_id,
     google_ads_conversion_id: config.platforms?.google_ads?.conversion_id,
     google_ads_label_contact: config.platforms?.google_ads?.conversion_label_contact,

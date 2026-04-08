@@ -76,27 +76,15 @@ export async function handleCollectEvent(request, env) {
   // 3. Distribuir para APIs (em paralelo)
   const promises = [];
 
-  // Meta CAPI — pixel padrao
+  // Meta CAPI — todos os pixels (primário + espelhos), mesmo eventName, mesmo eventId
   if (config.platforms?.meta?.pixel_id) {
-    promises.push(
-      sendMetaCAPI(config.platforms.meta, eventName, eventId, hashed, body, clientIp, userAgent, 'standard', env, siteId)
-    );
-  }
-
-  // Meta CAPI — pixel de vendas (dual-pixel)
-  if (config.platforms?.meta?.pixel_id_purchase) {
-    // PageView no pixel de vendas quando page_view
-    if (eventName === 'page_view') {
+    const metaConfig = config.platforms.meta;
+    const accessToken = metaConfig.access_token || env.META_ACCESS_TOKEN;
+    const mirrors = metaConfig.pixel_ids_mirror
+      ?? (metaConfig.pixel_id_purchase ? [metaConfig.pixel_id_purchase] : []);
+    for (const pixelId of [metaConfig.pixel_id, ...mirrors]) {
       promises.push(
-        sendMetaCAPI(config.platforms.meta, 'page_view', eventId, hashed, body, clientIp, userAgent, 'purchase', env, siteId)
-      );
-    }
-    // Purchase no pixel de vendas quando purchase_trigger_event
-    const purchaseTrigger = config.platforms.meta.purchase_trigger_event || 'lead';
-    if (eventName === purchaseTrigger) {
-      const purchaseEventId = body.purchase_event_id || eventId;
-      promises.push(
-        sendMetaCAPI(config.platforms.meta, 'purchase_from_trigger', purchaseEventId, hashed, body, clientIp, userAgent, 'purchase', env, siteId)
+        sendMetaCAPI(pixelId, accessToken, eventName, eventId, hashed, body, clientIp, userAgent, env, siteId)
       );
     }
   }

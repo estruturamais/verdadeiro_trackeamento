@@ -39,10 +39,10 @@
 
 ---
 
-## Dual-pixel Meta
+## Pixels espelho Meta
 
 - ativo: sim | nao
-- purchase_trigger_event: lead (default)
+- pixel_ids_mirror: []
 
 ---
 

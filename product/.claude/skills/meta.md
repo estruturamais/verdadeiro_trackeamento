@@ -13,12 +13,11 @@ Esta skill e carregada apenas quando o cliente confirma uso de Meta Ads no Step 
 Fonte: `META_EVENT_NAMES` em `src/worker/platforms/meta.js`
 
 ```
-page_view             → PageView
-contact               → Contact
-lead                  → Lead
-initiate_checkout     → InitiateCheckout
-purchase              → Purchase
-purchase_from_trigger → Purchase   (evento interno do dual-pixel — quando purchase_trigger_event dispara no pixel de vendas)
+page_view         → PageView
+contact           → Contact
+lead              → Lead
+initiate_checkout → InitiateCheckout
+purchase          → Purchase
 ```
 
 ---
@@ -32,29 +31,41 @@ purchase_from_trigger → Purchase   (evento interno do dual-pixel — quando pu
 
 ---
 
-## Dual-pixel — logica completa (CRITICO)
+## Pixels espelho — N pixels simultâneos
 
-### Web — `src/worker/routes/collect-event.js` linhas 74-97
+Quando o cliente usa mais de um pixel Meta, todos recebem **exatamente os mesmos eventos** em todos os canais — sem lógica condicional entre eles.
 
-**Pixel padrao (`pixel_id`):**
-- Recebe TODOS os eventos normalmente, para todos os eventNames
+### Configuração
 
-**Pixel de vendas (`pixel_id_purchase`) — acionado quando `pixel_id_purchase` esta configurado:**
-1. Quando `eventName === 'page_view'`: envia `page_view` (→ `PageView`) ao pixel de vendas
-2. Quando `eventName === purchaseTrigger` (default: `'lead'`, configuravel via `purchase_trigger_event`):
-   - Envia `purchase_from_trigger` (→ `Purchase`) ao pixel de vendas
-   - `purchaseEventId = body.purchase_event_id || eventId`
+```json
+{
+  "platforms": {
+    "meta": {
+      "pixel_id": "PIXEL_PRINCIPAL",
+      "pixel_ids_mirror": ["PIXEL2", "PIXEL3"]
+    }
+  }
+}
+```
 
-### Webhook — `src/worker/routes/collect-webhook.js` linhas 85-99
+- `pixel_id`: pixel primário (obrigatório)
+- `pixel_ids_mirror`: array de pixels espelho (opcional, pode ter 1, 2, 3... elementos)
+- Um único `META_ACCESS_TOKEN` cobre todos os pixels via fallback — token separado por pixel não é necessário
 
-**Pixel padrao (`pixel_id`):**
-- Recebe `Purchase`
+### Comportamento por canal
 
-**Pixel de vendas (`pixel_id_purchase`):**
-- Recebe `Purchase` (1a chamada)
-- Recebe `PageView` (2a chamada separada)
+| Canal | Quem recebe |
+|---|---|
+| Browser (fbq `init`) | Todos os pixels são inicializados na carga da página |
+| Browser (fbq `trackSingle`) | Todos os pixels recebem o evento com o mesmo `eventID` |
+| Server CAPI (beacon) | Todos os pixels recebem o mesmo `eventName` + `eventId` via CAPI |
+| Server CAPI (webhook) | Todos os pixels recebem `Purchase` via CAPI |
 
-Total: quando dual-pixel ativo em webhook, sao 3 chamadas CAPI para a Meta por compra (Purchase para pixel padrao + Purchase e PageView para pixel de vendas).
+**Deduplicação:** o mesmo `eventID` é enviado para todos os pixels. A Meta deduplica browser↔CAPI por pixel individualmente — cada pixel conta o evento uma vez.
+
+### Backward compatibility
+
+Clientes com `pixel_id_purchase` no config (formato antigo) continuam funcionando: o código trata `pixel_id_purchase` como `pixel_ids_mirror: [pixel_id_purchase]` automaticamente, sem necessidade de migrar configs existentes.
 
 ---
 
@@ -156,16 +167,15 @@ Notas sobre `custom_data`:
 
 ### Resolucao de credenciais no codigo
 
-```javascript
-// Pixel ID
-const pixelId = pixelType === 'purchase'
-  ? metaConfig.pixel_id_purchase
-  : metaConfig.pixel_id;
+As funções `sendMetaCAPI` e `sendMetaCAPIWebhook` recebem `pixelId` e `accessToken` diretamente. O loop em `event.js` e `webhook.js` resolve os pixels antes de chamar as funções:
 
-// Access Token (config tem prioridade sobre env)
-const accessToken = pixelType === 'purchase'
-  ? (metaConfig.access_token_purchase || env.META_ACCESS_TOKEN_PURCHASE)
-  : (metaConfig.access_token || env.META_ACCESS_TOKEN);
+```javascript
+const accessToken = metaConfig.access_token || env.META_ACCESS_TOKEN;
+const mirrors = metaConfig.pixel_ids_mirror
+  ?? (metaConfig.pixel_id_purchase ? [metaConfig.pixel_id_purchase] : []);
+for (const pixelId of [metaConfig.pixel_id, ...mirrors]) {
+  // chama sendMetaCAPI(pixelId, accessToken, ...)
+}
 ```
 
 ---
@@ -196,9 +206,10 @@ const accessToken = pixelType === 'purchase'
 - Events Manager > selecionar pixel > Configuracoes > Gerar token
 - **Expira em 60 dias** — requer renovacao manual periodica
 
-### Se dual-pixel ativo
-- Coletar Pixel ID e Access Token para o segundo pixel (pixel de vendas)
-- Repetir o mesmo processo acima para `pixel_id_purchase` e `META_ACCESS_TOKEN_PURCHASE`
+### Se pixels espelho ativos
+- Coletar o Pixel ID de cada pixel espelho
+- Um unico `META_ACCESS_TOKEN` cobre todos via fallback — token separado por pixel nao e necessario (caso comum quando todos estao no mesmo BM)
+- Se tokens distintos por pixel forem necessarios, configurar `META_ACCESS_TOKEN_MIRROR` como secret adicional (caso raro)
 
 ---
 
@@ -207,18 +218,30 @@ const accessToken = pixelType === 'purchase'
 | Campo | Destino | Wrangler secret name |
 |---|---|---|
 | `pixel_id` | Config JSON (`SITE_CONFIG`) | — |
-| `pixel_id_purchase` | Config JSON (`SITE_CONFIG`) | — |
-| `purchase_trigger_event` | Config JSON (`SITE_CONFIG`) — apenas quando `pixel_id_purchase` ativo | — |
+| `pixel_ids_mirror` | Config JSON (`SITE_CONFIG`) — array, omitir se nao tiver espelhos | — |
 | `access_token` | Wrangler secret | `META_ACCESS_TOKEN` |
-| `access_token_purchase` | Wrangler secret | `META_ACCESS_TOKEN_PURCHASE` |
-
-**Sobre `purchase_trigger_event`:** sem `pixel_id_purchase` configurado, este campo e ignorado silenciosamente. Omitir quando o cliente nao tiver segundo pixel ativo.
 
 **NUNCA incluir access tokens no Config JSON.** Configurar via:
 ```bash
 echo "{access_token}" | npx wrangler secret put META_ACCESS_TOKEN
-echo "{access_token_purchase}" | npx wrangler secret put META_ACCESS_TOKEN_PURCHASE
 ```
+
+Um unico secret cobre o pixel primario e todos os pixels espelho via fallback no codigo.
+
+---
+
+## Guard de duplo carregamento
+
+O script web tem um guard no topo do IIFE:
+
+```js
+if (window.__MARCA_TRACKING_LOADED__) return;
+window.__MARCA_TRACKING_LOADED__ = true;
+```
+
+Isso garante que, mesmo que o `<script>` seja incluido multiplas vezes na pagina (dois tags, plugin WordPress, page builder), o script so executa uma vez — nenhum pixel e inicializado duas vezes e nenhum evento e disparado em duplicata.
+
+**Diagnostico:** se o Meta Pixel Helper reportar eventos duplicados mesmo com o guard ativo, o disparo extra vem de fora do nosso script — tipicamente um plugin WordPress (PixelYourSite, Meta for WordPress), tema com pixel hardcoded no `header.php`, ou Google Tag Manager com tag de PageView configurada. Nesses casos, remover o pixel duplicado na origem resolve o problema.
 
 ---
 

@@ -40,7 +40,7 @@ O sistema le config via `env.SITE_CONFIG` (JSON string na secao `[vars]` do `wra
 
 Campos `clientConfig` expostos ao browser (sem secrets), extraidos de `serve-webjs.js`:
 - `site_id`, `google_ads_channel`, `debug`, `ga4_measurement_id`
-- `meta_pixel_id`, `meta_pixel_id_purchase`, `meta_purchase_trigger_event`
+- `meta_pixel_id`, `meta_pixel_ids_mirror` (array, omitido quando sem espelhos)
 - `tiktok_pixel_id`, `google_ads_conversion_id`
 - `google_ads_label_contact`, `google_ads_label_lead`
 - `triggers`, `cookies`, `geolocation`, `gateways_config`, `custom_data`, `collect_url`
@@ -76,14 +76,16 @@ Pergunta unica cobrindo todas as plataformas em formato de alternativas:
 > Responda com as letras. Exemplo: A, D"
 
 Se Meta Ads confirmado, fazer follow-up em formato de alternativa:
-> "Voce usa um pixel separado so para rastrear compras (pixel de vendas)?
+> "Voce usa mais de um pixel Meta simultaneamente (ex: pixel espelho, contingencia ou A/B)?
 >
-> **A** — Sim, tenho um pixel especifico para compras
-> **B** — Nao (ou nao sei)"
+> **A** — Sim, tenho mais de um pixel que deve receber os mesmos eventos
+> **B** — Nao (uso apenas um pixel)"
+
+Se A: perguntar quantos pixels e coletar os IDs de todos no Step 3 (coletar como lista).
 
 Apos resposta:
 - Registrar plataformas confirmadas no `tracking_memory.md`
-- Registrar dual-pixel (sim/nao) no `tracking_memory.md`
+- Registrar pixels espelho (sim/nao + lista de IDs) no `tracking_memory.md`
 - Informar que as skills especializadas foram carregadas para cada plataforma confirmada
 
 ---
@@ -234,10 +236,9 @@ Ler `config.example.json` para a estrutura base. Preencher com os dados do `trac
 
 **Regras:**
 - TikTok: incluir `access_token` no config JSON (excecao — ver Step 3 acima)
-- Meta: nao incluir `access_token` nem `access_token_purchase` — sao wrangler secrets
+- Meta: nao incluir `access_token` — e wrangler secret
 - GA4: nao incluir `api_secret` — e wrangler secret
-- Omitir `pixel_id_purchase` se o cliente nao tiver um segundo pixel configurado
-- Omitir `purchase_trigger_event` quando nao houver `pixel_id_purchase` — este campo so tem efeito com segundo pixel ativo (define qual evento browser dispara Purchase nesse segundo pixel)
+- Omitir `pixel_ids_mirror` se o cliente usar apenas um pixel Meta
 - Omitir plataformas nao confirmadas completamente
 - Incluir apenas os gateways detectados no Step 2 em `gateways` e `gateways_config`
 
@@ -260,10 +261,8 @@ Executar apenas os secrets das plataformas confirmadas. Explicar ao cliente o qu
 
 ```bash
 # Meta Ads (sempre que Meta confirmado)
+# Um unico token cobre o pixel primario e todos os espelhos via fallback
 echo "{access_token}" | npx wrangler secret put META_ACCESS_TOKEN
-
-# Meta Ads dual-pixel (apenas se dual-pixel ativo)
-echo "{access_token_purchase}" | npx wrangler secret put META_ACCESS_TOKEN_PURCHASE
 
 # GA4 (apenas se GA4 confirmado)
 echo "{api_secret}" | npx wrangler secret put GA4_API_SECRET
@@ -474,6 +473,17 @@ npx wrangler d1 execute tracking_db --remote --command "SELECT event_name, platf
 
 ---
 
+**⚠️ Importante — Remover integracoes antigas:**
+
+Para evitar eventos duplicados que prejudicam a otimizacao das campanhas, remova do site e das ferramentas:
+
+- **Pixels instalados via `<script>` no site**: Meta Pixel base code, TikTok Pixel base code
+- **Plugins de tracking** (WordPress ou construtores): PixelYourSite, Pixel Cat, Facebook for WordPress, TikTok for Business, qualquer plugin com "pixel" ou "conversions" no nome
+- **Tags de conversao no Google Tag Manager** para Meta, TikTok ou Google Ads — se usar GTM para outros fins, manter, mas remover as tags de evento de conversao
+- **Integracoes nativas dos gateways com Meta/TikTok**: dentro do painel Hotmart, Kiwify etc., desativar integracao direta com pixel se houver
+
+---
+
 **Apos a mensagem para o cliente, exibir bloco de referencia tecnica (para o operador):**
 
 ---
@@ -483,12 +493,22 @@ npx wrangler d1 execute tracking_db --remote --command "SELECT event_name, platf
 **Dominio trackeado:** `{dominio}`
 **Script instalado em:** todas as paginas de `{dominio}` onde o `<script src="https://{dominio}/tracking/web.js">` foi adicionado ao `<head>`
 
-**Plataformas configuradas e eventos por plataforma:**
+**Plataformas configuradas, eventos e canal de envio:**
 
-| Plataforma | Eventos configurados |
-|---|---|
-| {plataforma, ex: Meta Ads} | {lista de eventos canonicos, ex: page_view, lead, purchase} |
-| {plataforma} | {eventos} |
+| Plataforma | Eventos configurados | Canal de envio |
+|---|---|---|
+| Meta Ads | {lista de eventos canonicos, ex: page_view, lead, purchase} | Web (pixel) + Servidor (CAPI) |
+| TikTok Ads | {eventos} | Web (pixel) + Servidor (Events API) |
+| Google Analytics 4 | {eventos} | Servidor (Measurement Protocol) |
+| Google Ads | {eventos} | Web (gtag) |
+| Google Sheets | lead | Servidor |
+
+Incluir apenas as plataformas confirmadas no Step 1. Canal de envio e fixo por plataforma — nao variar.
+
+**Pre-requisitos para o tracking continuar funcionando:**
+- O script `<script src="https://{dominio}/tracking/web.js">` deve permanecer como **primeiro elemento do `<head>`** em todas as paginas. Remover ou mover o script interrompe o tracking imediatamente.
+- O dominio deve permanecer **apontado para a Cloudflare** (nameservers ou CNAME configurado). Migrar o DNS sem migrar o Worker derruba o tracking.
+- O Worker nao tem custo dentro do plano gratuito (100k requisicoes/dia). Nao e necessario renovar — funciona indefinidamente.
 
 **Sobre a cobertura do tracking:**
 O tracking funciona automaticamente em todas as paginas com o script instalado, desde que os elementos da pagina sigam os mesmos padroes detectados no Step 2: mesmos seletores de formulario, mesmo padrao de links de checkout para o gateway, e mesmas URLs ou titulos de paginas de obrigado. Paginas com estrutura diferente precisam de mapeamento adicional.
