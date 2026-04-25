@@ -40,7 +40,7 @@ O sistema le config via `env.SITE_CONFIG` (JSON string na secao `[vars]` do `wra
 
 Campos `clientConfig` expostos ao browser (sem secrets), extraidos de `serve-webjs.js`:
 - `site_id`, `google_ads_channel`, `debug`, `ga4_measurement_id`
-- `meta_pixel_id`, `meta_pixel_id_purchase`, `meta_purchase_trigger_event`
+- `meta_pixel_id`, `meta_pixel_ids_mirror` (array, omitido quando sem espelhos)
 - `tiktok_pixel_id`, `google_ads_conversion_id`
 - `google_ads_label_contact`, `google_ads_label_lead`
 - `triggers`, `cookies`, `geolocation`, `gateways_config`, `custom_data`, `collect_url`
@@ -63,20 +63,29 @@ Campos `clientConfig` expostos ao browser (sem secrets), extraidos de `serve-web
 
 ## Step 1 — Confirmar plataformas
 
-Pergunta unica cobrindo todas as plataformas:
+Pergunta unica cobrindo todas as plataformas em formato de alternativas:
 
-> "Voce usa alguma dessas plataformas? Pode marcar todas que usar:
-> - Meta Ads (Facebook / Instagram Ads)
-> - TikTok Ads
-> - Google Ads
-> - Google Analytics 4 (GA4)"
+> "Voce usa alguma dessas plataformas? Pode escolher mais de uma:
+>
+> **A** — Meta Ads (Facebook / Instagram Ads)
+> **B** — TikTok Ads
+> **C** — Google Ads
+> **D** — Google Analytics 4 (GA4)
+> **E** — Planilha Google Sheets (para salvar leads automaticamente)
+>
+> Responda com as letras. Exemplo: A, D"
 
-Se Meta Ads confirmado, fazer follow-up:
-> "Voce usa um pixel separado so para rastrear compras (pixel de vendas)? Se nao sabe, pode dizer nao."
+Se Meta Ads confirmado, fazer follow-up em formato de alternativa:
+> "Voce usa mais de um pixel Meta simultaneamente (ex: pixel espelho, contingencia ou A/B)?
+>
+> **A** — Sim, tenho mais de um pixel que deve receber os mesmos eventos
+> **B** — Nao (uso apenas um pixel)"
+
+Se A: perguntar quantos pixels e coletar os IDs de todos no Step 3 (coletar como lista).
 
 Apos resposta:
 - Registrar plataformas confirmadas no `tracking_memory.md`
-- Registrar dual-pixel (sim/nao) no `tracking_memory.md`
+- Registrar pixels espelho (sim/nao + lista de IDs) no `tracking_memory.md`
 - Informar que as skills especializadas foram carregadas para cada plataforma confirmada
 
 ---
@@ -153,11 +162,52 @@ Apresentar recomendacao e aguardar confirmacao ou ajuste do cliente.
 
 Verificar `tracking_memory.md` ANTES de pedir qualquer dado. Pedir apenas o que falta.
 
+### Verificar modalidade de coleta
+
+Ler `modalidade_coleta` do `tracking_memory.md`:
+
+**Se `modalidade_coleta: bulk`** — gerar e exibir o template abaixo, preenchendo dinamicamente com base nas plataformas confirmadas no Step 1 e eventos confirmados no Step 2. Aguardar o cliente devolver o template preenchido. Ao receber, gravar TODOS os dados de uma vez no `tracking_memory.md` antes de continuar.
+
+```
+==============================
+DADOS PARA CONFIGURAÇÃO DO TRACKING
+==============================
+
+DOMÍNIO: {dominio do Step 2}
+
+PLATAFORMAS: {listar as confirmadas no Step 1}
+
+PÁGINA DE TESTE (URL completa que você vai usar nos anúncios):
+→ 
+
+EVENTOS CONFIGURADOS:
+{listar eventos confirmados no Step 2 com descrição do trigger, ex:}
+→ page_view: toda vez que alguém abre a página
+→ lead: quando o formulário é enviado
+→ {demais eventos}
+
+--- {PLATAFORMA A, se confirmada} ---
+{campos específicos desta plataforma, conforme skill correspondente}
+→ {campo 1 público — ex: Pixel ID}:
+→ {campo 2 secreto — ex: Access Token}:
+
+--- {PLATAFORMA B, se confirmada} ---
+→ {campos desta plataforma}:
+
+==============================
+```
+
+> Dica de preenchimento a incluir na mensagem:
+> "Preencha os dados após cada '→' e cole aqui de volta. Para campos marcados como 'secreto', fique tranquilo — eles nao ficam gravados no chat e vao direto para um cofre seguro no servidor."
+
+**Se `modalidade_coleta: passo_a_passo`** — seguir o fluxo padrao abaixo.
+
 Delegar coleta para a skill especialista de cada plataforma confirmada:
-- Meta Ads → `.claude/skills/meta.md`
-- TikTok Ads → `.claude/skills/tiktok.md`
+- Meta Ads → `.claude/skills/meta_ads.md`
+- TikTok Ads → `.claude/skills/tiktok_ads.md`
 - GA4 → `.claude/skills/ga4.md`
 - Google Ads → `.claude/skills/google_ads.md`
+- Planilha → `.claude/skills/planilha.md`
 
 **Separacao obrigatoria:**
 
@@ -166,7 +216,7 @@ Delegar coleta para a skill especialista de cada plataforma confirmada:
 | Publicos  | pixel_id, measurement_id, conversion_id, labels  | Config JSON no `SITE_CONFIG`     |
 | Secretos  | access_token (Meta), api_secret (GA4)             | `npx wrangler secret put`        |
 
-**EXCECAO TikTok:** o `access_token` do TikTok vai no **config JSON** (`platforms.tiktok.access_token`) — NAO como wrangler secret. O codigo le `tiktokConfig.access_token` sem fallback para env. Ver `.claude/skills/tiktok.md` para detalhes.
+**EXCECAO TikTok:** o `access_token` do TikTok vai no **config JSON** (`platforms.tiktok.access_token`) — NAO como wrangler secret. O codigo le `tiktokConfig.access_token` sem fallback para env. Ver `.claude/skills/tiktok_ads.md` para detalhes.
 
 Antes de coletar credenciais, orientar o usuario a desativar configuracoes automaticas que causam dupla contagem. Ver `.claude/references/disable-auto-tracking.md`.
 
@@ -186,10 +236,9 @@ Ler `config.example.json` para a estrutura base. Preencher com os dados do `trac
 
 **Regras:**
 - TikTok: incluir `access_token` no config JSON (excecao — ver Step 3 acima)
-- Meta: nao incluir `access_token` nem `access_token_purchase` — sao wrangler secrets
+- Meta: nao incluir `access_token` — e wrangler secret
 - GA4: nao incluir `api_secret` — e wrangler secret
-- Omitir `pixel_id_purchase` se o cliente nao tiver um segundo pixel configurado
-- Omitir `purchase_trigger_event` quando nao houver `pixel_id_purchase` — este campo so tem efeito com segundo pixel ativo (define qual evento browser dispara Purchase nesse segundo pixel)
+- Omitir `pixel_ids_mirror` se o cliente usar apenas um pixel Meta
 - Omitir plataformas nao confirmadas completamente
 - Incluir apenas os gateways detectados no Step 2 em `gateways` e `gateways_config`
 
@@ -212,10 +261,8 @@ Executar apenas os secrets das plataformas confirmadas. Explicar ao cliente o qu
 
 ```bash
 # Meta Ads (sempre que Meta confirmado)
+# Um unico token cobre o pixel primario e todos os espelhos via fallback
 echo "{access_token}" | npx wrangler secret put META_ACCESS_TOKEN
-
-# Meta Ads dual-pixel (apenas se dual-pixel ativo)
-echo "{access_token_purchase}" | npx wrangler secret put META_ACCESS_TOKEN_PURCHASE
 
 # GA4 (apenas se GA4 confirmado)
 echo "{api_secret}" | npx wrangler secret put GA4_API_SECRET
@@ -313,13 +360,43 @@ npx wrangler d1 execute tracking_db --remote --command "SELECT event_name, platf
 
 Verificar: `status_code` 200 ou 204 para cada plataforma, nenhum `error_message`. Se algum evento falhar, diagnosticar e resolver antes de continuar.
 
+### 5.2a — Solicitar funil de conversao completo
+
+Apos confirmacao do page_view no browser, instruir o cliente a percorrer o funil completo:
+
+> "Otimo! Agora preciso que voce simule o caminho completo de um visitante no seu site — acesse a pagina, preencha o formulario (ou clique no botao de compra), conclua o processo de checkout se houver. Use dados de teste. Me avise quando terminar cada etapa."
+
+Aguardar confirmacao do cliente de que completou o funil.
+
+### 5.2b — Verificar e gravar eventos validados na memoria
+
+Apos o cliente confirmar que completou o funil, consultar o D1 para todos os eventos do site:
+
+```bash
+npx wrangler d1 execute tracking_db --remote --command "SELECT event_name, platform, channel, source, status_code, error_message, timestamp FROM events WHERE site_id = '{site_id}' ORDER BY timestamp DESC LIMIT 50;"
+```
+
+Com base no resultado, gravar imediatamente no `tracking_memory.md` a secao de validacao:
+
+```markdown
+## Validacao Step 5
+- data_validacao: {data e hora da consulta}
+- eventos_confirmados:
+  - {event_name} → {plataformas com status_code 200/204}: OK
+  - {event_name com erro} → {plataforma}: ERRO — {error_message}
+- status_geral: {OK se todos 200/204 | PARCIAL se algum falhou | ERRO se nenhum chegou}
+```
+
+Se algum evento retornou erro: diagnosticar e resolver antes de continuar para o Step 6.
+
 ### 5.3 Validacao visual por plataforma
 
 Delegar para a skill especialista de cada plataforma confirmada:
-- Meta Ads → `.claude/skills/meta.md` (Events Manager > Testar Eventos)
+- Meta Ads → `.claude/skills/meta_ads.md` (Events Manager > Testar Eventos)
 - GA4 → `.claude/skills/ga4.md` (GA4 > DebugView)
-- TikTok Ads → `.claude/skills/tiktok.md` (Events Manager > Atividade recente)
+- TikTok Ads → `.claude/skills/tiktok_ads.md` (Events Manager > Atividade recente)
 - Google Ads → `.claude/skills/google_ads.md` (Google Tag Assistant ou painel com delay 3h)
+- Planilha → `.claude/skills/planilha.md` (verificar linha inserida na planilha + D1 com `platform = 'sheets'`)
 
 ---
 
@@ -375,6 +452,8 @@ npx wrangler d1 execute tracking_db --remote --command "SELECT event_name, platf
 
 **NAO mencionar:** Cloudflare, Worker, D1, Wrangler, CAPI, Measurement Protocol, SHA-256, event_id, marca_user, endpoints, beacon.
 
+**Fonte dos dados para a mensagem:** usar `tracking_memory.md` — especificamente as secoes de plataformas confirmadas, eventos confirmados e `Validacao Step 5`. Nao raspar arquivos de config para montar a entrega; a memoria e a fonte canonica do que foi configurado e validado.
+
 **Estrutura da mensagem de entrega:**
 
 > Seu tracking esta configurado e funcionando.
@@ -394,6 +473,17 @@ npx wrangler d1 execute tracking_db --remote --command "SELECT event_name, platf
 
 ---
 
+**⚠️ Importante — Remover integracoes antigas:**
+
+Para evitar eventos duplicados que prejudicam a otimizacao das campanhas, remova do site e das ferramentas:
+
+- **Pixels instalados via `<script>` no site**: Meta Pixel base code, TikTok Pixel base code
+- **Plugins de tracking** (WordPress ou construtores): PixelYourSite, Pixel Cat, Facebook for WordPress, TikTok for Business, qualquer plugin com "pixel" ou "conversions" no nome
+- **Tags de conversao no Google Tag Manager** para Meta, TikTok ou Google Ads — se usar GTM para outros fins, manter, mas remover as tags de evento de conversao
+- **Integracoes nativas dos gateways com Meta/TikTok**: dentro do painel Hotmart, Kiwify etc., desativar integracao direta com pixel se houver
+
+---
+
 **Apos a mensagem para o cliente, exibir bloco de referencia tecnica (para o operador):**
 
 ---
@@ -403,12 +493,22 @@ npx wrangler d1 execute tracking_db --remote --command "SELECT event_name, platf
 **Dominio trackeado:** `{dominio}`
 **Script instalado em:** todas as paginas de `{dominio}` onde o `<script src="https://{dominio}/tracking/web.js">` foi adicionado ao `<head>`
 
-**Plataformas configuradas e eventos por plataforma:**
+**Plataformas configuradas, eventos e canal de envio:**
 
-| Plataforma | Eventos configurados |
-|---|---|
-| {plataforma, ex: Meta Ads} | {lista de eventos canonicos, ex: page_view, lead, purchase} |
-| {plataforma} | {eventos} |
+| Plataforma | Eventos configurados | Canal de envio |
+|---|---|---|
+| Meta Ads | {lista de eventos canonicos, ex: page_view, lead, purchase} | Web (pixel) + Servidor (CAPI) |
+| TikTok Ads | {eventos} | Web (pixel) + Servidor (Events API) |
+| Google Analytics 4 | {eventos} | Servidor (Measurement Protocol) |
+| Google Ads | {eventos} | Web (gtag) |
+| Google Sheets | lead | Servidor |
+
+Incluir apenas as plataformas confirmadas no Step 1. Canal de envio e fixo por plataforma — nao variar.
+
+**Pre-requisitos para o tracking continuar funcionando:**
+- O script `<script src="https://{dominio}/tracking/web.js">` deve permanecer como **primeiro elemento do `<head>`** em todas as paginas. Remover ou mover o script interrompe o tracking imediatamente.
+- O dominio deve permanecer **apontado para a Cloudflare** (nameservers ou CNAME configurado). Migrar o DNS sem migrar o Worker derruba o tracking.
+- O Worker nao tem custo dentro do plano gratuito (100k requisicoes/dia). Nao e necessario renovar — funciona indefinidamente.
 
 **Sobre a cobertura do tracking:**
 O tracking funciona automaticamente em todas as paginas com o script instalado, desde que os elementos da pagina sigam os mesmos padroes detectados no Step 2: mesmos seletores de formulario, mesmo padrao de links de checkout para o gateway, e mesmas URLs ou titulos de paginas de obrigado. Paginas com estrutura diferente precisam de mapeamento adicional.

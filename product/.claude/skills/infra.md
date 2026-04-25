@@ -214,21 +214,17 @@ curl https://{dominio}/tracking/web.js | head -5
 
 ---
 
-### 0.12 — Ativar retencao automatica de dados
+### 0.12 — Verificar retencao automatica de dados
 
-Explicar: "Vou ativar a limpeza automatica do banco de dados. Ela roda toda madrugada e apaga dados antigos para o banco nunca ultrapassar os limites do plano gratuito."
+Explicar: "O cron de limpeza automatica do banco ja vem ativo por padrao no `wrangler.toml`. Nao e necessario descomentar nada. O deploy que fizemos no step 0.10 ja registrou o cron na Cloudflare."
 
-Abrir o `wrangler.toml` e descomentar a secao `[triggers]`:
+**IMPORTANTE:** O cron funciona via sistema de trigger agendado interno da Cloudflare — ele **nao depende** do subdominio `workers.dev` estar ativo. A configuracao `workers_dev = false` e correta para producao e nao interfere de forma alguma na execucao do cron.
+
+O `wrangler.toml` ja contem:
 
 ```toml
 [triggers]
 crons = ["0 3 * * *"]
-```
-
-Em seguida, fazer re-deploy para registrar o cron:
-
-```bash
-npx wrangler deploy
 ```
 
 **O que a retencao faz (ja implementado no Worker):**

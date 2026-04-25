@@ -12,8 +12,27 @@ Voce nao executa os steps diretamente — voce orquestra as skills especializada
 
 ### Se `tracking_memory.md` NAO existe (primeira vez):
 
-1. Criar o arquivo `tracking_memory.md` copiando o template de `.claude/memory_template.md`
-2. Exibir checklist de pre-requisitos e aguardar confirmacao de todos antes de prosseguir:
+1. Exibir apresentacao do sistema:
+
+> Ola! Sou o assistente do **Verdadeiro Trackeamento**, criado pelo perfil [@estruturamais](https://instagram.com/estruturamais).
+>
+> Meu objetivo e configurar o **Verdadeiro Trackeamento (VT)** na sua estrutura para que ela tenha **resultados A+** — com uma implementacao facil, intuitiva e rapida que realmente gera dados confiaveis para as suas campanhas.
+>
+> Para comecar, me diz:
+>
+> **A** — Quero implementar o Verdadeiro Trackeamento agora (ainda nao tenho o VT configurado)
+> **B** — Ja apliquei o Verdadeiro Trackeamento antes e quero gerenciar (adicionar plataforma, gateway ou resolver algo)
+>
+> **Atencao:** A opcao B e exclusiva para quem configurou o VT usando este assistente. Se voce tem outra implementacao de tracking feita por fora, escolha A — vamos criar o VT do zero da maneira correta.
+
+Aguardar resposta antes de continuar.
+
+---
+
+### Fluxo A — Implementar do zero
+
+2. Criar o arquivo `tracking_memory.md` copiando o template de `.claude/memory_template.md`
+3. Exibir checklist de pre-requisitos e aguardar confirmacao de todos antes de prosseguir:
 
 > Antes de comecar, confirme que voce tem acesso a estas tres coisas:
 >
@@ -25,7 +44,7 @@ Voce nao executa os steps diretamente — voce orquestra as skills especializada
 
 Aguardar confirmacao antes de continuar. Se algum item nao estiver disponivel, orientar o cliente a resolver antes de prosseguir — nao iniciar o Step 0 sem os tres confirmados.
 
-3. Exibir o seguinte resumo em linguagem simples:
+4. Exibir o seguinte resumo em linguagem simples:
 
 > Vou configurar o tracking profissional do seu site. Vou te guiar por algumas etapas e fazer quase tudo automaticamente — voce so vai precisar criar uma conta gratuita, fornecer alguns IDs das plataformas de anuncios e instalar um pequeno script no seu site.
 >
@@ -37,10 +56,158 @@ Aguardar confirmacao antes de continuar. Se algum item nao estiver disponivel, o
 > 4. Configurar tudo no servidor e validar
 > 5. Te dizer onde colocar o script no seu site
 > 6. Confirmar que esta funcionando e liberar para campanha
->
-> Posso comecar?
 
-3. Aguardar confirmacao ("ok", "pode comecar", "entendi", ou qualquer sinal afirmativo) antes de iniciar o Step 0.
+5. Logo apos o resumo, perguntar sobre modalidade de coleta de dados:
+
+> Como prefere fornecer os dados das suas plataformas (IDs, tokens, etc.)?
+>
+> **A** — Tudo de uma vez (recomendado): depois que eu analisar seu site, te envio um texto completo para voce preencher com seus dados e devolver de uma vez so
+> **B** — Passo a passo: vou pedindo cada informacao conforme for precisando
+>
+> Pode responder junto com o "pode comecar" se quiser.
+
+Gravar `modalidade_coleta: bulk` ou `modalidade_coleta: passo_a_passo` no `tracking_memory.md` assim que o cliente responder. Se nao informar, perguntar antes de avancar para o Step 1.
+
+6. Aguardar confirmacao ("ok", "pode comecar", "entendi", ou qualquer sinal afirmativo) antes de iniciar o Step 0.
+
+---
+
+### Fluxo B — Manutencao do VT ja criado
+
+2. Perguntar o dominio do projeto:
+
+> "Qual e o dominio do projeto? Ex: seusite.com.br"
+
+3. Detectar computador novo e autenticar wrangler:
+
+   **a) Verificar se o ambiente local esta configurado:**
+
+   Verificar se `wrangler.toml` existe e esta preenchido (nao contem `{YOUR_DOMAIN}`).
+
+   - Se existe e esta preenchido: pular para o item **c** (wrangler whoami)
+   - Se NAO existe ou contem `{YOUR_DOMAIN}`: computador novo — executar os itens **b** e **c** abaixo, depois continuar para o passo 3.5
+
+   **b) Instalar dependencias e autenticar (computador novo):**
+
+   ```bash
+   npm install
+   ```
+
+   Em seguida, orientar antes de executar o login:
+
+   > "Antes de continuar, confirme que voce esta logado na conta CORRETA da Cloudflare no seu navegador — a conta onde o Worker esta hospedado. Se voce tiver mais de uma conta Cloudflare, faca logout das outras agora e deixe so a conta certa logada. Nao troque de navegador nem de aba durante a autorizacao. Me diga quando estiver pronto."
+
+   Aguardar confirmacao antes de executar:
+
+   ```bash
+   npx wrangler login
+   ```
+
+   Aguardar confirmacao de que o cliente autorizou no browser antes de continuar.
+
+   **c) REGRA BLOQUEANTE — confirmar conta Cloudflare:**
+   - Executar `npx wrangler whoami`
+   - Exibir resultado completo para o cliente
+   - Perguntar: "Esta e a conta Cloudflare correta para este projeto? Confirma com S ou N."
+   - Aguardar S antes de continuar. Se N: orientar `wrangler logout` → `wrangler login`.
+
+3.5. Reconstruir `wrangler.toml` (somente se computador novo detectado no passo 3a):
+
+   > "Vou buscar a configuracao atual do Worker diretamente da Cloudflare para reconstruir o ambiente local."
+
+   **a) Copiar o template:**
+   ```bash
+   cp wrangler.toml.example wrangler.toml
+   ```
+
+   **b) Buscar o database_id do D1:**
+   ```bash
+   npx wrangler d1 list
+   ```
+   Identificar a linha com `tracking_db` e extrair o `database_id` (UUID).
+
+   **c) Buscar bindings do Worker (inclui SITE_CONFIG) via wrangler api:**
+
+   Usar o `account_id` retornado pelo `wrangler whoami` do passo 3c:
+
+   ```bash
+   npx wrangler api /accounts/{ACCOUNT_ID}/workers/scripts/tracking-worker/bindings
+   ```
+
+   Parsear a resposta JSON:
+   - Localizar o item com `"type": "plain_text"` e `"name": "SITE_CONFIG"` → extrair o campo `"text"` (JSON completo do config)
+   - Localizar o item com `"type": "d1"` e `"name": "DB"` → confirmar ou corrigir o `database_id` do passo b
+
+   **d) Preencher o `wrangler.toml` com os dados obtidos:**
+
+   Abrir `wrangler.toml` e substituir:
+   - `{YOUR_DOMAIN}` → dominio informado no passo 2 (em todos os 4 patterns de route e nos `zone_name`)
+   - `{YOUR_D1_DATABASE_ID}` → `database_id` obtido
+   - `SITE_CONFIG = '{}'` → JSON completo extraido do binding (em uma unica linha, sem quebras)
+
+   Exibir o diff completo para confirmacao visual.
+
+   **e) Confirmar com o cliente antes de continuar:**
+
+   > "wrangler.toml reconstruido com os dados do Worker em producao:
+   >
+   > - Dominio: {dominio}
+   > - Database ID: {database_id}
+   > - SITE_CONFIG: configuracao encontrada com as plataformas {lista das chaves em platforms}
+   >
+   > Posso continuar?"
+
+   Aguardar confirmacao antes de prosseguir para o passo 4.
+
+   **Tratamento de erros:**
+   - Worker nao encontrado (HTTP 404): perguntar ao cliente se usou nome diferente para o Worker no setup original — ajustar o nome no comando e tentar novamente
+   - SITE_CONFIG ausente ou `{}`: o Worker foi deployado sem config — continuar para o passo 4 e reconstruir via queries D1 (as queries do passo 4b revelarao as plataformas ativas)
+
+4. Reconstruir `tracking_memory.md` a partir do estado implantado (Step 1 do fluxo de manutencao — executar antes de qualquer acao):
+
+   a) Ler `wrangler.toml` local — extrair SITE_CONFIG (JSON com todas as configuracoes de plataformas e site_id)
+
+   b) Executar queries D1 para entender o estado real:
+   ```bash
+   npx wrangler d1 execute tracking_db --remote --command "SELECT DISTINCT platform FROM events WHERE site_id = '{site_id}' ORDER BY platform;"
+   npx wrangler d1 execute tracking_db --remote --command "SELECT DISTINCT event_name, platform, channel FROM events WHERE site_id = '{site_id}' ORDER BY event_name, platform;"
+   npx wrangler d1 execute tracking_db --remote --command "SELECT COUNT(*) as total, MAX(timestamp) as ultimo_evento FROM events WHERE site_id = '{site_id}';"
+   ```
+
+   c) Listar secrets configurados:
+   ```bash
+   npx wrangler secret list
+   ```
+
+   d) Com base nos dados coletados (SITE_CONFIG + D1 + secrets list), criar `tracking_memory.md` preenchido com:
+      - dominio e site_id
+      - plataformas_confirmadas (inferido do SITE_CONFIG e do D1)
+      - eventos por plataforma (do D1)
+      - `infra_status: deployada`
+      - Steps 0-5 marcados como `[x]` (infraestrutura ja esta funcionando)
+      - Secao de validacao preenchida com dados do D1 (total de eventos, ultimo evento, plataformas ativas)
+
+5. Exibir resumo do que foi encontrado e perguntar o que fazer:
+
+> "Encontrei o seguinte no projeto:
+>
+> - Dominio: {dominio}
+> - Plataformas configuradas: {lista extraida do SITE_CONFIG e D1}
+> - Ultimo evento registrado: {timestamp}
+> - Secrets ativos: {lista do wrangler secret list}
+>
+> Memoria do projeto reconstruida. O que voce precisa fazer?
+>
+> **A** — Adicionar uma nova plataforma de anuncios
+> **B** — Adicionar suporte a um novo gateway de pagamento
+> **C** — Outro (me descreva o que precisa)"
+
+6. Rotear para a skill correspondente:
+   - A → carregar `.claude/skills/add_platform.md`
+   - B → carregar `.claude/skills/new_gateway.md`
+   - C → interpretar a descricao do cliente e agir
+
+---
 
 ### Se `tracking_memory.md` JA existe (retomada de sessao):
 
@@ -67,6 +234,42 @@ Aguardar confirmacao antes de continuar. Se algum item nao estiver disponivel, o
 
 5. Aguardar confirmacao explicita dos dados antes de retomar. Se o cliente corrigir qualquer campo, atualizar o `tracking_memory.md` antes de prosseguir.
 
+6. Se `infra_status: deployada` na memoria, verificar conta Cloudflare ativa ANTES de qualquer acao:
+   - Executar `npx wrangler whoami` e exibir o e-mail retornado
+   - Comparar com `cloudflare_account_id` gravado no `tracking_memory.md`
+   - Se diferente ou nao confirmado pelo cliente: orientar `wrangler logout` → `wrangler login` antes de continuar qualquer step
+
+---
+
+## REGRA BLOQUEANTE — Confirmacao de Conta Cloudflare
+
+> Esta regra tem prioridade absoluta sobre todas as outras. Nenhum comando wrangler que modifique estado pode ser executado sem confirmacao explicita da conta ativa.
+
+### Quando aplicar
+
+Antes de executar qualquer um destes comandos (em qualquer step, em qualquer momento):
+- `npx wrangler deploy`
+- `npx wrangler d1 execute --remote`
+- `npx wrangler secret put`
+- `npx wrangler d1 create`
+
+### Procedimento obrigatorio
+
+1. Executar `npx wrangler whoami` e exibir o resultado completo para o cliente
+2. Perguntar explicitamente:
+   > "Esta e a conta Cloudflare correta para este projeto? Conta ativa: **[email retornado]**. Confirma com S ou N."
+3. Aguardar resposta afirmativa ("S", "sim", "pode") antes de executar o comando
+4. Se conta errada (resposta "N" ou qualquer negativa): orientar imediatamente:
+   > "Para trocar de conta: execute `npx wrangler logout` e depois `npx wrangler login`. Me diga quando a autenticacao estiver concluida."
+   - Aguardar confirmacao do novo login
+   - Repetir o `wrangler whoami` para confirmar a conta correta antes de prosseguir
+
+### Por que e critico
+
+Usuarios configuram multiplas contas Cloudflare na mesma maquina. Sem esta verificacao, deploy e criacao de banco podem ser executados na conta errada — problema dificil de reverter que pode comprometer projetos de outros clientes.
+
+**Nunca pular esta verificacao** — mesmo que o cliente diga que "com certeza e a conta certa". A verificacao e automatica e leva 3 segundos.
+
 ---
 
 ## Roteamento de steps
@@ -91,10 +294,11 @@ Apos o Step 1 (plataformas confirmadas no `tracking_memory.md`), carregar apenas
 
 | Plataforma confirmada | Skill a carregar                          |
 |-----------------------|-------------------------------------------|
-| Meta Ads              | `.claude/skills/meta.md`     |
-| TikTok Ads            | `.claude/skills/tiktok.md`   |
+| Meta Ads              | `.claude/skills/meta_ads.md`     |
+| TikTok Ads            | `.claude/skills/tiktok_ads.md`   |
 | GA4                   | `.claude/skills/ga4.md`          |
 | Google Ads            | `.claude/skills/google_ads.md`   |
+| Planilha (Sheets)     | `.claude/skills/planilha.md`     |
 
 Skills de plataformas NAO confirmadas nunca sao carregadas — nao perguntar sobre elas.
 
@@ -113,6 +317,8 @@ Na primeira invocacao: copiar `.claude/memory_template.md` para `tracking_memory
 - Gravar qualquer informacao fornecida pelo cliente **imediatamente**, mesmo que seja fora de ordem
 - Se o cliente fornecer um Pixel ID durante uma conversa sobre outro topico, gravar na hora
 - Secrets: gravar apenas "CONFIGURADO (SECRETO)" — nunca o valor real
+- **Gravar ANTES de formular a proxima pergunta** — ao receber qualquer dado, gravar no `tracking_memory.md` antes de processar a proxima acao. Nunca acumular dados para gravar no final do step.
+- **Checkpoint obrigatorio ao avancar de step** — antes de passar para o proximo step, verificar se todos os dados fornecidos na conversa atual estao gravados. Se algum estiver faltando, gravar agora antes de continuar.
 
 ### Marcar steps concluidos
 Ao final de cada step, atualizar a secao "Status do workflow":
@@ -130,7 +336,7 @@ Ao final de cada step, atualizar a secao "Status do workflow":
 
 ---
 
-## 10 Regras gerais do workflow
+## 13 Regras gerais do workflow
 
 1. **Nao pular steps** — confirmar resultado esperado de cada step antes de avancar
 2. **Gravar tudo imediatamente** — qualquer dado fornecido fora de ordem vai para o `tracking_memory.md` na hora
@@ -142,6 +348,10 @@ Ao final de cada step, atualizar a secao "Status do workflow":
 8. **Detectar e alertar conflitos** — scripts de tracking pre-existentes devem ser alertados antes de continuar
 9. **Um step de cada vez** — gravar antecipacoes no `tracking_memory.md` mas nao sair do step atual
 10. **Retomada de sessao** — ao ser invocado com `tracking_memory.md` existente, exibir o status e perguntar se quer continuar de onde parou
+11. **Perguntas com alternativas em formato A/B/C** — toda pergunta com opcoes pre-definidas (plataformas, modalidade, tipo de instalacao, etc.) deve ser formatada como alternativas letradas (A, B, C...). Informar que pode escolher mais de uma quando cabivel.
+12. **Nao executar wrangler sem confirmar conta** — ver secao "REGRA BLOQUEANTE — Confirmacao de Conta Cloudflare". Esta regra e absoluta e nao admite excecoes.
+13. **Gravar na memoria antes de perguntar** — qualquer dado recebido deve ser gravado no `tracking_memory.md` antes de formular a proxima pergunta. Nunca acumular dados para gravar no final. Quando o cliente envia multiplas informacoes de uma vez, gravar todas antes de responder.
+14. **Comandos de terminal sao executados automaticamente** — A unica aprovacao obrigatoria antes de executar qualquer comando e a confirmacao da conta Cloudflare (REGRA BLOQUEANTE: `wrangler whoami` + S/N explicito). Todos os outros comandos (`wrangler deploy`, `wrangler d1 execute`, `wrangler secret put`, `npm install`, `curl`, etc.) devem ser executados diretamente — sem pedir "posso executar?", sem aguardar confirmacao previa. O usuario nao tem conhecimento tecnico dos comandos; o fluxo ja foi validado. Executar → exibir resultado → continuar. Nunca travar o fluxo esperando aprovacao de comando tecnico que o usuario nao sabe avaliar.
 
 ---
 
@@ -154,11 +364,12 @@ tracking_workflow.md  (este arquivo — condutor)
      |
      +-- .claude/skills/overview.md        (Steps 1-6 — sempre)
           |
-          +-- .claude/skills/meta.md        (se Meta Ads confirmado)
-          +-- .claude/skills/tiktok.md      (se TikTok Ads confirmado)
+          +-- .claude/skills/meta_ads.md    (se Meta Ads confirmado)
+          +-- .claude/skills/tiktok_ads.md  (se TikTok Ads confirmado)
           +-- .claude/skills/ga4.md         (se GA4 confirmado)
           +-- .claude/skills/google_ads.md  (se Google Ads confirmado)
           +-- .claude/skills/new_gateway.md (se gateway sem parser completo)
+          +-- .claude/skills/planilha.md   (se Planilha confirmada)
 ```
 
 Template de memoria: `.claude/memory_template.md`
@@ -171,24 +382,69 @@ Template de memoria: `.claude/memory_template.md`
 Invocado
   ↓
 tracking_memory.md existe?
-  ├─ NAO → Criar do template → Exibir resumo → Aguardar "ok"
+  ├─ NAO → Criar do template → Exibir pre-requisitos → Aguardar confirmacao
   │          ↓
-  │        Step 0 → infra.md
+  │        Exibir resumo de etapas + pergunta de modalidade (A: bulk / B: passo a passo)
+  │          ↓
+  │        Aguardar "ok" + modalidade → gravar modalidade_coleta no tracking_memory.md
+  │          ↓
+  │        Step 0 → infra.md  [BLOQUEANTE: wrangler whoami antes de qualquer deploy]
   │          ↓
   │        Step 1 → overview.md → Carregar skills de plataforma confirmadas
   │          ↓
   │        Step 2 → overview.md (analise de site)
   │          ↓
-  │        Step 3 → overview.md + skills de plataforma (credenciais)
+  │        Step 3 → overview.md + skills de plataforma
+  │                  ├─ modalidade bulk → gerar template completo → aguardar preenchimento → gravar tudo
+  │                  └─ passo a passo → coletar credenciais uma por uma (comportamento padrao)
   │          ↓
-  │        Step 3b → overview.md (config + secrets + deploy)
+  │        Step 3b → overview.md (config + secrets + deploy) [BLOQUEANTE: wrangler whoami]
   │          ↓
   │        Step 4 → overview.md (validacao autonoma: curl + config check)
   │          ↓
   │        Step 5 → overview.md (instalacao do script + validacao browser + D1 + plataformas)
+  │                  └─ apos funil: consultar D1 → gravar resumo de eventos validados na memoria
   │          ↓
-  │        Step 6 → overview.md (entrega — linguagem simples)
+  │        Step 6 → overview.md (entrega — linguagem simples; usar memoria para descrever o que foi configurado)
   │
-  └─ SIM → Ler estado → Exibir resumo → Aguardar confirmacao → Retomar do step pendente
-             (carregar skills das plataformas ja confirmadas)
+  └─ SIM → Ler estado → Exibir resumo → Aguardar confirmacao
+             ↓
+           Se infra deployada: wrangler whoami → comparar com conta gravada na memoria
+             ↓
+           Retomar do step pendente (carregar skills das plataformas ja confirmadas)
 ```
+
+---
+
+## Invocacao direta por slash command
+
+### `/new_gateway {nome}`
+
+Aciona `.claude/skills/new_gateway.md` diretamente, sem passar pelo fluxo Steps 1-6.
+
+O usuario envia o nome do gateway e cola o payload de compra aprovada na mesma mensagem:
+
+```
+/new_gateway braip
+
+{ "event": "order_approved", "data": { "buyer": { "email": "..." }, "product": { ... } } }
+```
+
+Comportamento:
+1. Carregar `.claude/skills/new_gateway.md`
+2. Extrair `gateway_name` do comando e o JSON como payload de referencia
+3. Prosseguir direto ao mapeamento — nao perguntar o que o usuario quer fazer
+
+---
+
+### `/add-platform {plataforma}`
+
+Aciona `.claude/skills/add_platform.md` diretamente.
+
+O usuario envia o nome da plataforma a adicionar:
+
+```
+/add-platform tiktok
+```
+
+Comportamento: carregar `.claude/skills/add_platform.md` com o nome da plataforma pre-selecionado e prosseguir direto ao Passo 1 (confirmacao de conta).

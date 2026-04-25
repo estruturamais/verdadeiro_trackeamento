@@ -81,18 +81,17 @@ export async function handleCollectEvent(request, env, ctx) {
   // 3. Distribuir para APIs (em paralelo)
   const promises = [];
 
-  // Meta CAPI — pixel padrao
+  // Meta CAPI — todos os pixels (primário + espelhos), mesmo eventName, mesmo eventId
   if (config.platforms?.meta?.pixel_id) {
-    promises.push(
-      sendMetaCAPI(config.platforms.meta, eventName, eventId, hashed, body, clientIp, userAgent, 'standard', env, siteId)
-    );
-  }
-
-  // Meta CAPI — segundo pixel (A/B, todos os eventos espelhados)
-  if (config.platforms?.meta?.pixel_id_purchase) {
-    promises.push(
-      sendMetaCAPI(config.platforms.meta, eventName, eventId, hashed, body, clientIp, userAgent, 'purchase', env, siteId)
-    );
+    const metaConfig = config.platforms.meta;
+    const accessToken = metaConfig.access_token || env.META_ACCESS_TOKEN;
+    const mirrors = metaConfig.pixel_ids_mirror
+      ?? (metaConfig.pixel_id_purchase ? [metaConfig.pixel_id_purchase] : []);
+    for (const pixelId of [metaConfig.pixel_id, ...mirrors]) {
+      promises.push(
+        sendMetaCAPI(pixelId, accessToken, eventName, eventId, hashed, body, clientIp, userAgent, env, siteId)
+      );
+    }
   }
 
   // TikTok Events API

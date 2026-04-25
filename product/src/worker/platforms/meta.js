@@ -2,8 +2,7 @@ import { logEvent } from '../shared/logger.js';
 
 const META_EVENT_NAMES = {
   page_view: 'PageView', contact: 'Contact', lead: 'Lead',
-  initiate_checkout: 'InitiateCheckout', purchase: 'Purchase',
-  purchase_from_trigger: 'Purchase'
+  initiate_checkout: 'InitiateCheckout', purchase: 'Purchase'
 };
 
 function cleanUserData(userData) {
@@ -15,14 +14,7 @@ function cleanUserData(userData) {
   return userData;
 }
 
-export async function sendMetaCAPI(metaConfig, eventName, eventId, hashed, body, clientIp, userAgent, pixelType, env, siteId) {
-  const pixelId = pixelType === 'purchase'
-    ? metaConfig.pixel_id_purchase
-    : metaConfig.pixel_id;
-  const accessToken = pixelType === 'purchase'
-    ? (metaConfig.access_token_purchase || env.META_ACCESS_TOKEN_PURCHASE)
-    : (metaConfig.access_token || env.META_ACCESS_TOKEN);
-
+export async function sendMetaCAPI(pixelId, accessToken, eventName, eventId, hashed, body, clientIp, userAgent, env, siteId) {
   if (!pixelId || !accessToken) {
     const missing = !pixelId ? 'pixel_id' : 'access_token';
     const metaEventName = META_EVENT_NAMES[eventName] || eventName;
@@ -31,7 +23,7 @@ export async function sendMetaCAPI(metaConfig, eventName, eventId, hashed, body,
       platform: 'meta_ads',
       channel: 'web', source: 'collect',
       status_code: 0, request_ms: 0,
-      error_message: `missing_${missing}_for_${pixelType}`,
+      error_message: `missing_${missing}`,
       response_payload: '',
       marca_user: body.marca_user || '',
       source_ip: clientIp, user_agent: userAgent
@@ -107,14 +99,7 @@ export async function sendMetaCAPI(metaConfig, eventName, eventId, hashed, body,
   });
 }
 
-export async function sendMetaCAPIWebhook(metaConfig, eventName, hashed, merged, pixelType, env, siteId) {
-  const pixelId = pixelType === 'purchase'
-    ? metaConfig.pixel_id_purchase
-    : metaConfig.pixel_id;
-  const accessToken = pixelType === 'purchase'
-    ? (metaConfig.access_token_purchase || env.META_ACCESS_TOKEN_PURCHASE)
-    : (metaConfig.access_token || env.META_ACCESS_TOKEN);
-
+export async function sendMetaCAPIWebhook(pixelId, accessToken, eventName, hashed, merged, env, siteId) {
   if (!pixelId || !accessToken) {
     const missing = !pixelId ? 'pixel_id' : 'access_token';
     await logEvent(env.DB, {
@@ -122,7 +107,7 @@ export async function sendMetaCAPIWebhook(metaConfig, eventName, hashed, merged,
       platform: 'meta_ads',
       channel: 'webhook', source: `${merged.gateway || 'unknown'}`,
       status_code: 0, request_ms: 0,
-      error_message: `missing_${missing}_for_${pixelType}`,
+      error_message: `missing_${missing}`,
       response_payload: '',
       marca_user: merged.marca_user || '',
       source_ip: merged.ip || '', user_agent: merged.user_agent || ''

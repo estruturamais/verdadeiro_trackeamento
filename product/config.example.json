@@ -22,13 +22,18 @@
       "conversion_label_purchase": "MnOpQr789"
     }
   },
-  "gateways": ["hotmart", "kiwify"],
+  "gateways": ["hotmart", "kiwify", "hubla"],
   "gateways_config": {
     "hotmart": {
       "domains": ["hotmart.com", "pay.hotmart.com"],
       "caminho": "sck",
       "indexador": "xcod",
       "user_params": { "email": "email", "phone": "phonenumber", "name": "name" }
+    },
+    "hubla": {
+      "domains": ["hubla.com.br", "pay.hubla.com.br", "checkout.hubla.com.br"],
+      "caminho": "caminho",
+      "indexador": "xcod"
     }
   },
   "triggers": {

@@ -1,11 +1,15 @@
 (function() {
   'use strict';
 
+  // Guard: garante que o script só executa uma vez por página,
+  // mesmo que o <script> seja incluído múltiplas vezes.
+  if (window.__MARCA_TRACKING_LOADED__) return;
+  window.__MARCA_TRACKING_LOADED__ = true;
+
   /*__CONFIG__*/
   /*__MARCA_USER__*/
 
   var __CONFIG__ = (typeof __CONFIG__ !== 'undefined') ? __CONFIG__ : {};
-  var __PURCHASE_EVENT_ID__ = '';
 
   // ============================================================
   // MODULE 1 — Identification (SPEC 2.1)
@@ -121,11 +125,6 @@
       domains: ['payt.com.br', 'checkout.payt.com.br'],
       caminho: 'caminho',
       indexador: 'src'
-    },
-    hubla: {
-      domains: ['hubla.com.br', 'pay.hubla.com.br', 'checkout.hubla.com.br'],
-      caminho: 'caminho',
-      indexador: 'xcod'
     }
   };
 
@@ -142,9 +141,10 @@
     var utms = {};
 
     params.forEach(function(value, key) {
-      if (parametros.indexOf(key) !== -1) {
-        utms[key] = value;
+      if (parametros.indexOf(key) === -1) {
+        parametros.push(key);
       }
+      utms[key] = value;
     });
 
     if (referrer) {
@@ -225,11 +225,6 @@
     return null;
   }
 
-  function getRootDomain(hostname) {
-    var parts = hostname.split('.');
-    return parts.length >= 2 ? parts.slice(-2).join('.') : hostname;
-  }
-
   function addParamsToUrl(url) {
     var newUrl;
     try {
@@ -239,23 +234,19 @@
     }
 
     var existingParams = new URLSearchParams(newUrl.search);
-    var pageUtms = getUtmData();
-    var isExternal = getRootDomain(newUrl.hostname) !== getRootDomain(window.location.hostname);
+    var utms = getUtmData();
+    var isExternal = newUrl.hostname !== window.location.hostname;
 
     // User data from cookies (inline — avoids naming conflict with Module 4 getUserData)
     var email = getCookie('marca_email') || '';
     var phone = getCookie('marca_phone') || '';
     var name = getCookie('marca_name') || '';
-    var userId = __MARCA_USER__ || getAamaisId();
+    var userId = getAamaisId();
 
-    // UTMs do link de destino tem prioridade; se ausentes, usa UTMs da pagina atual
-    var UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'utm_id'];
-    var utms = {};
-    UTM_KEYS.forEach(function(key) {
-      utms[key] = existingParams.get(key) || pageUtms[key] || '';
-    });
-    UTM_KEYS.forEach(function(key) {
-      if (utms[key]) existingParams.set(key, utms[key]);
+    Object.keys(utms).forEach(function(key) {
+      if (utms[key]) {
+        existingParams.set(key, utms[key]);
+      }
     });
 
     if (isExternal) {
@@ -270,18 +261,6 @@
       if (name) existingParams.set(userParams.name, name);
 
       if (gateway) {
-        // Remove params de tracking de todos os gateways para evitar contaminacao entre paginas
-        var UTM_SET = { utm_source: 1, utm_medium: 1, utm_campaign: 1, utm_term: 1, utm_content: 1, utm_id: 1 };
-        var PRESERVE_SET = { src: 1 };
-        var toClean = { indexador: 1, caminho: 1 };
-        for (var gn in GATEWAYS) {
-          if (!GATEWAYS.hasOwnProperty(gn)) continue;
-          var gc = GATEWAYS[gn];
-          if (!UTM_SET[gc.caminho] && !PRESERVE_SET[gc.caminho]) toClean[gc.caminho] = 1;
-          if (!UTM_SET[gc.indexador] && !PRESERVE_SET[gc.indexador]) toClean[gc.indexador] = 1;
-        }
-        Object.keys(toClean).forEach(function(p) { existingParams.delete(p); });
-
         var sckString = buildSckString(utms);
         existingParams.set(gateway.caminho, sckString);
         if (userId) {
@@ -551,7 +530,7 @@
 
     var userData = getUserDataFromCookies();
 
-    fbq('init', __CONFIG__.meta_pixel_id, {
+    var metaUserData = {
       em: userData.email,
       ph: userData.phone,
       fn: userData.first_name,
@@ -560,19 +539,13 @@
       st: userData.state,
       country: userData.country,
       external_id: __MARCA_USER__
-    });
+    };
 
-    if (__CONFIG__.meta_pixel_id_purchase) {
-      fbq('init', __CONFIG__.meta_pixel_id_purchase, {
-        em: userData.email,
-        ph: userData.phone,
-        fn: userData.first_name,
-        ln: userData.last_name,
-        ct: userData.city,
-        st: userData.state,
-        country: userData.country,
-        external_id: __MARCA_USER__
-      });
+    fbq('init', __CONFIG__.meta_pixel_id, metaUserData);
+
+    var mirrorIds = __CONFIG__.meta_pixel_ids_mirror || [];
+    for (var i = 0; i < mirrorIds.length; i++) {
+      fbq('init', mirrorIds[i], metaUserData);
     }
   }
 
@@ -832,11 +805,8 @@
 
       utm_data: getUtmData(),
 
-      custom_data: customData,
-
-      purchase_event_id: __PURCHASE_EVENT_ID__ || ''
+      custom_data: customData
     };
-    __PURCHASE_EVENT_ID__ = '';
 
     var url = __CONFIG__.collect_url || '/collect/event';
     try {
@@ -852,7 +822,11 @@
     }
   }
 
+  var _firedOnPage = {};
+
   function fireTrigger(eventName, eventData) {
+    if (_firedOnPage[eventName]) return;
+    _firedOnPage[eventName] = true;
     try {
       var event_id = generateEventId();
       var userData = getUserData(eventData);
@@ -861,23 +835,16 @@
       var names = EVENT_NAMES[eventName];
       if (!names) return;
 
-      // 1. Meta Pixel padrao
-      if (__CONFIG__.meta_pixel_id && names.meta) {
-        fbq('trackSingle', __CONFIG__.meta_pixel_id, names.meta,
-          buildMetaEventData(userData, customData), {eventID: event_id});
-      }
-
-      // 2. Meta Pixel de vendas (dual-pixel)
-      if (__CONFIG__.meta_pixel_id_purchase) {
-        if (eventName === 'page_view') {
-          fbq('trackSingle', __CONFIG__.meta_pixel_id_purchase, 'PageView',
-            buildMetaEventData(userData, customData), {eventID: event_id});
+      // Meta Pixels — primário + espelhos (mesmo evento, mesmo eventID)
+      if (names.meta) {
+        var metaEventData = buildMetaEventData(userData, customData);
+        var metaEventOpts = {eventID: event_id};
+        if (__CONFIG__.meta_pixel_id) {
+          fbq('trackSingle', __CONFIG__.meta_pixel_id, names.meta, metaEventData, metaEventOpts);
         }
-        var purchaseTrigger = __CONFIG__.meta_purchase_trigger_event || 'lead';
-        if (eventName === purchaseTrigger) {
-          __PURCHASE_EVENT_ID__ = generateEventId();
-          fbq('trackSingle', __CONFIG__.meta_pixel_id_purchase, 'Purchase',
-            buildMetaEventData(userData, customData), {eventID: __PURCHASE_EVENT_ID__});
+        var mirrorIds = __CONFIG__.meta_pixel_ids_mirror || [];
+        for (var mi = 0; mi < mirrorIds.length; mi++) {
+          fbq('trackSingle', mirrorIds[mi], names.meta, metaEventData, metaEventOpts);
         }
       }
 
@@ -1132,11 +1099,6 @@
 
   try { initForms(); } catch(e) {}
 
-  // ============================================================
-  // MODULE 6 — Geolocation (server-side via request.cf)
-  // ============================================================
-  // Geo é coletado automaticamente pelo Worker via request.cf
-  // (country, city, region, postalCode) — sem chamada de API externa.
   try { fireTrigger('page_view', {}); } catch(e) {}
 
 })();

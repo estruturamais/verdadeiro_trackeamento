@@ -101,18 +101,17 @@ export async function handleWebhook(request, env, gateway, ctx) {
   // 7. Dispatch para APIs (em paralelo)
   const promises = [];
 
-  // Meta CAPI — pixel padrao (Purchase)
+  // Meta CAPI — todos os pixels (primário + espelhos), Purchase
   if (config.platforms?.meta?.pixel_id) {
-    promises.push(
-      sendMetaCAPIWebhook(config.platforms.meta, 'Purchase', hashed, merged, 'standard', env, config.site_id)
-    );
-  }
-
-  // Meta CAPI — segundo pixel (A/B, mesmo evento de Purchase)
-  if (config.platforms?.meta?.pixel_id_purchase) {
-    promises.push(
-      sendMetaCAPIWebhook(config.platforms.meta, 'Purchase', hashed, merged, 'purchase', env, config.site_id)
-    );
+    const metaConfig = config.platforms.meta;
+    const accessToken = metaConfig.access_token || env.META_ACCESS_TOKEN;
+    const mirrors = metaConfig.pixel_ids_mirror
+      ?? (metaConfig.pixel_id_purchase ? [metaConfig.pixel_id_purchase] : []);
+    for (const pixelId of [metaConfig.pixel_id, ...mirrors]) {
+      promises.push(
+        sendMetaCAPIWebhook(pixelId, accessToken, 'Purchase', hashed, merged, env, config.site_id)
+      );
+    }
   }
 
   // TikTok Events API (Purchase)

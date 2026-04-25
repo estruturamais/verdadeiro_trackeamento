@@ -1,11 +1,15 @@
 (function() {
   'use strict';
 
+  // Guard: garante que o script só executa uma vez por página,
+  // mesmo que o <script> seja incluído múltiplas vezes.
+  if (window.__MARCA_TRACKING_LOADED__) return;
+  window.__MARCA_TRACKING_LOADED__ = true;
+
   /*__CONFIG__*/
   /*__MARCA_USER__*/
 
   var __CONFIG__ = (typeof __CONFIG__ !== 'undefined') ? __CONFIG__ : {};
-  var __PURCHASE_EVENT_ID__ = '';
 
   // ============================================================
   // MODULE 1 — Identification (SPEC 2.1)
@@ -526,7 +530,7 @@
 
     var userData = getUserDataFromCookies();
 
-    fbq('init', __CONFIG__.meta_pixel_id, {
+    var metaUserData = {
       em: userData.email,
       ph: userData.phone,
       fn: userData.first_name,
@@ -535,19 +539,13 @@
       st: userData.state,
       country: userData.country,
       external_id: __MARCA_USER__
-    });
+    };
 
-    if (__CONFIG__.meta_pixel_id_purchase) {
-      fbq('init', __CONFIG__.meta_pixel_id_purchase, {
-        em: userData.email,
-        ph: userData.phone,
-        fn: userData.first_name,
-        ln: userData.last_name,
-        ct: userData.city,
-        st: userData.state,
-        country: userData.country,
-        external_id: __MARCA_USER__
-      });
+    fbq('init', __CONFIG__.meta_pixel_id, metaUserData);
+
+    var mirrorIds = __CONFIG__.meta_pixel_ids_mirror || [];
+    for (var i = 0; i < mirrorIds.length; i++) {
+      fbq('init', mirrorIds[i], metaUserData);
     }
   }
 
@@ -807,11 +805,8 @@
 
       utm_data: getUtmData(),
 
-      custom_data: customData,
-
-      purchase_event_id: __PURCHASE_EVENT_ID__ || ''
+      custom_data: customData
     };
-    __PURCHASE_EVENT_ID__ = '';
 
     var url = __CONFIG__.collect_url || '/collect/event';
     try {
@@ -836,23 +831,16 @@
       var names = EVENT_NAMES[eventName];
       if (!names) return;
 
-      // 1. Meta Pixel padrao
-      if (__CONFIG__.meta_pixel_id && names.meta) {
-        fbq('trackSingle', __CONFIG__.meta_pixel_id, names.meta,
-          buildMetaEventData(userData, customData), {eventID: event_id});
-      }
-
-      // 2. Meta Pixel de vendas (dual-pixel)
-      if (__CONFIG__.meta_pixel_id_purchase) {
-        if (eventName === 'page_view') {
-          fbq('trackSingle', __CONFIG__.meta_pixel_id_purchase, 'PageView',
-            buildMetaEventData(userData, customData), {eventID: event_id});
+      // Meta Pixels — primário + espelhos (mesmo evento, mesmo eventID)
+      if (names.meta) {
+        var metaEventData = buildMetaEventData(userData, customData);
+        var metaEventOpts = {eventID: event_id};
+        if (__CONFIG__.meta_pixel_id) {
+          fbq('trackSingle', __CONFIG__.meta_pixel_id, names.meta, metaEventData, metaEventOpts);
         }
-        var purchaseTrigger = __CONFIG__.meta_purchase_trigger_event || 'lead';
-        if (eventName === purchaseTrigger) {
-          __PURCHASE_EVENT_ID__ = generateEventId();
-          fbq('trackSingle', __CONFIG__.meta_pixel_id_purchase, 'Purchase',
-            buildMetaEventData(userData, customData), {eventID: __PURCHASE_EVENT_ID__});
+        var mirrorIds = __CONFIG__.meta_pixel_ids_mirror || [];
+        for (var mi = 0; mi < mirrorIds.length; mi++) {
+          fbq('trackSingle', mirrorIds[mi], names.meta, metaEventData, metaEventOpts);
         }
       }
 

@@ -7,6 +7,7 @@ import { parseTicto } from './ticto.js';
 import { parseEduzz } from './eduzz.js';
 import { parsePerfectPay } from './perfectpay.js';
 import { parsePayt } from './payt.js';
+import { parseHubla } from './hubla.js';
 
 // Gateways com implementacao completa e validada
 // + Skeletons — mapeamento de marca_user confirmado, demais campos TODO
@@ -21,7 +22,9 @@ export const GATEWAY_PARSERS = {
   ticto:      parseTicto,
   eduzz:      parseEduzz,
   perfectpay: parsePerfectPay,
-  payt:       parsePayt
+  payt:       parsePayt,
+
+  hubla:      parseHubla
 };
 
 export const APPROVAL_EVENTS = {
@@ -34,5 +37,7 @@ export const APPROVAL_EVENTS = {
   ticto:      null,
   eduzz:      null,
   perfectpay: null,
-  payt:       null
+  payt:       null,
+
+  hubla:      { field: 'type', value: 'invoice.payment_succeeded' }
 };
