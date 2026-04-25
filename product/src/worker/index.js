@@ -4,6 +4,7 @@ import { handleCollectEvent } from './collect/event.js';
 import { handleWebhook } from './collect/webhook.js';
 import { handleDebug } from './routes/debug.js';
 import { handleLogs } from './routes/logs.js';
+import { runCleanup } from './shared/cleanup.js';
 
 function getCorsHeaders(origin) {
   return {
@@ -47,14 +48,14 @@ export default {
 
       // POST /collect/event → real-time beacon
       if (path === '/collect/event' && method === 'POST') {
-        return await handleCollectEvent(request, env);
+        return await handleCollectEvent(request, env, ctx);
       }
 
       // POST /collect/webhook/:gateway → gateway webhooks
       if (path.startsWith('/collect/webhook/') && method === 'POST') {
         const gateway = path.split('/collect/webhook/')[1];
         if (gateway) {
-          return await handleWebhook(request, env, gateway);
+          return await handleWebhook(request, env, gateway, ctx);
         }
       }
 
@@ -75,6 +76,9 @@ export default {
 
     } catch (err) {
       console.error('Worker fetch error:', err);
+      if (err.message?.includes('D1_ERROR') || err.message?.includes('maximum DB size')) {
+        ctx.waitUntil(runCleanup(env.DB).catch(() => {}));
+      }
       const headers = path.startsWith('/collect/')
         ? { 'Content-Type': 'application/json', ...getCorsHeaders(request.headers.get('Origin')) }
         : { 'Content-Type': 'application/json' };
@@ -86,13 +90,10 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    await env.DB.batch([
-      env.DB.prepare("DELETE FROM events WHERE timestamp < datetime('now', '-30 days')"),
-      env.DB.prepare("DELETE FROM webhook_raw WHERE timestamp < datetime('now', '-30 days')"),
-      env.DB.prepare("DELETE FROM user_store WHERE updated_at < datetime('now', '-90 days')")
-    ]);
+    await runCleanup(env.DB);
   }
 };
+
 
 function addCorsHeaders(response, request) {
   const origin = request.headers.get('Origin') || '*';

@@ -6,8 +6,13 @@ import { sendMetaCAPI } from '../platforms/meta.js';
 import { sendTikTokEvent } from '../platforms/tiktok.js';
 import { sendGoogleAdsConversion } from '../platforms/google-ads.js';
 import { sendGA4Event } from '../platforms/ga4.js';
+import { runCleanup } from '../shared/cleanup.js';
 
-export async function handleCollectEvent(request, env) {
+export async function handleCollectEvent(request, env, ctx) {
+  // Cleanup proativo: roda em background em ~1% dos eventos de browser
+  if (Math.random() < 0.01) {
+    ctx.waitUntil(runCleanup(env.DB).catch(() => {}));
+  }
   const body = await request.json();
   const siteId = body.site_id;
   const config = await getConfig(siteId, env);
@@ -83,22 +88,11 @@ export async function handleCollectEvent(request, env) {
     );
   }
 
-  // Meta CAPI — pixel de vendas (dual-pixel)
+  // Meta CAPI — segundo pixel (A/B, todos os eventos espelhados)
   if (config.platforms?.meta?.pixel_id_purchase) {
-    // PageView no pixel de vendas quando page_view
-    if (eventName === 'page_view') {
-      promises.push(
-        sendMetaCAPI(config.platforms.meta, 'page_view', eventId, hashed, body, clientIp, userAgent, 'purchase', env, siteId)
-      );
-    }
-    // Purchase no pixel de vendas quando purchase_trigger_event
-    const purchaseTrigger = config.platforms.meta.purchase_trigger_event || 'lead';
-    if (eventName === purchaseTrigger) {
-      const purchaseEventId = body.purchase_event_id || eventId;
-      promises.push(
-        sendMetaCAPI(config.platforms.meta, 'purchase_from_trigger', purchaseEventId, hashed, body, clientIp, userAgent, 'purchase', env, siteId)
-      );
-    }
+    promises.push(
+      sendMetaCAPI(config.platforms.meta, eventName, eventId, hashed, body, clientIp, userAgent, 'purchase', env, siteId)
+    );
   }
 
   // TikTok Events API
