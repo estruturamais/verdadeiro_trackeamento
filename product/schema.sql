@@ -55,6 +55,9 @@ CREATE INDEX IF NOT EXISTS idx_events_platform    ON events (platform, status_co
 CREATE INDEX IF NOT EXISTS idx_events_timestamp   ON events (timestamp);
 
 -- 4.4 Tabela webhook_raw
+-- Sem UNIQUE em (site_id, gateway, order_id): webhook_raw e' input log puro,
+-- todo payload recebido e' gravado, mesmo se duplicado. Dedup de dispatch e'
+-- feito em codigo via SELECT por (order_id, processed=1).
 CREATE TABLE IF NOT EXISTS webhook_raw (
   id          INTEGER PRIMARY KEY,
   timestamp   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -63,12 +66,13 @@ CREATE TABLE IF NOT EXISTS webhook_raw (
   order_id    TEXT,
   payload     TEXT    NOT NULL,
   processed   INTEGER NOT NULL DEFAULT 0,
-  error       TEXT,
-  UNIQUE(site_id, gateway, order_id)
+  error       TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_webhook_raw_site_time ON webhook_raw (site_id, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_webhook_raw_gateway   ON webhook_raw (gateway, processed);
+-- Indice para dedup: busca rapida por order_id ja processado
+CREATE INDEX IF NOT EXISTS idx_webhook_raw_dedup     ON webhook_raw (site_id, gateway, order_id, processed);
 
 -- 4.5 Retention (executado pelo Scheduled Worker diariamente as 03:00 UTC)
 -- DELETE FROM events WHERE timestamp < datetime('now', '-30 days');

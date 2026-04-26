@@ -18,15 +18,19 @@ export async function handleWebhook(request, env, gateway, ctx) {
   const body = await request.json();
   const config = await getConfigForWebhook(env, gateway);
 
-  // 1. Gravar webhook bruto (INSERT OR IGNORE para deduplicacao atomica)
-  // dbWrite: se DB cheio, roda cleanup sincrono e tenta de novo antes de desistir
-  await dbWrite(
+  // 1. Gravar webhook bruto — input log: TODO payload recebido e' gravado,
+  // mesmo duplicado. Dedup de dispatch e' feito mais abaixo via SELECT.
+  // dbWrite: se DB cheio, roda cleanup sincrono e tenta de novo antes de desistir.
+  // Capturamos o id da linha inserida pra escopar as UPDATEs subsequentes
+  // a esta request especifica (com duplicatas, multiplas linhas tem mesmo order_id).
+  const insertResult = await dbWrite(
     env.DB,
     () => env.DB.prepare(
-      'INSERT OR IGNORE INTO webhook_raw (site_id, gateway, order_id, payload) VALUES (?, ?, ?, ?)'
+      'INSERT INTO webhook_raw (site_id, gateway, order_id, payload) VALUES (?, ?, ?, ?)'
     ).bind(config.site_id || '', gateway, null, JSON.stringify(body).substring(0, 8192)).run(),
     'webhook.insert_raw'
   );
+  const rawId = insertResult?.meta?.last_row_id ?? null;
 
   // 2. Validar evento de aprovacao
   const approval = APPROVAL_EVENTS[gateway];
@@ -58,32 +62,39 @@ export async function handleWebhook(request, env, gateway, ctx) {
   }
 
   if (txnId) {
-    // SELECT de dedup protegido: se lancar, assumir que nao e' duplicata e seguir
-    // (preferivel a retornar 500 e disparar retry do gateway)
-    let duplicate = null;
-    try {
-      duplicate = await env.DB.prepare(
-        'SELECT id FROM webhook_raw WHERE site_id = ? AND gateway = ? AND order_id = ?'
-      ).bind(config.site_id || '', gateway, txnId).first();
-    } catch (e) {
-      console.error('[webhook] dedup SELECT failed, assuming no duplicate:', e.message);
+    // SEMPRE atualizar o registro recem-inserido com o txnId, mesmo que seja
+    // duplicata. webhook_raw e' input log: a auditoria precisa do txnId em
+    // cada linha pra cruzar com events e identificar duplicatas via COUNT.
+    if (rawId) {
+      await dbWrite(
+        env.DB,
+        () => env.DB.prepare(
+          'UPDATE webhook_raw SET order_id = ? WHERE id = ?'
+        ).bind(txnId, rawId).run(),
+        'webhook.update_order_id'
+      );
     }
 
-    if (duplicate) {
+    // Dedup de DISPATCH: existe outra linha com este txnId ja processada (processed=1)?
+    // Se sim, ja foi enviada pra plataformas em request anterior — skip dispatch.
+    // Filtra por id != rawId pra nao falsear positivo se algum dia a propria
+    // linha vier com processed=1 (caso patologico — defensivo).
+    // SELECT protegido: se lancar, assume nao-duplicata (preferivel a retornar 500).
+    let alreadyDispatched = null;
+    try {
+      alreadyDispatched = await env.DB.prepare(
+        'SELECT id FROM webhook_raw WHERE site_id = ? AND gateway = ? AND order_id = ? AND processed = 1 AND id != ? LIMIT 1'
+      ).bind(config.site_id || '', gateway, txnId, rawId ?? -1).first();
+    } catch (e) {
+      console.error('[webhook] dedup SELECT failed, assuming not dispatched:', e.message);
+    }
+
+    if (alreadyDispatched) {
       return new Response(
         JSON.stringify({ status: 'duplicate', txn_id: txnId, skipped: true }),
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       );
     }
-
-    // Atualizar o registro ja gravado com o txnId agora que temos o valor
-    await dbWrite(
-      env.DB,
-      () => env.DB.prepare(
-        'UPDATE webhook_raw SET order_id = ? WHERE site_id = ? AND gateway = ? AND order_id IS NULL ORDER BY id DESC LIMIT 1'
-      ).bind(txnId, config.site_id || '', gateway).run(),
-      'webhook.update_order_id'
-    );
   }
 
   // 4. Consultar user_store (apenas se marca_user presente — comprador organico nao tem xcod/sck)
@@ -146,13 +157,15 @@ export async function handleWebhook(request, env, gateway, ctx) {
 
   await Promise.allSettled(promises);
 
-  // Marcar webhook como processado (apenas quando ha txnId para identificar o registro)
-  if (txnId) {
+  // Marcar SOMENTE esta linha como processada (WHERE id = rawId).
+  // Com duplicatas permitidas, multiplas linhas tem o mesmo order_id —
+  // marcar por order_id mancharia tambem as duplicatas que NAO disparamos.
+  if (rawId) {
     await dbWrite(
       env.DB,
       () => env.DB.prepare(
-        'UPDATE webhook_raw SET processed = 1 WHERE site_id = ? AND gateway = ? AND order_id = ?'
-      ).bind(config.site_id || '', gateway, txnId).run(),
+        'UPDATE webhook_raw SET processed = 1 WHERE id = ?'
+      ).bind(rawId).run(),
       'webhook.update_processed'
     );
   }
