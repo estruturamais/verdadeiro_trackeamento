@@ -7,6 +7,7 @@ import { sendTikTokEvent } from '../platforms/tiktok.js';
 import { sendGoogleAdsConversion } from '../platforms/google-ads.js';
 import { sendGA4Event } from '../platforms/ga4.js';
 import { runCleanup } from '../shared/cleanup.js';
+import { dbWrite } from '../shared/db-write.js';
 
 export async function handleCollectEvent(request, env, ctx) {
   // Cleanup proativo: roda em background em ~1% dos eventos de browser
@@ -29,8 +30,10 @@ export async function handleCollectEvent(request, env, ctx) {
   const eventId = body.event_id;
 
   // 1. UPSERT no user_store
-  try {
-    await upsertUserStore(env.DB, {
+  // dbWrite: se DB cheio, roda cleanup sincrono e tenta de novo antes de desistir
+  await dbWrite(
+    env.DB,
+    () => upsertUserStore(env.DB, {
       marca_user: marcaUser,
       ip: clientIp,
       user_agent: userAgent,
@@ -50,10 +53,9 @@ export async function handleCollectEvent(request, env, ctx) {
       state: body.user_data?.state || cfState,
       country: body.user_data?.country || cfCountry,
       zip: body.user_data?.zip || cfZip
-    });
-  } catch (e) {
-    console.error('[collect-event] upsertUserStore failed:', e);
-  }
+    }),
+    'event.upsertUserStore'
+  );
 
   // 1.5 Log do beacon recebido (garante visibilidade mesmo sem plataformas)
   await logEvent(env.DB, {

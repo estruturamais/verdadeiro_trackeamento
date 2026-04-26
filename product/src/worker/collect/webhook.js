@@ -10,6 +10,7 @@ import { sendTikTokWebhook } from '../platforms/tiktok.js';
 import { sendGA4MP } from '../platforms/ga4.js';
 import { sendGoogleAdsWebhook } from '../platforms/google-ads.js';
 import { runCleanup } from '../shared/cleanup.js';
+import { dbWrite } from '../shared/db-write.js';
 
 export async function handleWebhook(request, env, gateway, ctx) {
   // Cleanup proativo: roda em background em todo webhook (DELETE indexado, custo ~0 quando nada a deletar)
@@ -18,13 +19,14 @@ export async function handleWebhook(request, env, gateway, ctx) {
   const config = await getConfigForWebhook(env, gateway);
 
   // 1. Gravar webhook bruto (INSERT OR IGNORE para deduplicacao atomica)
-  try {
-    await env.DB.prepare(
+  // dbWrite: se DB cheio, roda cleanup sincrono e tenta de novo antes de desistir
+  await dbWrite(
+    env.DB,
+    () => env.DB.prepare(
       'INSERT OR IGNORE INTO webhook_raw (site_id, gateway, order_id, payload) VALUES (?, ?, ?, ?)'
-    ).bind(config.site_id || '', gateway, null, JSON.stringify(body).substring(0, 8192)).run();
-  } catch (e) {
-    console.error('[webhook] webhook_raw INSERT failed (DB full?):', e.message);
-  }
+    ).bind(config.site_id || '', gateway, null, JSON.stringify(body).substring(0, 8192)).run(),
+    'webhook.insert_raw'
+  );
 
   // 2. Validar evento de aprovacao
   const approval = APPROVAL_EVENTS[gateway];
@@ -56,9 +58,16 @@ export async function handleWebhook(request, env, gateway, ctx) {
   }
 
   if (txnId) {
-    const duplicate = await env.DB.prepare(
-      'SELECT id FROM webhook_raw WHERE site_id = ? AND gateway = ? AND order_id = ?'
-    ).bind(config.site_id || '', gateway, txnId).first();
+    // SELECT de dedup protegido: se lancar, assumir que nao e' duplicata e seguir
+    // (preferivel a retornar 500 e disparar retry do gateway)
+    let duplicate = null;
+    try {
+      duplicate = await env.DB.prepare(
+        'SELECT id FROM webhook_raw WHERE site_id = ? AND gateway = ? AND order_id = ?'
+      ).bind(config.site_id || '', gateway, txnId).first();
+    } catch (e) {
+      console.error('[webhook] dedup SELECT failed, assuming no duplicate:', e.message);
+    }
 
     if (duplicate) {
       return new Response(
@@ -68,13 +77,13 @@ export async function handleWebhook(request, env, gateway, ctx) {
     }
 
     // Atualizar o registro ja gravado com o txnId agora que temos o valor
-    try {
-      await env.DB.prepare(
+    await dbWrite(
+      env.DB,
+      () => env.DB.prepare(
         'UPDATE webhook_raw SET order_id = ? WHERE site_id = ? AND gateway = ? AND order_id IS NULL ORDER BY id DESC LIMIT 1'
-      ).bind(txnId, config.site_id || '', gateway).run();
-    } catch (e) {
-      console.error('[webhook] webhook_raw UPDATE order_id failed:', e.message);
-    }
+      ).bind(txnId, config.site_id || '', gateway).run(),
+      'webhook.update_order_id'
+    );
   }
 
   // 4. Consultar user_store (apenas se marca_user presente — comprador organico nao tem xcod/sck)
@@ -139,13 +148,13 @@ export async function handleWebhook(request, env, gateway, ctx) {
 
   // Marcar webhook como processado (apenas quando ha txnId para identificar o registro)
   if (txnId) {
-    try {
-      await env.DB.prepare(
+    await dbWrite(
+      env.DB,
+      () => env.DB.prepare(
         'UPDATE webhook_raw SET processed = 1 WHERE site_id = ? AND gateway = ? AND order_id = ?'
-      ).bind(config.site_id || '', gateway, txnId).run();
-    } catch (e) {
-      console.error('[webhook] webhook_raw UPDATE processed failed:', e.message);
-    }
+      ).bind(config.site_id || '', gateway, txnId).run(),
+      'webhook.update_processed'
+    );
   }
 
   return new Response(
