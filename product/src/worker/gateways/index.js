@@ -33,8 +33,7 @@ export const APPROVAL_EVENTS = {
   kirvano:    { field: 'event',                value: 'SALE_APPROVED' },
   lastlink:   { field: 'Event',                value: 'Purchase_Order_Confirmed' },
   pagtrust:   { field: 'event',                value: 'PURCHASE_APPROVED' },
-  // Sem validacao de evento confirmada — aceitar qualquer payload (skeleton)
-  ticto:      null,
+  ticto:      { field: 'status', value: 'authorized' },
   eduzz:      null,
   perfectpay: null,
   payt:       null,

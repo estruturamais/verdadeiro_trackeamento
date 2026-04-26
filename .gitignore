@@ -4,3 +4,11 @@ node_modules/
 *.env
 wrangler.toml
 src/web/web-template.txt
+
+# Ignorar pastas fora do product
+prompts-zero-shot/
+copies/
+builder/
+mvp_production/
+.claude/
+SPEC_*.md
