@@ -3,15 +3,4 @@ node_modules/
 .wrangler/
 *.env
 wrangler.toml
-src/web/web-template.txt
-
-# Pastas locais (nao fazem parte do produto deployado)
-planejamento/
-copies/
-melhorias/
-laboratorio/
-prompts/
-provas-sociais/
-pagina-vendas/
-CONTEXTO.md
-SPEC_*.md
+src/web/
