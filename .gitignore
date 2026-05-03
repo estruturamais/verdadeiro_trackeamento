@@ -5,10 +5,14 @@ node_modules/
 wrangler.toml
 src/web/web-template.txt
 
-# Ignorar pastas fora do product
-prompts-zero-shot/
+# Pastas locais (nao fazem parte do produto deployado)
+planejamento/
 copies/
-builder/
-mvp_production/
+melhorias/
+laboratorio/
+prompts/
+provas-sociais/
+pagina-vendas/
+CONTEXTO.md
 .claude/
 SPEC_*.md
