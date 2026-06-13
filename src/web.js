@@ -100,7 +100,7 @@
     eduzz: {
       domains: ['eduzz.com', 'eduzz.com.br', 'chk.eduzz.com', 'sun.eduzz.com'],
       caminho: 'caminho',
-      indexador: 'utm_medium'
+      indexador: 'utm_term'
     },
     lastlink: {
       domains: ['lastlink.com', 'lastlink.com.br', 'pay.lastlink.com'],

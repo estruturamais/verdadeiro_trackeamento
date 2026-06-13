@@ -17,10 +17,10 @@ export const GATEWAY_PARSERS = {
   kirvano:    parseKirvano,
   lastlink:   parseLastlink,
   pagtrust:   parsePagTrust,
+  eduzz:      parseEduzz,
 
   // Skeletons — nao disparam eventos ricos (order_id vazio = sem custom_data rico para as APIs)
   ticto:      parseTicto,
-  eduzz:      parseEduzz,
   perfectpay: parsePerfectPay,
   payt:       parsePayt,
 
@@ -34,7 +34,7 @@ export const APPROVAL_EVENTS = {
   lastlink:   { field: 'Event',                value: 'Purchase_Order_Confirmed' },
   pagtrust:   { field: 'event',                value: 'PURCHASE_APPROVED' },
   ticto:      { field: 'status', value: 'authorized' },
-  eduzz:      null,
+  eduzz:      { field: 'status', value: 'paid' },
   perfectpay: null,
   payt:       null,
 
