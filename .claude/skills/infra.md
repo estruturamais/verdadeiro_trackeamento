@@ -115,6 +115,18 @@ npm install
 
 ---
 
+### 0.6b — Criar o arquivo de configuracao (`wrangler.toml`)
+
+Explicar: "Vou criar o arquivo de configuracao do projeto a partir do modelo."
+
+```bash
+cp wrangler.toml.example wrangler.toml
+```
+
+O `wrangler.toml` e gitignored (nao vem no clone) — por isso e criado aqui a partir do `wrangler.toml.example`. Ele ja inclui o hook `[build]`, que sincroniza o `web-template.txt` a partir do `web.js` automaticamente em todo deploy, em qualquer SO (Windows/macOS/Linux). Os proximos sub-steps preenchem os valores: `database_id` (0.7), `{YOUR_DOMAIN}` nas rotas (0.8) e `SITE_CONFIG` (Step 3b).
+
+---
+
 ### 0.7 — Criar banco de dados D1
 
 Explicar: "Agora vou criar o banco de dados que armazena os dados de tracking."
