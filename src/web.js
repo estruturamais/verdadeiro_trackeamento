@@ -210,8 +210,13 @@
 
         for (var i = 0; i < gateway.domains.length; i++) {
           var domain = gateway.domains[i].toLowerCase();
-          if (hostname === domain || hostname.indexOf('.' + domain) !== -1 ||
-              hostname.indexOf(domain) === hostname.length - domain.length) {
+          var suffix = '.' + domain;
+          // Match exato OU subdominio (hostname termina com ".dominio").
+          // Ancorar no final evita o falso positivo de indexOf===-1 quando o
+          // dominio da lista e' mais longo que o hostname.
+          if (hostname === domain ||
+              (hostname.length > domain.length &&
+               hostname.indexOf(suffix) === hostname.length - suffix.length)) {
             return {
               name: gatewayName,
               caminho: gateway.caminho,
