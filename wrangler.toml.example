@@ -32,8 +32,7 @@ database_id = "{YOUR_D1_DATABASE_ID}"
 SITE_CONFIG = '{}'
 
 # Secrets a configurar via CLI (nunca em arquivo):
-# wrangler secret put META_ACCESS_TOKEN
-# wrangler secret put META_ACCESS_TOKEN_PURCHASE   (só se usar dual-pixel)
+# wrangler secret put META_ACCESS_TOKEN   (um unico token cobre todos os pixels, inclusive espelhos)
 # wrangler secret put TIKTOK_ACCESS_TOKEN
 # wrangler secret put GA4_API_SECRET
 # wrangler secret put LOG_BEARER_TOKEN

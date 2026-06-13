@@ -5,7 +5,6 @@
   /*__MARCA_USER__*/
 
   var __CONFIG__ = (typeof __CONFIG__ !== 'undefined') ? __CONFIG__ : {};
-  var __PURCHASE_EVENT_ID__ = '';
 
   // ============================================================
   // MODULE 1 — Identification (SPEC 2.1)
@@ -538,8 +537,15 @@
     };
   }
 
+  // Pixel primario + espelhos (mesma lista usada no init e no disparo de eventos)
+  function getMetaPixelIds() {
+    if (!__CONFIG__.meta_pixel_id) return [];
+    return [__CONFIG__.meta_pixel_id].concat(__CONFIG__.meta_pixel_ids_mirror || []);
+  }
+
   function initMetaPixels() {
-    if (!__CONFIG__.meta_pixel_id) return;
+    var pixelIds = getMetaPixelIds();
+    if (!pixelIds.length) return;
 
     !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){
       n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};
@@ -550,8 +556,7 @@
     }(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
 
     var userData = getUserDataFromCookies();
-
-    fbq('init', __CONFIG__.meta_pixel_id, {
+    var advancedMatching = {
       em: userData.email,
       ph: userData.phone,
       fn: userData.first_name,
@@ -560,19 +565,11 @@
       st: userData.state,
       country: userData.country,
       external_id: __MARCA_USER__
-    });
+    };
 
-    if (__CONFIG__.meta_pixel_id_purchase) {
-      fbq('init', __CONFIG__.meta_pixel_id_purchase, {
-        em: userData.email,
-        ph: userData.phone,
-        fn: userData.first_name,
-        ln: userData.last_name,
-        ct: userData.city,
-        st: userData.state,
-        country: userData.country,
-        external_id: __MARCA_USER__
-      });
+    // Inicializa o pixel primario e todos os espelhos com o mesmo Advanced Matching
+    for (var i = 0; i < pixelIds.length; i++) {
+      fbq('init', pixelIds[i], advancedMatching);
     }
   }
 
@@ -832,11 +829,8 @@
 
       utm_data: getUtmData(),
 
-      custom_data: customData,
-
-      purchase_event_id: __PURCHASE_EVENT_ID__ || ''
+      custom_data: customData
     };
-    __PURCHASE_EVENT_ID__ = '';
 
     var url = __CONFIG__.collect_url || '/collect/event';
     try {
@@ -861,35 +855,26 @@
       var names = EVENT_NAMES[eventName];
       if (!names) return;
 
-      // 1. Meta Pixel padrao
-      if (__CONFIG__.meta_pixel_id && names.meta) {
-        fbq('trackSingle', __CONFIG__.meta_pixel_id, names.meta,
-          buildMetaEventData(userData, customData), {eventID: event_id});
-      }
-
-      // 2. Meta Pixel de vendas (dual-pixel)
-      if (__CONFIG__.meta_pixel_id_purchase) {
-        if (eventName === 'page_view') {
-          fbq('trackSingle', __CONFIG__.meta_pixel_id_purchase, 'PageView',
-            buildMetaEventData(userData, customData), {eventID: event_id});
-        }
-        var purchaseTrigger = __CONFIG__.meta_purchase_trigger_event || 'lead';
-        if (eventName === purchaseTrigger) {
-          __PURCHASE_EVENT_ID__ = generateEventId();
-          fbq('trackSingle', __CONFIG__.meta_pixel_id_purchase, 'Purchase',
-            buildMetaEventData(userData, customData), {eventID: __PURCHASE_EVENT_ID__});
+      // 1. Meta Pixel(s) — primario + espelhos (mesmo eventID para dedup browser↔CAPI por pixel)
+      if (names.meta) {
+        var metaPixelIds = getMetaPixelIds();
+        if (metaPixelIds.length) {
+          var metaEventData = buildMetaEventData(userData, customData);
+          for (var mp = 0; mp < metaPixelIds.length; mp++) {
+            fbq('trackSingle', metaPixelIds[mp], names.meta, metaEventData, {eventID: event_id});
+          }
         }
       }
 
-      // 3. TikTok
+      // 2. TikTok
       if (__CONFIG__.tiktok_pixel_id && names.tiktok && typeof ttq !== 'undefined') {
         ttq.track(names.tiktok, buildTikTokEventData(customData), {event_id: event_id});
       }
 
-      // 4. GA4 — dispatch movido para server-side (collect-event.js → sendGA4Event)
+      // 3. GA4 — dispatch movido para server-side (collect-event.js → sendGA4Event)
       //    initGA4() mantido para gerar cookies _ga/_ga_* usados pelo beacon
 
-      // 5. Google Ads (web — quando channel === 'web')
+      // 4. Google Ads (web — quando channel === 'web')
       if (__CONFIG__.google_ads_conversion_id && names.gads && __CONFIG__.google_ads_channel === 'web') {
         gtag('event', 'conversion', {
           send_to: __CONFIG__.google_ads_conversion_id + '/' +
@@ -899,7 +884,7 @@
         });
       }
 
-      // 6. sendBeacon ao Worker
+      // 5. sendBeacon ao Worker
       sendTrackingBeacon(eventName, event_id, userData, browserData, customData);
 
       // Debug mode

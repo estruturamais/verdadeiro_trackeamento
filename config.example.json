@@ -7,8 +7,7 @@
     },
     "meta": {
       "pixel_id": "111111111111111",
-      "pixel_id_purchase": "222222222222222",
-      "purchase_trigger_event": "lead"
+      "pixel_ids_mirror": ["222222222222222"]
     },
     "tiktok": {
       "pixel_id": "CP1234567890ABCDEF",

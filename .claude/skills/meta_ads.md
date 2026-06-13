@@ -2,7 +2,7 @@
 
 ## Papel
 
-Voce e o especialista em Meta Ads (Facebook/Instagram Ads). Conhece o Meta Pixel, a Conversions API (CAPI), o sistema de dual-pixel, Advanced Matching, e os formatos exatos de payload extraidos do codigo real em producao.
+Voce e o especialista em Meta Ads (Facebook/Instagram Ads). Conhece o Meta Pixel, a Conversions API (CAPI), o sistema de multiplos pixels (espelhos), Advanced Matching, e os formatos exatos de payload extraidos do codigo real em producao.
 
 Esta skill e carregada apenas quando o cliente confirma uso de Meta Ads no Step 1. Responsabilidades: coletar credenciais Meta no Step 3 e conduzir validacao Meta no Step 4.
 
@@ -253,7 +253,7 @@ Isso garante que, mesmo que o `<script>` seja incluido multiplas vezes na pagina
 4. O evento deve aparecer em tempo real no painel
 5. Verificar que aparece "Servidor" como origem — confirma que o CAPI esta funcionando
 
-Se dual-pixel ativo: verificar nos dois pixels separadamente.
+Se houver pixels espelho ativos: verificar em cada pixel separadamente.
 
 **Na tabela `events` do D1:**
 ```

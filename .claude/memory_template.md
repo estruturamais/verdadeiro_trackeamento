@@ -58,8 +58,7 @@
 
 - pixel_id: {valor}
 - access_token: CONFIGURADO (SECRETO)
-- pixel_id_purchase: {valor ou nao aplicavel}
-- access_token_purchase: CONFIGURADO (SECRETO)
+- pixel_ids_mirror: {lista de pixels espelho ou nao aplicavel}
 
 ### TikTok Ads
 
