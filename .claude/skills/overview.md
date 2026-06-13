@@ -113,7 +113,7 @@ Apos resposta:
 
 > Se Elementor detectado: ver `.claude/references/elementor-form-lead.md` para contexto de deteccao de lead (causas raiz, estrategia em 2 passos, 4 metodos de deteccao).
 
-### Links de checkout (dominios dos 9 gateways, de `src/web/web-template.txt`)
+### Links de checkout (dominios dos 10 gateways, de `src/web-template.txt`)
 
 | Gateway    | Dominios para detectar                                             |
 |------------|--------------------------------------------------------------------|
@@ -126,6 +126,7 @@ Apos resposta:
 | perfectpay | perfectpay.com.br, checkout.perfectpay.com.br                     |
 | pagtrust   | pagtrust.com, pagtrust.com.br, checkout.pagtrust.com.br           |
 | payt       | payt.com.br, checkout.payt.com.br                                  |
+| hubla      | hubla.com.br, pay.hubla.com.br, checkout.hubla.com.br             |
 
 ### WhatsApp
 Links contendo `wa.me` ou `api.whatsapp.com`

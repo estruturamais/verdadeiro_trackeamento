@@ -45,7 +45,7 @@ Extraido de `src/worker/routes/ga4-proxy.js`:
 
 ## Browser-side: inicializacao do gtag
 
-Extraido de `src/web/web-template.txt` funcao `initGA4`:
+Extraido de `src/web-template.txt` funcao `initGA4`:
 
 ```javascript
 // Carrega de /scripts/ga.js (proxy, NAO googletagmanager.com direto)
