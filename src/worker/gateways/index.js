@@ -34,7 +34,7 @@ export const APPROVAL_EVENTS = {
   lastlink:   { field: 'Event',                value: 'Purchase_Order_Confirmed' },
   pagtrust:   { field: 'event',                value: 'PURCHASE_APPROVED' },
   ticto:      { field: 'status', value: 'authorized' },
-  eduzz:      { field: 'status', value: 'paid' },
+  eduzz:      { field: 'data.status', value: 'paid' },
   perfectpay: null,
   payt:       null,
 

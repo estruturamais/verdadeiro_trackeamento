@@ -46,7 +46,7 @@
     },
     "initiate_checkout": {
       "type": "link_click",
-      "match": "pay"
+      "match": "pay|eduzz"
     }
   },
   "custom_data": {

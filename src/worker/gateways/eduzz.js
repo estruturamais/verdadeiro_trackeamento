@@ -1,25 +1,29 @@
 import { getNestedValue } from '../shared/helpers.js';
 
 export function parseEduzz(body) {
+  // Webhook real (myeduzz.invoice_paid) aninha tudo em data.*; fallback para body
+  // mantem compatibilidade com payloads achatados de teste.
+  const data = body.data || body;
+
   // Phone: buyer.phone vem null; o numero com DDI esta em cellphone — remover + inicial
-  var phone = String(getNestedValue(body, 'buyer.cellphone') || '').replace(/^\+?(.*)$/, '$1');
+  var phone = String(getNestedValue(data, 'buyer.cellphone') || '').replace(/^\+?(.*)$/, '$1');
 
   // Zip: extrair 5 primeiros digitos
-  var zip = String(getNestedValue(body, 'buyer.address.zipCode') || '').replace(/^(\d{5}).*/, '$1');
+  var zip = String(getNestedValue(data, 'buyer.address.zipCode') || '').replace(/^(\d{5}).*/, '$1');
 
   return {
-    marca_user: getNestedValue(body, 'utm.term'),
-    email: getNestedValue(body, 'buyer.email'),
+    marca_user: getNestedValue(data, 'utm.term'),
+    email: getNestedValue(data, 'buyer.email'),
     phone: phone,
-    name: getNestedValue(body, 'buyer.name'),
-    order_id: getNestedValue(body, 'id'),
-    value: getNestedValue(body, 'price.value'),
-    currency: getNestedValue(body, 'price.currency'),
-    product_name: getNestedValue(body, 'items.0.name') || '',
-    product_id: String(getNestedValue(body, 'items.0.productId') || ''),
-    city: (getNestedValue(body, 'buyer.address.city') || '').toLowerCase(),
-    state: (getNestedValue(body, 'buyer.address.state') || '').toLowerCase(),
-    country: getNestedValue(body, 'buyer.address.country') || '',
+    name: getNestedValue(data, 'buyer.name'),
+    order_id: getNestedValue(data, 'id'),
+    value: getNestedValue(data, 'price.value'),
+    currency: getNestedValue(data, 'price.currency'),
+    product_name: getNestedValue(data, 'items.0.name') || '',
+    product_id: String(getNestedValue(data, 'items.0.productId') || ''),
+    city: (getNestedValue(data, 'buyer.address.city') || '').toLowerCase(),
+    state: (getNestedValue(data, 'buyer.address.state') || '').toLowerCase(),
+    country: getNestedValue(data, 'buyer.address.country') || '',
     zip: zip,
     ip: '',
     user_agent: ''
