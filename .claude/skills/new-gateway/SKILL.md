@@ -1,3 +1,8 @@
+---
+name: new-gateway
+description: Adiciona suporte a um novo gateway de pagamento no Verdadeiro Trackeamento, ou completa um parser skeleton existente (ticto, eduzz, perfectpay, payt). Mapeia o payload do webhook de compra aprovada, gera o parser e o registra. Use ao integrar um gateway ainda sem suporte completo ou quando webhooks de compra não chegam às plataformas.
+---
+
 # Skill: new_gateway
 
 ## Papel
@@ -178,7 +183,7 @@ import { parse{Gateway} } from './{gateway}.js';
 
 ## Passo 6 — Atualizar overview.md (apenas gateway novo nao listado)
 
-Em `.claude/skills/overview.md`:
+Em `.claude/playbooks/overview.md`:
 
 **Tabela de deteccao de checkout (Step 2):**
 ```

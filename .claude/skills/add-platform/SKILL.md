@@ -1,3 +1,8 @@
+---
+name: add-platform
+description: Adiciona uma nova plataforma de anúncios (Meta Ads, TikTok Ads, GA4, Google Ads, Sheets) a um Verdadeiro Trackeamento já implantado e funcionando na Cloudflare. Coleta credenciais e configura a plataforma sem refazer o onboarding (Steps 0-2). Use para incluir mais um destino de eventos num tracking existente.
+---
+
 # Skill: add_platform — Adicionar Plataforma ao Tracking Existente
 
 ## Papel
@@ -22,11 +27,11 @@ Se a plataforma nao foi especificada no slash command, perguntar:
 
 Apos confirmar a plataforma:
 1. Carregar a skill especializada correspondente:
-   - Meta Ads → `.claude/skills/meta_ads.md`
-   - TikTok Ads → `.claude/skills/tiktok_ads.md`
-   - GA4 → `.claude/skills/ga4.md`
-   - Google Ads → `.claude/skills/google_ads.md`
-   - Sheets → `.claude/skills/planilha.md`
+   - Meta Ads → `.claude/playbooks/meta_ads.md`
+   - TikTok Ads → `.claude/playbooks/tiktok_ads.md`
+   - GA4 → `.claude/playbooks/ga4.md`
+   - Google Ads → `.claude/playbooks/google_ads.md`
+   - Sheets → `.claude/playbooks/planilha.md`
 
 2. REGRA BLOQUEANTE — confirmar conta Cloudflare antes de qualquer acao:
    - Executar `npx wrangler whoami`
@@ -113,11 +118,11 @@ Nunca pedir aprovacao de comandos tecnicos — executar → exibir resultado →
 ## Arquitetura de referencia
 
 ```
-add_platform.md (este arquivo — condutor)
+add-platform/SKILL.md (este arquivo — condutor)
      |
-     +-- .claude/skills/meta_ads.md    (se Meta Ads)
-     +-- .claude/skills/tiktok_ads.md  (se TikTok Ads)
-     +-- .claude/skills/ga4.md         (se GA4)
-     +-- .claude/skills/google_ads.md  (se Google Ads)
-     +-- .claude/skills/planilha.md    (se Sheets)
+     +-- .claude/playbooks/meta_ads.md    (se Meta Ads)
+     +-- .claude/playbooks/tiktok_ads.md  (se TikTok Ads)
+     +-- .claude/playbooks/ga4.md         (se GA4)
+     +-- .claude/playbooks/google_ads.md  (se Google Ads)
+     +-- .claude/playbooks/planilha.md    (se Sheets)
 ```

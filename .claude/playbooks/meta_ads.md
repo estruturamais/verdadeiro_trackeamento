@@ -18,13 +18,18 @@ contact           → Contact
 lead              → Lead
 initiate_checkout → InitiateCheckout
 purchase          → Purchase
+qualified_lead    → QualifiedLead       (custom — qualificacao de lead)
+disqualified_lead → DisqualifiedLead    (custom — qualificacao de lead)
 ```
+
+Os cinco primeiros sao **eventos padrao** da Meta. `QualifiedLead`/`DisqualifiedLead` sao **eventos custom** emitidos pelo Modulo 7 (qualificacao multi-step) — ver "Eventos custom de qualificacao" abaixo.
 
 ---
 
 ## Modelo de deduplicacao
 
-- **Browser:** `fbq('track', 'Lead', userData, {eventID: event_id})`
+- **Browser (eventos padrao):** `fbq('trackSingle', pixelId, 'Lead', userData, {eventID: event_id})` — um `trackSingle` por pixel (primario + espelhos)
+- **Browser (eventos custom de qualificacao):** `fbq('trackSingleCustom', pixelId, 'QualifiedLead', customData, {eventID: event_id})` — **`trackSingleCustom`** (nao `trackSingle`, que so vale para eventos padrao)
 - **Worker CAPI:** mesmo `event_id` no campo `event_id` do payload
 - **Meta deduplica por `event_id`:** se o mesmo ID chega via browser E via CAPI, a Meta conta apenas uma conversao
 - **Webhook (purchase via gateway):** NAO tem `event_id` — e server-originated, sem contraparte browser, portanto nao precisa de deduplicacao
@@ -69,6 +74,53 @@ Clientes com `pixel_id_purchase` no config (formato antigo) continuam funcionand
 
 ---
 
+## Eventos custom de qualificacao — `QualifiedLead` / `DisqualifiedLead`
+
+Quando o cliente tem um formulario de qualificacao multi-step (Elementor), o **Modulo 7** do client (`src/web.js`) emite, no sucesso do form, **um** destes eventos custom em vez do `lead` padrao:
+
+- **`QualifiedLead`** — lead aprovado pelo `lead_score`.
+- **`DisqualifiedLead`** — lead reprovado (score baixo ou knockout pela `dq_letter`).
+
+Ambos carregam em `custom_data`:
+
+| Campo | Tipo | Descricao |
+|---|---|---|
+| `lead_score` | float 0–1 | `Σ(peso × valor_da_letra)` por pergunta; knockout zera o score |
+| `lead_tier` | `A`/`B`/`C`/`X` | Faixa cujo `letter_value` e o mais proximo do score (nearest-tier); knockout → `dq_letter` |
+
+Referencia Meta sobre qualidade/valor de lead: https://www.facebook.com/business/help/502347657043574
+
+### Por que `trackSingleCustom`
+
+Eventos custom **nao** podem ser disparados por `fbq('trackSingle', ...)` (esse so resolve os 9 eventos padrao). O Modulo 7 usa:
+
+```js
+// src/web.js — emitQual(): primario + espelhos, mesmo eventID
+fbq('trackSingleCustom', pixelId, 'QualifiedLead', { lead_score: 0.72, lead_tier: 'B' }, { eventID: event_id });
+```
+
+Cada pixel (primario + espelhos) recebe o evento com o **mesmo `eventID`** — a dedup browser↔CAPI vale por pixel, igual aos eventos padrao.
+
+### Caminho server-side (CAPI)
+
+O beacon vai ao Worker com `event = qualified_lead`/`disqualified_lead`. Em `meta.js`:
+- `META_EVENT_NAMES` mapeia para `QualifiedLead`/`DisqualifiedLead`.
+- `sendMetaCAPI` repassa `body.custom_data` (`lead_score`/`lead_tier`) — incluido em qualquer evento quando presente.
+- O mesmo `event_id` do browser garante a dedup; cada pixel-espelho recebe o evento via CAPI tambem.
+
+### Config
+
+O bloco `qualification` no `SITE_CONFIG` (pesos, `letter_values`, `dq_letter`, `result_field`, assinatura do form) controla **como** o score e calculado e quando os eventos disparam. Isso e responsabilidade da reference de engenharia, nao desta skill: ver `.claude/references/lead-qualification.md`. Do lado do Meta, nao ha nada a configurar alem do `pixel_id` — os eventos custom aparecem sozinhos no Events Manager assim que disparam.
+
+### Validacao especifica
+
+- **Pixel Helper / Test Events:** procurar `QualifiedLead`/`DisqualifiedLead` com `lead_score` e `lead_tier` em `custom_data` (browser e Servidor).
+- **D1:** `event_name IN ('QualifiedLead','DisqualifiedLead')` com `status_code 200`; o `sent_payload` deve conter o bloco `custom_data`.
+
+> **Eventos custom no Events Manager:** ate o primeiro disparo, `QualifiedLead`/`DisqualifiedLead` nao existem no painel. Apos o primeiro evento, aparecem em "Eventos personalizados" — e podem ser usados como objetivo de campanha/otimizacao normalmente.
+
+---
+
 ## `cleanUserData` — `meta.js` linhas 9-16
 
 Remove automaticamente do `user_data` antes de enviar:
@@ -81,12 +133,12 @@ Resultado: payload limpo, sem campos `em: []` ou `fbp: ""`.
 
 ## Payload CAPI exato
 
-### Beacon (web) — `sendMetaCAPI` em `meta.js` linhas 44-68
+### Beacon (web) — `sendMetaCAPI` em `meta.js`
 
 ```json
 {
   "data": [{
-    "event_name": "PageView|Contact|Lead|InitiateCheckout|Purchase",
+    "event_name": "PageView|Contact|Lead|InitiateCheckout|Purchase|QualifiedLead|DisqualifiedLead",
     "event_time": 1700000000,
     "event_id": "{timestamp_ms}-{uuid}",
     "event_source_url": "https://seusite.com.br/pagina",
@@ -105,7 +157,8 @@ Resultado: payload limpo, sem campos `em: []` ou `fbp: ""`.
       "client_user_agent": "Mozilla/5.0 ...",
       "fbp": "_fbp cookie value",
       "fbc": "_fbc cookie value"
-    }
+    },
+    "custom_data": { "lead_score": 0.72, "lead_tier": "B" }
   }],
   "test_event_code": "TEST12345"
 }
@@ -116,6 +169,7 @@ Notas:
 - Campos de `user_data` com valor vazio/nulo sao removidos por `cleanUserData`
 - `event_time` e `Math.floor(timestamp / 1000)` — Unix timestamp em segundos
 - `fbp` e `fbc` vem de `body.browser_data.fbp` e `body.browser_data.fbc`
+- **`custom_data`** e incluido em **qualquer** evento quando `body.custom_data` chega preenchido (antes so o webhook de Purchase tinha). Para `QualifiedLead`/`DisqualifiedLead` carrega `lead_score`/`lead_tier`; se `body.custom_data` vier vazio, o objeto e omitido
 
 ### Webhook (purchase) — `sendMetaCAPIWebhook` em `meta.js` linhas 110-165
 

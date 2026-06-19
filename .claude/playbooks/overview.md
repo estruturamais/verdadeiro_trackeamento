@@ -113,6 +113,39 @@ Apos resposta:
 
 > Se Elementor detectado: ver `.claude/references/elementor-form-lead.md` para contexto de deteccao de lead (causas raiz, estrategia em 2 passos, 4 metodos de deteccao).
 
+### Qualificacao de lead (form multi-step / quiz) — CONDICIONAL, opt-in
+
+Ramo extra do Step 2. **So percorrer** quando uma destas duas condicoes ocorrer:
+
+- **Sinal no site:** o formulario detectado e **multi-step / quiz** (varios passos, perguntas com alternativas, pop-up que classifica o visitante) — em Elementor Pro **ou** qualquer outro builder.
+- **Sinal do cliente:** o cliente menciona querer **qualificar** o lead, dar um **score**, separar lead "quente" de "frio", ou um evento `QualifiedLead`/`DisqualifiedLead`.
+
+Sem nenhum dos dois sinais, **nao perguntar** — qualificacao nao e para todo cliente; segue o `lead` padrao da tabela acima.
+
+Quando um dos sinais aparecer, fazer a **pergunta opt-in** em formato de alternativa:
+
+> "Esse formulario classifica o lead (calcula uma nota / separa quem esta mais pronto para comprar)?
+>
+> **A** — Sim, quero pontuar o lead e disparar `QualifiedLead`/`DisqualifiedLead` (alem do `lead`)
+> **B** — Nao, basta registrar o envio do formulario como `lead`"
+
+Se **B** (ou cliente nao quer): seguir o caminho `lead` normal — nada a configurar aqui.
+
+Se **A**, montar o bloco `qualification` (que sera escrito no `SITE_CONFIG` no Step 3b) em tres passos:
+
+1. **Pedir o `outerHTML` do formulario RENDERIZADO.** No Elementor, a pop-up de qualificacao costuma **duplicar o `<form>`** no DOM — por isso peca a copia que o usuario realmente preenche (DevTools → Elements → botao direito no `<form>` → Copy → Copy outerHTML). Desse HTML saem: `form_signature` (um `name` que so o form-qual tem), os `field` de cada pergunta, `contact_fields`, `extra_fields` e `result_field`. **Atencao ao `value` das opcoes:** se cada opcao ja tiver `value="A"`/`"B"`/`"C"`/`"X"` (a letra), o score computa direto; se o `value` for o rotulo legivel ("Acima de 50 mil"), sera preciso um `value_map` por pergunta traduzindo rotulo → letra.
+2. **ELICITAR o que nao esta no HTML** (o cliente decide, o HTML nao revela):
+   - **peso por pergunta** (`weight`) — quanto cada pergunta vale no score; os pesos devem somar 1;
+   - **letra de knockout** (`dq_letter`, default `X`) — resposta que desqualifica na hora (score 0), ex.: "nao tem orcamento";
+   - **escala de valor por letra** (`letter_values`, ex.: `A=0.85, B=0.55, C=0.30, X=0.10`) — o ponto-medio da faixa de cada tier.
+3. **Montar o bloco `qualification`** com `form_signature`, `contact_fields`, `extra_fields`, `questions[]` (`field` + `weight` + `sheet_col` + `value_map` quando o `value` nao for a letra), `letter_values`, `dq_letter` e `result_field`. Gravar no `tracking_memory.md` para escrever no `SITE_CONFIG` no Step 3b — o `serve-webjs.js` expoe o bloco ao client.
+
+**Builder nao-Elementor (InLead/GreatPages/Wix/HTML puro/SPA):** nao ha auto-deteccao por DOM nem `outerHTML` util. Use o escape hatch `window.VT_qualify({ answers, contact, extras, resultado })` (ou um `dataLayer.push({ event: "<datalayer_event>", ... })` com `qualification.datalayer_event` setado): o snippet do builder entrega as respostas cruas e o nosso codigo calcula o `lead_score` identico ao caminho Elementor. Nesse caso, defina um `id` curto por pergunta (`"q1"`) e use-o como chave de `answers`; o `form_signature` pode ser omitido.
+
+> **Disparo e pre-requisito (recomendacao VT / Meta Ads):** a qualificacao dispara **`lead`** (apos coletar o contato) **e** `QualifiedLead`/`DisqualifiedLead` (com as respostas + ao menos o e-mail). Por isso o `email` em `contact_fields` e **obrigatorio** no form de qualificacao — sem e-mail capturado, os eventos **nao disparam**. O `lead` cria a linha no Sheets e a qualificacao a completa por upsert (`user_id`).
+
+> Para montar o bloco e calibrar o score: ver `.claude/references/lead-qualification.md` — engenharia do Modulo 7 (gating por form duplicado, captura progressiva, formula do `lead_score`, knockout, nearest-tier, `value_map` e ingestao builder-agnostic via `VT_qualify`/`dataLayer`).
+
 ### Links de checkout (dominios dos 10 gateways, de `src/web-template.txt`)
 
 | Gateway    | Dominios para detectar                                             |
@@ -204,11 +237,11 @@ EVENTOS CONFIGURADOS:
 **Se `modalidade_coleta: passo_a_passo`** — seguir o fluxo padrao abaixo.
 
 Delegar coleta para a skill especialista de cada plataforma confirmada:
-- Meta Ads → `.claude/skills/meta_ads.md`
-- TikTok Ads → `.claude/skills/tiktok_ads.md`
-- GA4 → `.claude/skills/ga4.md`
-- Google Ads → `.claude/skills/google_ads.md`
-- Planilha → `.claude/skills/planilha.md`
+- Meta Ads → `.claude/playbooks/meta_ads.md`
+- TikTok Ads → `.claude/playbooks/tiktok_ads.md`
+- GA4 → `.claude/playbooks/ga4.md`
+- Google Ads → `.claude/playbooks/google_ads.md`
+- Planilha → `.claude/playbooks/planilha.md`
 
 **Separacao obrigatoria:**
 
@@ -217,7 +250,7 @@ Delegar coleta para a skill especialista de cada plataforma confirmada:
 | Publicos  | pixel_id, measurement_id, conversion_id, labels  | Config JSON no `SITE_CONFIG`     |
 | Secretos  | access_token (Meta), api_secret (GA4)             | `npx wrangler secret put`        |
 
-**EXCECAO TikTok:** o `access_token` do TikTok vai no **config JSON** (`platforms.tiktok.access_token`) — NAO como wrangler secret. O codigo le `tiktokConfig.access_token` sem fallback para env. Ver `.claude/skills/tiktok_ads.md` para detalhes.
+**EXCECAO TikTok:** o `access_token` do TikTok vai no **config JSON** (`platforms.tiktok.access_token`) — NAO como wrangler secret. O codigo le `tiktokConfig.access_token` sem fallback para env. Ver `.claude/playbooks/tiktok_ads.md` para detalhes.
 
 Antes de coletar credenciais, orientar o usuario a desativar configuracoes automaticas que causam dupla contagem. Ver `.claude/references/disable-auto-tracking.md`.
 
@@ -393,17 +426,17 @@ Se algum evento retornou erro: diagnosticar e resolver antes de continuar para o
 ### 5.3 Validacao visual por plataforma
 
 Delegar para a skill especialista de cada plataforma confirmada:
-- Meta Ads → `.claude/skills/meta_ads.md` (Events Manager > Testar Eventos)
-- GA4 → `.claude/skills/ga4.md` (GA4 > DebugView)
-- TikTok Ads → `.claude/skills/tiktok_ads.md` (Events Manager > Atividade recente)
-- Google Ads → `.claude/skills/google_ads.md` (Google Tag Assistant ou painel com delay 3h)
-- Planilha → `.claude/skills/planilha.md` (verificar linha inserida na planilha + D1 com `platform = 'sheets'`)
+- Meta Ads → `.claude/playbooks/meta_ads.md` (Events Manager > Testar Eventos)
+- GA4 → `.claude/playbooks/ga4.md` (GA4 > DebugView)
+- TikTok Ads → `.claude/playbooks/tiktok_ads.md` (Events Manager > Atividade recente)
+- Google Ads → `.claude/playbooks/google_ads.md` (Google Tag Assistant ou painel com delay 3h)
+- Planilha → `.claude/playbooks/planilha.md` (verificar linha inserida na planilha + D1 com `platform = 'sheets'`)
 
 ---
 
 ### Webhooks de gateway — apenas se modelo for infoproduto
 
-> Para gateways com parser incompleto (ticto, eduzz, perfectpay, payt) ou para um gateway nao listado abaixo, invocar `.claude/skills/new_gateway.md` antes de continuar.
+> Para gateways com parser incompleto (ticto, eduzz, perfectpay, payt) ou para um gateway nao listado abaixo, invocar `.claude/skills/new-gateway/SKILL.md` antes de continuar.
 
 Instruir o cliente a configurar a URL de webhook no painel do gateway detectado:
 
@@ -482,6 +515,12 @@ Para evitar eventos duplicados que prejudicam a otimizacao das campanhas, remova
 - **Plugins de tracking** (WordPress ou construtores): PixelYourSite, Pixel Cat, Facebook for WordPress, TikTok for Business, qualquer plugin com "pixel" ou "conversions" no nome
 - **Tags de conversao no Google Tag Manager** para Meta, TikTok ou Google Ads — se usar GTM para outros fins, manter, mas remover as tags de evento de conversao
 - **Integracoes nativas dos gateways com Meta/TikTok**: dentro do painel Hotmart, Kiwify etc., desativar integracao direta com pixel se houver
+
+---
+
+**Para finalizar — siga e mande um print 💜**
+
+O **Verdadeiro Trackeamento** foi criado pelo perfil [@estruturamais](https://instagram.com/estruturamais). Para fechar: **siga o @estruturamais no Instagram** e **mande um print desta mensagem na DM do perfil** — assim confirmamos que a sua instalacao ficou pronta e voce recebe suporte e novidades no que precisar.
 
 ---
 
