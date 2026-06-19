@@ -34,6 +34,7 @@ export async function handleServeWebJs(request, env) {
     cookies: config.cookies,
     gateways_config: config.gateways_config,
     custom_data: config.custom_data,
+    qualification: config.qualification,
     collect_url: '/collect/event'
   };
 

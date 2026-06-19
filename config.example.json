@@ -19,6 +19,11 @@
       "conversion_label_contact": "AbCdEf123",
       "conversion_label_lead": "GhIjKl456",
       "conversion_label_purchase": "MnOpQr789"
+    },
+    "sheets": {
+      "id_script": "AKfycbwEXEMPLO0000000000000000000000000000000000000000",
+      "events": ["lead"],
+      "page_event_names": { "registrol20": "L20_LG_SLPC", "brasilia": "BSB_LEAD" }
     }
   },
   "gateways": ["hotmart", "kiwify", "hubla"],
@@ -56,6 +61,21 @@
       ],
       "fallback": "outras"
     }
+  },
+  "qualification": {
+    "form_signature": "form_fields[q1]",
+    "datalayer_event": "vt_qualify",
+    "contact_fields": { "name": "form_fields[nome]", "email": "form_fields[email]", "phone": "form_fields[whatsapp]" },
+    "extra_fields": { "instagram": "form_fields[instagram]" },
+    "questions": [
+      { "id": "q1", "field": "form_fields[q1]", "weight": 0.30, "sheet_col": "faturamento", "value_map": { "Acima de 50 mil": "A", "10 a 50 mil": "B", "Menos de 10 mil": "C", "Nao faturo ainda": "X" } },
+      { "id": "q2", "field": "form_fields[q2]", "weight": 0.20, "sheet_col": "tempo", "value_map": { "Mais de 2 anos": "A", "6 a 24 meses": "B", "Menos de 6 meses": "C" } },
+      { "id": "q3", "field": "form_fields[q3]", "weight": 0.30, "sheet_col": "investir", "value_map": { "Sim, com orcamento": "A", "Talvez": "B", "Nao posso investir": "X" } },
+      { "id": "q4", "field": "form_fields[q4]", "weight": 0.20, "sheet_col": "iniciar", "value_map": { "Imediatamente": "A", "Nas proximas semanas": "B", "Sem previsao": "C" } }
+    ],
+    "letter_values": { "A": 0.85, "B": 0.55, "C": 0.30, "X": 0.10 },
+    "dq_letter": "X",
+    "result_field": "form_fields[resultado]"
   },
   "cookies": {
     "user": "marca_user",

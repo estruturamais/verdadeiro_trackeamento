@@ -2,7 +2,8 @@ import { logEvent } from '../shared/logger.js';
 
 const META_EVENT_NAMES = {
   page_view: 'PageView', contact: 'Contact', lead: 'Lead',
-  initiate_checkout: 'InitiateCheckout', purchase: 'Purchase'
+  initiate_checkout: 'InitiateCheckout', purchase: 'Purchase',
+  qualified_lead: 'QualifiedLead', disqualified_lead: 'DisqualifiedLead'
 };
 
 function cleanUserData(userData) {
@@ -33,6 +34,10 @@ export async function sendMetaCAPI(pixelId, accessToken, eventName, eventId, has
 
   const metaEventName = META_EVENT_NAMES[eventName] || eventName;
 
+  // custom_data do beacon (ex.: lead_score/lead_tier de QualifiedLead/DisqualifiedLead,
+  // value/currency/content_name de eventos de venda) — incluido em qualquer evento quando presente.
+  const customData = (body.custom_data && typeof body.custom_data === 'object') ? body.custom_data : {};
+
   const payload = {
     data: [{
       event_name: metaEventName,
@@ -54,7 +59,8 @@ export async function sendMetaCAPI(pixelId, accessToken, eventName, eventId, has
         client_user_agent: userAgent,
         fbp: body.browser_data?.fbp || '',
         fbc: body.browser_data?.fbc || ''
-      })
+      }),
+      ...(Object.keys(customData).length > 0 ? { custom_data: customData } : {})
     }],
     ...(body.test_event_code ? { test_event_code: body.test_event_code } : {})
   };

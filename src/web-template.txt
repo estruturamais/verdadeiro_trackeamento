@@ -1,6 +1,11 @@
 (function() {
   'use strict';
 
+  // Guard: garante que o script só executa uma vez por página,
+  // mesmo que o <script> seja incluído múltiplas vezes.
+  if (window.__MARCA_TRACKING_LOADED__) return;
+  window.__MARCA_TRACKING_LOADED__ = true;
+
   /*__CONFIG__*/
   /*__MARCA_USER__*/
 
@@ -798,7 +803,7 @@
   }
 
 
-  function sendTrackingBeacon(eventName, eventId, userData, browserData, customData) {
+  function sendTrackingBeacon(eventName, eventId, userData, browserData, customData, qualification) {
     var payload = {
       site_id: __CONFIG__.site_id,
       event: eventName,
@@ -836,6 +841,11 @@
 
       custom_data: customData
     };
+
+    // Qualificacao (Modulo 7): respostas/extras/resultado vao em campo dedicado,
+    // fora do custom_data (que segue so com lead_score/lead_tier p/ o Meta CAPI).
+    // O Worker grava no Sheets via config.qualification.questions[].sheet_col.
+    if (qualification) payload.qualification = qualification;
 
     var url = __CONFIG__.collect_url || '/collect/event';
     try {
@@ -1018,6 +1028,12 @@
       if (_elLeadFired) return;
       _elLeadFired = true;
       setTimeout(function() { _elLeadFired = false; }, 5000);
+      // MODULE 7 (Qualification): se o sucesso veio de um form de qualificacao,
+      // roteia para o Modulo 7 (QualifiedLead/DisqualifiedLead) em vez de 'lead'.
+      if (window.__rtQualPending && typeof window.__rtQualOnSuccess === 'function') {
+        try { window.__rtQualOnSuccess(); } catch(e) {}
+        return;
+      }
       try {
         var fd = _elementorPendingFormData || {};
         _elementorPendingFormData = null;
@@ -1121,6 +1137,302 @@
   }
 
   try { initForms(); } catch(e) {}
+
+  // ============================================================
+  // MODULE 7 — Qualification (lead_score multi-step) — aditivo
+  // ============================================================
+  // So roda onde existe o bloco `qualification` no config E a assinatura do
+  // form esta presente. Reaproveita os 4 metodos de deteccao de sucesso do
+  // Modulo 5 (via window.__rtQualOnSuccess, chamado por _fireElementorLead).
+  // Captura progressiva: o Elementor LIMPA os campos no sucesso, entao lemos
+  // as respostas no `change` e no clique de envio (reler no sucesso = vazio).
+
+  function initQualification() {
+    var Q = __CONFIG__.qualification;
+    if (!Q) return; // QUAL-13: roda mesmo sem form_signature (escape hatch VT_qualify/dataLayer)
+
+    var questions = Array.isArray(Q.questions) ? Q.questions : [];
+    var contactFields = Q.contact_fields || {};
+    var extraFields = Q.extra_fields || {};
+    var letterValues = Q.letter_values || {};
+    var dqLetter = String(Q.dq_letter || 'X').toUpperCase();
+    var resultField = Q.result_field || '';
+
+    // Estado capturado progressivamente
+    var answers = {};   // { 'form_fields[q1]': 'A', ... }
+    var contact = {};   // { name, email, phone }
+    var extras = {};    // { instagram: '...' }
+    var resultado = ''; // valor calculado no site (Q.result_field)
+
+    // Conjunto de names que nos interessa capturar
+    var WATCHED = {};
+    for (var qi = 0; qi < questions.length; qi++) {
+      if (questions[qi] && questions[qi].field) WATCHED[questions[qi].field] = 1;
+    }
+    for (var ck in contactFields) { if (contactFields.hasOwnProperty(ck) && contactFields[ck]) WATCHED[contactFields[ck]] = 1; }
+    for (var ek in extraFields) { if (extraFields.hasOwnProperty(ek) && extraFields[ek]) WATCHED[extraFields[ek]] = 1; }
+    if (resultField) WATCHED[resultField] = 1;
+
+    // form-qual = form que contem um input cujo name === Q.form_signature.
+    // Itera inputs (a pop-up Elementor DUPLICA o <form>; nunca usar querySelector global).
+    function isQualForm(form) {
+      if (!form || !form.querySelectorAll) return false;
+      var inputs = form.querySelectorAll('input, textarea, select');
+      for (var i = 0; i < inputs.length; i++) {
+        if (inputs[i].name === Q.form_signature) return true;
+      }
+      return false;
+    }
+
+    function storeValue(name, val) {
+      for (var i = 0; i < questions.length; i++) {
+        if (questions[i] && questions[i].field === name) { answers[name] = val; return; }
+      }
+      for (var c in contactFields) {
+        if (contactFields.hasOwnProperty(c) && contactFields[c] === name) { contact[c] = val; return; }
+      }
+      for (var e in extraFields) {
+        if (extraFields.hasOwnProperty(e) && extraFields[e] === name) { extras[e] = val; return; }
+      }
+      if (resultField && name === resultField) { resultado = val; return; }
+    }
+
+    // Le os valores atuais do form (so os campos vigiados, ignorando vazios)
+    function captureFrom(form) {
+      if (!form || !form.querySelectorAll) return;
+      var inputs = form.querySelectorAll('input, textarea, select');
+      for (var i = 0; i < inputs.length; i++) {
+        var el = inputs[i];
+        var nm = el.name;
+        if (!nm || !WATCHED[nm]) continue;
+        var type = (el.type || '').toLowerCase();
+        if ((type === 'radio' || type === 'checkbox') && !el.checked) continue;
+        var val = (el.value || '').trim();
+        if (!val) continue;
+        storeValue(nm, val);
+      }
+    }
+
+    // tier = letra cujo letter_value e o mais proximo do score; knockout => dq_letter
+    function nearestTier(score, knockout) {
+      if (knockout) return dqLetter;
+      var best = '', bestDiff = Infinity;
+      for (var L in letterValues) {
+        if (!letterValues.hasOwnProperty(L)) continue;
+        var diff = Math.abs(score - letterValues[L]);
+        if (diff < bestDiff) { bestDiff = diff; best = L; }
+      }
+      return best;
+    }
+
+    // QUAL-14: resolve o valor cru de uma resposta para a letra do tier.
+    // Com `value_map` na pergunta, mapeia "rotulo legivel" -> letra (match exato,
+    // depois case-insensitive). Sem value_map (ou sem hit), usa o valor cru em
+    // maiuscula — preserva o comportamento legado "value da opcao = letra".
+    function resolveLetter(q, raw) {
+      var val = String(raw == null ? '' : raw).trim();
+      if (!val) return '';
+      var map = q && q.value_map;
+      if (map) {
+        if (map.hasOwnProperty(val)) return String(map[val]).trim().toUpperCase();
+        var lower = val.toLowerCase();
+        for (var k in map) {
+          if (map.hasOwnProperty(k) && k.toLowerCase() === lower) return String(map[k]).trim().toUpperCase();
+        }
+      }
+      return val.toUpperCase();
+    }
+
+    // lead_score = Σ(peso × valor_da_letra); knockout por dq_letter => score 0 + desqualifica
+    function computeScore() {
+      var score = 0;
+      var knockout = false;
+      for (var i = 0; i < questions.length; i++) {
+        var q = questions[i];
+        if (!q || !q.field) continue;
+        var letter = resolveLetter(q, answers[q.field]);
+        if (letter && letter === dqLetter) knockout = true;
+        var v = letterValues[letter];
+        var w = typeof q.weight === 'number' ? q.weight : (parseFloat(q.weight) || 0);
+        if (typeof v === 'number') score += w * v;
+      }
+      if (knockout) score = 0;
+      score = Math.round(score * 10000) / 10000; // evita ruido de ponto flutuante
+      return { score: score, qualified: !knockout, tier: nearestTier(score, knockout) };
+    }
+
+    // Emite o evento custom para todos os pixels-espelho (mesmo eventID) + beacon.
+    // Reusa os helpers do Modulo 3/4 (sem tocar no fireTrigger).
+    function emitQual(eventKey, metaName, customData, contactData, qualification) {
+      var event_id = generateEventId();
+      var userData = getUserData(contactData || {});
+      var browserData = getBrowserData();
+
+      // 1. Meta Pixel(s) — primario + espelhos, trackSingleCustom (evento custom, NAO trackSingle)
+      try {
+        var pixelIds = getMetaPixelIds();
+        if (pixelIds.length && typeof fbq !== 'undefined') {
+          for (var i = 0; i < pixelIds.length; i++) {
+            fbq('trackSingleCustom', pixelIds[i], metaName, customData, { eventID: event_id });
+          }
+        }
+      } catch(e) {}
+
+      // 2. Beacon ao Worker (event = qualified_lead/disqualified_lead → CAPI mapeia + inclui custom_data).
+      //    qualification (respostas/extras/resultado) vai em campo dedicado p/ o Sheets gravar.
+      sendTrackingBeacon(eventKey, event_id, userData, browserData, customData, qualification);
+
+      if (__CONFIG__.debug || getUrlParam('debug') === '1') {
+        console.log('[Tracking] ' + eventKey + ' fired - event_id: ' + event_id, customData);
+      }
+    }
+
+    // Calcula o resultado e emite QualifiedLead/DisqualifiedLead. Compartilhado
+    // pela auto-deteccao Elementor (__rtQualOnSuccess) e pelo escape hatch
+    // builder-agnostic (VT_qualify). Dedup local: VT_qualify pode ser chamado
+    // mais de uma vez; a janela de 5s espelha o guard _elLeadFired do Modulo 5.
+    var _qualEmitted = false;
+    function fireQualResult() {
+      if (_qualEmitted) return;
+      // Recomendacao (especialista Meta Ads): so disparar com as respostas
+      // qualificatorias coletadas E ao menos o e-mail do contato. Sem e-mail o
+      // match no Meta e a linha do Sheets ficam fracos. NAO marca _qualEmitted:
+      // permite re-tentar quando o e-mail chegar (captura progressiva / VT_qualify).
+      if (!contact.email) {
+        if (__CONFIG__.debug || getUrlParam('debug') === '1') {
+          console.log('[Tracking] Qualification: aguardando e-mail do contato — nao disparado ainda');
+        }
+        return;
+      }
+      _qualEmitted = true;
+      setTimeout(function() { _qualEmitted = false; }, 5000);
+      window.__rtQualPending = false;
+      saveUserCookies(contact);
+      var r = computeScore();
+      var customData = { lead_score: r.score, lead_tier: r.tier };
+      // Payload de qualificacao p/ o Sheets (respostas por field, extras, resultado).
+      var qualification = { answers: answers, extras: extras, resultado: resultado };
+
+      // 1. lead PRIMEIRO (apos a coleta de contato): evento Lead no Meta/plataformas
+      //    e cria a linha no Sheets (append) com o contato — antes do upsert da qualificacao.
+      fireTrigger('lead', contact);
+
+      // 2. QualifiedLead/DisqualifiedLead logo depois, com um pequeno atraso para a
+      //    linha do lead chegar ao Sheets antes do upsert por user_id completa-la.
+      var key = r.qualified ? 'qualified_lead' : 'disqualified_lead';
+      var metaName = r.qualified ? 'QualifiedLead' : 'DisqualifiedLead';
+      setTimeout(function() {
+        emitQual(key, metaName, customData, contact, qualification);
+      }, 1000);
+    }
+
+    // QUAL-13: casa uma resposta externa a uma pergunta por `id` (amigavel p/
+    // snippet) ou pelo `field` (mesma chave da auto-deteccao Elementor).
+    function findQuestion(key) {
+      for (var i = 0; i < questions.length; i++) {
+        var q = questions[i];
+        if (!q) continue;
+        if ((q.id != null && String(q.id) === String(key)) || q.field === key) return q;
+      }
+      return null;
+    }
+
+    // QUAL-13: ingestao builder-agnostic. O snippet so entrega dados crus
+    // (answers/contact/extras/resultado); o calculo continua no nosso codigo.
+    // Merge (nao substitui), p/ aceitar chamada unica ou progressiva.
+    function ingestExternal(data) {
+      if (!data) return;
+      var a = data.answers;
+      if (a) {
+        for (var key in a) {
+          if (!a.hasOwnProperty(key)) continue;
+          var q = findQuestion(key);
+          if (q) answers[q.field] = a[key];
+        }
+      }
+      var c = data.contact;
+      if (c) { for (var ck in c) { if (c.hasOwnProperty(ck)) contact[ck] = c[ck]; } }
+      var ex = data.extras;
+      if (ex) { for (var ek in ex) { if (ex.hasOwnProperty(ek)) extras[ek] = ex[ek]; } }
+      if (data.resultado != null) resultado = data.resultado;
+      else if (data.result != null) resultado = data.result;
+    }
+
+    // Escape hatch builder-agnostic (InLead/GreatPages/Wix/HTML puro). Sempre
+    // exposto quando ha bloco `qualification`, independente de form_signature.
+    window.VT_qualify = function(data) {
+      try {
+        ingestExternal(data);
+        fireQualResult();
+      } catch(e) {
+        if (__CONFIG__.debug) console.error('[Tracking] VT_qualify error:', e);
+      }
+    };
+
+    // QUAL-13: listener de dataLayer (OPT-IN). So liga quando Q.datalayer_event
+    // esta definido. Encaminha pushes { event: <nome>, answers, contact, ... }
+    // p/ VT_qualify. Nao colide com gtag (que empilha Arguments, sem `.event`).
+    if (Q.datalayer_event) {
+      try {
+        var DL_EVENT = String(Q.datalayer_event);
+        window.dataLayer = window.dataLayer || [];
+        var _fromDataLayer = function(o) {
+          if (o && o.event === DL_EVENT) { try { window.VT_qualify(o); } catch(eF) {} }
+        };
+        for (var di = 0; di < window.dataLayer.length; di++) { _fromDataLayer(window.dataLayer[di]); }
+        var _dlPush = window.dataLayer.push;
+        window.dataLayer.push = function() {
+          for (var ai = 0; ai < arguments.length; ai++) { _fromDataLayer(arguments[ai]); }
+          return _dlPush.apply(this, arguments);
+        };
+      } catch(eDL) {}
+    }
+
+    // Auto-deteccao Elementor (caminho zero-config): so quando ha form_signature.
+    if (Q.form_signature) {
+      // Chamado pelo Modulo 5 (_fireElementorLead) quando o form-qual teve sucesso
+      window.__rtQualOnSuccess = function() {
+        try { fireQualResult(); }
+        catch(e) { if (__CONFIG__.debug) console.error('[Tracking] Qualification error:', e); }
+      };
+
+      // Captura progressiva no change (cada resposta)
+      document.addEventListener('change', function(e) {
+        try {
+          var form = e.target && e.target.closest ? e.target.closest('form') : null;
+          if (!form || !isQualForm(form)) return;
+          window.__rtHasQualForm = true;
+          captureFrom(form);
+        } catch(err) {}
+      }, true);
+
+      // Captura + roteamento no submit nativo
+      document.addEventListener('submit', function(e) {
+        try {
+          var form = e.target;
+          if (!form || form.tagName !== 'FORM') return;
+          var isQual = isQualForm(form);
+          window.__rtQualPending = isQual; // reseta p/ false em forms normais
+          if (isQual) { window.__rtHasQualForm = true; captureFrom(form); }
+        } catch(err) {}
+      }, true);
+
+      // Botao de envio do multi-step (o passo final nem sempre emite submit nativo)
+      document.addEventListener('click', function(e) {
+        try {
+          var btn = e.target && e.target.closest ? e.target.closest('button, [type="submit"], .elementor-button') : null;
+          if (!btn) return;
+          var form = btn.closest ? btn.closest('form') : null;
+          if (!form || !isQualForm(form)) return;
+          window.__rtHasQualForm = true;
+          window.__rtQualPending = true;
+          captureFrom(form);
+        } catch(err) {}
+      }, true);
+    }
+  }
+
+  try { initQualification(); } catch(e) {}
 
   // ============================================================
   // MODULE 6 — Geolocation (server-side via request.cf)

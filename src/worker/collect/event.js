@@ -6,6 +6,7 @@ import { sendMetaCAPI } from '../platforms/meta.js';
 import { sendTikTokEvent } from '../platforms/tiktok.js';
 import { sendGoogleAdsConversion } from '../platforms/google-ads.js';
 import { sendGA4Event } from '../platforms/ga4.js';
+import { sendSheetsLead } from '../platforms/sheets.js';
 import { runCleanup } from '../shared/cleanup.js';
 import { dbWrite } from '../shared/db-write.js';
 
@@ -116,6 +117,15 @@ export async function handleCollectEvent(request, env, ctx) {
   if (config.platforms?.ga4?.measurement_id) {
     promises.push(
       sendGA4Event(config.platforms.ga4, eventName, eventId, body, clientIp, userAgent, env, siteId)
+    );
+  }
+
+  // Google Sheets — append (lead/eventos configurados) + upsert por user_id
+  // (qualified_lead/disqualified_lead completam a linha do lead). Roteamento append/upsert/skip
+  // fica dentro de sendSheetsLead.
+  if (config.platforms?.sheets?.id_script) {
+    promises.push(
+      sendSheetsLead(config.platforms.sheets, eventName, body, clientIp, userAgent, config, siteId, env)
     );
   }
 
