@@ -41,7 +41,7 @@ zero até o tracking validado em produção.
 │
 ├── .claude/                    # Documentação operacional e skills do assistente
 │   ├── workflow.md             # ★ Maestro: ciclo de onboarding, roteamento e regras
-│   ├── skills/                 # Skills user-invocáveis descobertas (new-gateway/, add-platform/)
+│   ├── skills/                 # Skills user-invocáveis descobertas (new-gateway/, add-platform/, audit-tracking/)
 │   ├── playbooks/              # Playbooks lidos por caminho pelo workflow (overview, infra, plataformas)
 │   ├── references/             # Referências técnicas (formato de config, qualificação de lead, etc.)
 │   └── memory_template.md      # Template do tracking_memory.md (estado entre sessões)
@@ -66,8 +66,9 @@ ou dar manutenção), o roteamento das etapas e as regras de operação.
 - **Humano/agente abrindo o projeto:** leia [`.claude/workflow.md`](.claude/workflow.md) e siga o
   fluxo a partir dele.
 - **Manutenção pontual:** as skills user-invocáveis estão disponíveis como slash commands —
-  `/new-gateway {nome}` (adicionar/completar um gateway) e `/add-platform {plataforma}` (adicionar
-  uma plataforma a um tracking já implantado).
+  `/new-gateway {nome}` (adicionar/completar um gateway), `/add-platform {plataforma}` (adicionar
+  uma plataforma a um tracking já implantado) e `/audit-tracking` (auditar se o tracking está
+  capturando, enviando e atribuindo os eventos corretamente).
 
 Para detalhes de configuração do servidor, autenticação e deploy, siga o `workflow.md` — ele contém
 o procedimento completo e as verificações obrigatórias.

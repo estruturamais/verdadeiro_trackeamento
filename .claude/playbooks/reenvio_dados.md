@@ -9,7 +9,7 @@
 Antes de qualquer fase, extraia as variáveis abaixo do `wrangler.toml` do projeto:
 
 ```bash
-grep -E "name|database_name|database_id|route|workers_dev" product/wrangler.toml | grep -v "^#"
+grep -E "name|database_name|database_id|route|workers_dev" wrangler.toml | grep -v "^#"
 ```
 
 | Variável | Onde encontrar |
@@ -21,7 +21,7 @@ grep -E "name|database_name|database_id|route|workers_dev" product/wrangler.toml
 
 **Verificar se o endpoint existe:**
 ```bash
-ls product/src/worker/routes/ | grep reprocess
+ls src/worker/routes/ | grep reprocess
 ```
 
 Se o arquivo não existir, o endpoint `/collect/reprocess-selective` **ainda não foi implementado neste projeto**. Informar ao usuário antes de prosseguir — o reenvio não pode ser executado sem ele.
@@ -48,14 +48,14 @@ Formato aceito do usuário: `DD/MM/AAAA` (padrão brasileiro). Converta internam
 **2. Plataforma(s)**
 > "Quais plataformas devem receber os dados? (Meta Ads, TikTok Ads, GA4 — pode ser mais de uma)"
 
-A execução automática via endpoint suporta atualmente apenas **`tracking_meta_ads`** (Meta Ads). Para `tracking_tiktok_ads` (TikTok Ads) e `tracking_ga4` (GA4), documentar como limitação e orientar execução manual conforme a skill correspondente.
+A execução automática via endpoint suporta atualmente apenas **Meta Ads** (`platform='meta_ads'`). Para TikTok Ads (`tiktok_ads`) e GA4 (`google_analytics_4`), documentar como limitação e orientar execução manual conforme a skill correspondente.
 
 **3. Pixels / IDs de destino** *(apenas para Meta Ads)*
 > "Quais pixel IDs do Meta devem receber os dados? Liste apenas os pixels espelho ou de destino — **não inclua o pixel primário** a menos que o usuário confirme explicitamente que quer reenviar para ele também."
 
 Se o usuário não souber os IDs, consulte o `wrangler.toml`:
 ```bash
-grep -A5 '"meta"' product/wrangler.toml
+grep -A5 '"meta"' wrangler.toml
 ```
 Campos relevantes: `pixel_id` (primário — excluir por padrão), `pixel_ids_mirror` (espelhos — incluir).
 
@@ -67,10 +67,15 @@ O filtro usa `startsWith` — variações com `?utm_source=...` são incluídas 
 **5. Escopo de webhooks (compras)**
 > "Quais product_ids de produtos devem ser incluídos? (ou diga 'nenhum' para pular webhooks de compra)"
 
-O filtro busca o product_id nos seguintes caminhos do payload, dependendo do gateway:
-- **Hotmart**: `data.product.id`
+O product_id vive em caminhos diferentes no payload de cada gateway — **fonte da verdade: o parser em `src/worker/gateways/{gateway}.js`** (qualquer reprocessamento deve ler pelo mesmo caminho). Snapshot atual:
+- **Hotmart / PagTrust**: `data.product.id`
 - **Kiwify**: `Product.product_id`
-- **Outros gateways**: `product_id` (raiz)
+- **Kirvano**: `data.products.0.id`
+- **Lastlink**: `Data.Products.0.Id`
+- **Hubla**: `event.product.id` (ou `event.products.0.id`)
+- **Eduzz**: `data.items.0.productId`
+- **Ticto**: `item.product_id`
+- **PerfectPay / Payt**: product_id ainda não mapeado (parser skeleton) — sem filtro por produto até completar via `/new-gateway`
 
 ---
 
@@ -159,7 +164,7 @@ curl -s -X POST https://{WORKER_DOMAIN}/collect/reprocess-selective \
 
 ## Fase 5 — Verificação por plataforma
 
-### Meta Ads (`tracking_meta_ads`)
+### Meta Ads (`platform='meta_ads'`)
 
 **Interpretar o resultado JSON:**
 ```json
@@ -198,13 +203,18 @@ curl -s -X POST https://{WORKER_DOMAIN}/collect/reprocess-selective \
 | `from_date` | `YYYY-MM-DD` (início do período, inclusive) |
 | `to_date` | `YYYY-MM-DD` (fim do período, inclusive) |
 
-**Caminhos de product_id por gateway:**
+**Caminhos de product_id por gateway** (fonte da verdade: os parsers em `src/worker/gateways/`):
 
 | Gateway | Caminho no payload |
 |---|---|
-| Hotmart | `data.product.id` |
+| Hotmart / PagTrust | `data.product.id` |
 | Kiwify | `Product.product_id` |
-| Outros | `product_id` (raiz) |
+| Kirvano | `data.products.0.id` |
+| Lastlink | `Data.Products.0.Id` |
+| Hubla | `event.product.id` (ou `event.products.0.id`) |
+| Eduzz | `data.items.0.productId` |
+| Ticto | `item.product_id` |
+| PerfectPay / Payt | não mapeado (skeleton) |
 
 ### Banco D1
 
@@ -224,6 +234,6 @@ Timestamps em formato ISO com Z: `2026-04-08T13:07:04.372Z`
 
 Consulte sempre o `wrangler.toml` para os valores atuais:
 ```bash
-grep SITE_CONFIG product/wrangler.toml | python -m json.tool 2>/dev/null || grep SITE_CONFIG product/wrangler.toml
+grep SITE_CONFIG wrangler.toml | python -m json.tool 2>/dev/null || grep SITE_CONFIG wrangler.toml
 ```
 Campos: `platforms.meta.pixel_id` (primário), `platforms.meta.pixel_ids_mirror` (espelhos).

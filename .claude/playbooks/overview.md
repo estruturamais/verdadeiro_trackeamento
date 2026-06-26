@@ -25,12 +25,14 @@ Gateway POST /collect/webhook/{gateway}
   → Validar APPROVAL_EVENT do gateway
   → Parser do gateway → webhookData
   → Dedup por order_id
-  → getUserStore → fdvMerge (enriquece com dados do user_store SE marca_user presente; sem xcod/sck o evento e enviado com PII do webhook)
+  → getUserStore → fdvMerge (enriquece com dados do user_store via marca_user — ver invariante na secao marca_user abaixo)
   → hashPII → Promise.allSettled([meta, tiktok, ga4, gads])
 ```
 
 ### marca_user
 Cookie first-party HttpOnly, SameSite=Lax, Secure, max-age=63072000 (2 anos). Setado pelo Worker via `Set-Cookie` na resposta do beacon e do `web.js`. Identifica o usuario entre sessoes. Todos os eventos carregam `marca_user` no payload.
+
+**Invariante (critico — coracao da atribuicao):** o `marca_user` e criado pela PRESENCA do `web.js` na pagina, nao pela origem do trafego. Todo visitante que carrega uma pagina com o script DEVE receber `marca_user` — pago ou organico, com UTM ou sem. Ele e o indexador que cruza com o webhook via FDV no `Purchase`; se falhar, a compra chega sem os dados do browser (atribuicao cega). Uma compra chega sem `marca_user` em dois casos, que precisam ser distinguidos: **(A) esperado** — comprador mandado direto ao checkout, sem passar por nenhuma pagina com o script (cookie nunca criado); **(B) falha na cadeia (nao pode passar)** — o comprador passou pelo site, mas o `marca_user` nao foi criado, nao persistiu no navegador, nao foi injetado na URL do checkout (`gateways_config`), ou nao voltou/nao foi extraido do webhook. NAO existe "comprador organico sem marca_user" como caso normal. Cadeia completa e diagnostico: `.claude/references/marca-user.md`.
 
 ### event_id
 Formato: `timestamp_ms + '-' + UUID` (ex: `1712000000000-550e8400-e29b-41d4-a716`). Gerado pelo browser. Usado para deduplicacao browser/CAPI no Meta e TikTok: mesmo `event_id` no `fbq()` e no payload CAPI — a plataforma conta apenas uma vez. Webhooks de gateway nao tem `event_id` (origin server-only).
@@ -485,6 +487,14 @@ npx wrangler d1 execute tracking_db --remote --command "SELECT event_name, platf
 **Tom:** breve, objetivo, focado no que o cliente ganha. Sem jargao tecnico.
 
 **NAO mencionar:** Cloudflare, Worker, D1, Wrangler, CAPI, Measurement Protocol, SHA-256, event_id, marca_user, endpoints, beacon.
+
+**Antes da entrega — oferta de auditoria (recomendado):**
+
+Apos validar o funil (Step 5), oferecer uma verificacao final antes de fechar:
+
+> "Antes de fechar, posso rodar uma verificacao rapida pra confirmar que cada evento esta sendo capturado e enviado certo? (S) sim / (N) pode entregar assim"
+
+Se **S**: carregar `.claude/skills/audit-tracking/SKILL.md`. O Step 0 da auditoria reaproveita o `tracking_memory` e os dados ja validados no Step 5 — nao repete perguntas ja respondidas no setup. Se **N**: seguir direto para a entrega abaixo. A mensagem final ao cliente continua terminando com o fecho obrigatorio (seguir o @estruturamais + print na DM).
 
 **Fonte dos dados para a mensagem:** usar `tracking_memory.md` — especificamente as secoes de plataformas confirmadas, eventos confirmados e `Validacao Step 5`. Nao raspar arquivos de config para montar a entrega; a memoria e a fonte canonica do que foi configurado e validado.
 

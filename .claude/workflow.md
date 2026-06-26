@@ -200,12 +200,14 @@ Gravar `modalidade_coleta: bulk` ou `modalidade_coleta: passo_a_passo` no `track
 >
 > **A** — Adicionar uma nova plataforma de anuncios
 > **B** — Adicionar suporte a um novo gateway de pagamento
-> **C** — Outro (me descreva o que precisa)"
+> **C** — Verificar / auditar se o tracking esta funcionando corretamente
+> **D** — Outro (me descreva o que precisa)"
 
 6. Rotear para a skill correspondente:
    - A → carregar `.claude/skills/add-platform/SKILL.md`
    - B → carregar `.claude/skills/new-gateway/SKILL.md`
-   - C → interpretar a descricao do cliente e agir
+   - C → carregar `.claude/skills/audit-tracking/SKILL.md`
+   - D → interpretar a descricao do cliente e agir
 
 ---
 
@@ -380,6 +382,7 @@ workflow.md  (este arquivo — condutor)
      |
      +-- .claude/skills/new-gateway/SKILL.md     (slash command /new-gateway)
      +-- .claude/skills/add-platform/SKILL.md    (slash command /add-platform)
+     +-- .claude/skills/audit-tracking/SKILL.md  (slash command /audit-tracking — auditoria)
      |
      +-- .claude/playbooks/reenvio_dados.md      (manutencao — reenvio retroativo)
 ```
@@ -460,3 +463,17 @@ O usuario envia o nome da plataforma a adicionar:
 ```
 
 Comportamento: carregar `.claude/skills/add-platform/SKILL.md` com o nome da plataforma pre-selecionado e prosseguir direto ao Passo 1 (confirmacao de conta).
+
+---
+
+### `/audit-tracking`
+
+Aciona `.claude/skills/audit-tracking/SKILL.md` diretamente — auditoria de um VT ja implantado.
+
+Comportamento: carregar a skill e iniciar pelo Step 0 (porta de entrada), reaproveitando o `tracking_memory` como bussola. Se a infra estiver deployada, aplicar a REGRA BLOQUEANTE de conta Cloudflare antes de qualquer query remota.
+
+---
+
+### Acionamento por intencao (auditoria)
+
+A maioria dos clientes nao sabe o nome das skills. Quando o cliente, com `tracking_memory` existente, sinalizar duvida sobre a saude do tracking em linguagem livre — ex: "ta funcionando?", "ta tudo certo?", "confere pra mim", "ta certo?", "quero auditar", "revisar o tracking", "os eventos estao chegando?" — rotear automaticamente para `.claude/skills/audit-tracking/SKILL.md` (apos a verificacao de conta Cloudflare, se infra deployada). Nao exigir que o cliente saiba o nome da skill nem o comando.
