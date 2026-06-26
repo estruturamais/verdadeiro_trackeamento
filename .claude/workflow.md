@@ -281,7 +281,7 @@ Usuarios configuram multiplas contas Cloudflare na mesma maquina. Sem esta verif
 - Invocar `.claude/playbooks/infra.md`
 - Esta skill e executada **uma unica vez**
 - Se `infra_status: deployada` ja esta no `tracking_memory.md`, pular diretamente para o Step 1
-- Resultado esperado: Worker deployado, D1 criado, `curl https://{dominio}/tracking/web.js` retorna `(function()`
+- Resultado esperado: Worker deployado, D1 criado, `curl https://{dominio}/tracking/web.js` retorna o banner `/*! Verdadeiro Trackeamento vX.Y.Z | @estruturamais | https://instagram.com/estruturamais */` na 1a linha, seguido de `(function()`. A versao no banner identifica qual versao do VT esta no ar (sobrevive ao apagar arquivos locais).
 
 ### Steps 1-6 — Onboarding completo
 

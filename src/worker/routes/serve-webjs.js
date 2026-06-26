@@ -2,6 +2,10 @@ import { getConfig, detectSiteId } from '../shared/config.js';
 import { parseCookies, generateId } from '../shared/helpers.js';
 import WEB_JS_TEMPLATE from '../../web-template.txt';
 
+// Versao lida do banner do template (carimbada no build a partir do package.json).
+// Computada uma vez no carregamento do modulo; '' se o banner nao existir (defensivo).
+const VT_VERSION = (WEB_JS_TEMPLATE.match(/Verdadeiro Trackeamento v([0-9.]+)/) || [])[1] || '';
+
 function getRootDomain(request) {
   const host = request.headers.get('host') || '';
   const parts = host.replace(/:\d+$/, '').split('.');
@@ -20,6 +24,7 @@ export async function handleServeWebJs(request, env) {
   // Config segura para o client (sem tokens/secrets)
   const clientConfig = {
     site_id: config.site_id,
+    vt_version: VT_VERSION,
     google_ads_channel: config.platforms?.google_ads?.channel || 'server',
     debug: config.debug || false,
     ga4_measurement_id: config.platforms?.ga4?.measurement_id,

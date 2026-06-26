@@ -325,11 +325,15 @@ O agente executa este step inteiro — sem pedir ao cliente para abrir browser (
 ### 4.1 Verificar deploy e config (autonomo)
 
 ```bash
-curl "https://{dominio}/tracking/web.js?site_id={site_id}" | head -3
+# 1a linha = banner com a versao do VT + credito (@estruturamais) — confirma que o script esta no ar
+curl -s "https://{dominio}/tracking/web.js?site_id={site_id}" | head -1
+# Config injetada no script (site_id, vt_version e plataformas)
+curl -s "https://{dominio}/tracking/web.js?site_id={site_id}" | grep -o 'var __CONFIG__={[^;]*}'
 ```
 
 Interpretar resultado:
-- `var __CONFIG__={"site_id":"{site_id}","meta_pixel_id":...}` com campos corretos → config OK
+- 1a linha `/*! Verdadeiro Trackeamento vX.Y.Z | @estruturamais | https://instagram.com/estruturamais */` → script servido OK; anotar a versao
+- `var __CONFIG__={"site_id":"{site_id}","vt_version":"X.Y.Z","meta_pixel_id":...}` com campos corretos → config OK
 - `__CONFIG__={}` ou campo de plataforma ausente → problema de config; diagnosticar com `.claude/references/site-config-format.md` antes de continuar
 - Erro de conexao (curl falha) → Worker nao esta acessivel; executar `npx wrangler deployments list` e re-deploy se necessario
 

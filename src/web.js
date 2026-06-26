@@ -636,6 +636,8 @@
     gtag('config', __CONFIG__.ga4_measurement_id, ga4Config);
   }
 
+  if (__CONFIG__.debug || getUrlParam('debug') === '1') console.log('[Tracking] Verdadeiro Trackeamento v' + (__CONFIG__.vt_version || '?') + ' | @estruturamais | https://instagram.com/estruturamais');
+
   try { initMetaPixels(); if (__CONFIG__.debug) console.log('[Tracking] Meta Pixel initialized:', __CONFIG__.meta_pixel_id); } catch(e) { if (__CONFIG__.debug) console.error('[Tracking] Meta Pixel init FAILED:', e); }
   try { initTikTokPixel(); if (__CONFIG__.debug) console.log('[Tracking] TikTok Pixel initialized:', __CONFIG__.tiktok_pixel_id || 'skipped'); } catch(e) { if (__CONFIG__.debug) console.error('[Tracking] TikTok init FAILED:', e); }
   try { initGA4(); if (__CONFIG__.debug) console.log('[Tracking] GA4 initialized:', __CONFIG__.ga4_measurement_id); } catch(e) { if (__CONFIG__.debug) console.error('[Tracking] GA4 init FAILED:', e); }

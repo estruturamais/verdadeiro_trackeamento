@@ -57,10 +57,17 @@ todas essas causas se parecem (ausencia de linha), mas a solucao de cada uma e o
 | Evento X "faltando" | Evento nunca foi configurado (nao pediram, ou pediram e nao foi feito) | sim |
 | Tudo zerado | Sem trafego/compra real no periodo (ou fora dos 30 dias de retencao) | sim |
 
-### 0.1 Memoria como bussola
+### 0.1 Memoria como bussola + versao no ar
 
 Ler `tracking_memory.md`. Se nao existe ou esta vazio → reconstruir da Cloudflare (Fluxo B) antes de
 seguir.
+
+Ler tambem a versao do VT que esta **efetivamente no ar** (sobrevive ao apagar arquivos locais) e
+reporta-la no inicio da auditoria:
+```bash
+curl -s "https://{dominio}/tracking/web.js?site_id={site_id}" | head -1
+```
+A 1a linha e o banner `/*! Verdadeiro Trackeamento vX.Y.Z | @estruturamais | https://instagram.com/estruturamais */`. Se a versao no ar for **menor** que a do repo local (`package.json`), sinalizar que aquele cliente esta numa versao antiga — algumas correcoes/funcionalidades podem nao existir nele e talvez valha um re-deploy.
 
 ### 0.2 Baseline esperado (do `tracking_memory`)
 

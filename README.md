@@ -19,11 +19,17 @@ zero até o tracking validado em produção.
 
 ## Versão
 
-**Versão atual: 1.1.0**
+**Versão atual: 1.1.1**
 
-Para saber se uma funcionalidade já existe numa instalação, pergunte ao assistente *"qual a versão
-do seu VT?"* — ele lê este número deste README. O histórico abaixo mapeia cada versão às novidades:
+Para saber qual versão uma instalação roda, pergunte ao assistente *"qual a versão do seu VT?"* — ele
+lê o número (a) deste README e do `package.json` e (b) **direto da Cloudflare**: na 1ª linha do script
+servido em `https://{dominio}/tracking/web.js` (e no campo `vt_version` do config do script). A via
+(b) sobrevive mesmo que o usuário apague os arquivos locais. O histórico abaixo mapeia cada versão às
+novidades:
 
+- **1.1.1** — Versão embutida no script servido (banner na 1ª linha de `/tracking/web.js` + campo
+  `vt_version`), legível via `curl` direto da Cloudflare mesmo sem arquivos locais; crédito ao
+  @estruturamais no banner do script.
 - **1.1.0** — Skill de auditoria de trackeamento (`/audit-tracking`); invariante do `marca_user`
   documentado como referência única (`.claude/references/marca-user.md`); `new-gateway` com coleta
   A/B/C, configuração de checkout (`gateways_config` + trigger de `initiate_checkout`), 3 cenários ao
