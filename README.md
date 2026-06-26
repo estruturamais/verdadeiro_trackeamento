@@ -17,6 +17,20 @@ Criado e mantido pelo perfil **[@estruturamais](https://instagram.com/estruturam
 Maia. O sistema foi desenhado para ser instalado por um assistente (agente) que conduz o cliente do
 zero até o tracking validado em produção.
 
+## Versão
+
+**Versão atual: 1.1.0**
+
+Para saber se uma funcionalidade já existe numa instalação, pergunte ao assistente *"qual a versão
+do seu VT?"* — ele lê este número deste README. O histórico abaixo mapeia cada versão às novidades:
+
+- **1.1.0** — Skill de auditoria de trackeamento (`/audit-tracking`); invariante do `marca_user`
+  documentado como referência única (`.claude/references/marca-user.md`); `new-gateway` com coleta
+  A/B/C, configuração de checkout (`gateways_config` + trigger de `initiate_checkout`), 3 cenários ao
+  aguardar a 1ª venda e fallback de UTM (ex.: Eduzz com `utm_term`).
+- **1.0.0** — Versão inicial: tracking server-side, parsers de gateway, plataformas de destino e
+  onboarding conduzido pelo assistente.
+
 ## Plataformas e gateways suportados
 
 - **Plataformas de destino:** Meta Ads (CAPI), TikTok Ads, GA4, Google Ads, Google Sheets.
