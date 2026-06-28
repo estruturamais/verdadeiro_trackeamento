@@ -60,7 +60,7 @@ tabela "onde + URL" do `overview.md` Step 5 e, como base tecnica do que o parser
 | Tutory | `[0].status = paid` | a documentar |
 | PagTrust | `event = PURCHASE_APPROVED` | a documentar |
 | Payt | `status = paid` | a documentar |
-| PerfectPay | skeleton (sem `APPROVAL_EVENTS`) | a documentar |
+| PerfectPay | `sale_status_enum_key = approved` | Configuracoes > Webhook — marcar so venda aprovada, em JSON |
 
 > Em todos: **marcar so o evento de compra aprovada, em JSON**. Ao confirmar o rotulo exato de um
 > gateway, adicionar uma secao propria aqui (como a da Ticto).

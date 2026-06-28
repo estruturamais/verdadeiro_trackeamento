@@ -76,7 +76,7 @@ O product_id vive em caminhos diferentes no payload de cada gateway — **fonte 
 - **Eduzz**: `data.items.0.productId`
 - **Ticto**: `item.product_id`
 - **Payt**: `product.code`
-- **PerfectPay**: product_id ainda não mapeado (parser skeleton) — sem filtro por produto até completar via `/new-gateway`
+- **PerfectPay**: `product.code`
 
 ---
 
@@ -216,7 +216,7 @@ curl -s -X POST https://{WORKER_DOMAIN}/collect/reprocess-selective \
 | Eduzz | `data.items.0.productId` |
 | Ticto | `item.product_id` |
 | Payt | `product.code` |
-| PerfectPay | não mapeado (skeleton) |
+| PerfectPay | `product.code` |
 
 ### Banco D1
 

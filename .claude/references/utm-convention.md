@@ -109,7 +109,7 @@ formata diferente. Esta e a planta confirmada a partir de payloads reais:
 | **Payt** | `link.sources.*` | `utm_source/medium/campaign/term/content` diretos | 5/5 |
 | **Eduzz** | `data.utm.*` | `source/medium/campaign/content` — **`utm_term` = NULL** (sacrificado para `marca_user`) | 4/5 |
 | **Tutory** | `metadados.dados_visitante` (string JSON) → `referer` (URL) → `searchParams` | `searchParams.get('utm_*')` das 5 | 5/5 (quando presentes) |
-| **PerfectPay** | — | **pendente** — sem payload de amostra; completar via `new-gateway` | — |
+| **PerfectPay** | `metadata.*` | `utm_source/medium/campaign/term/content` diretos (`marca_user` = `metadata.utm_perfect`, campo dedicado — nenhuma UTM sacrificada) | 5/5 |
 
 ### Notas de extracao
 
@@ -130,7 +130,6 @@ formata diferente. Esta e a planta confirmada a partir de payloads reais:
 
 - **Eduzz:** sem `utm_term` (conjunto/adset).
 - **Tutory:** so traz as UTMs que estiverem na URL do `referer`.
-- **PerfectPay:** extracao de UTM pendente ate haver um webhook real.
 
 ---
 

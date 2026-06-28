@@ -1,4 +1,4 @@
-/*! Verdadeiro Trackeamento v1.2.0 | criado por @estruturamais | https://instagram.com/estruturamais */
+/*! Verdadeiro Trackeamento v1.3.0 | criado por @estruturamais | https://instagram.com/estruturamais */
 (function() {
   'use strict';
 

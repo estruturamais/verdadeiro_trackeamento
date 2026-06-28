@@ -111,8 +111,8 @@ que a leitura segue a convencao dele.
   vazio. Deixar claro que o modelo de atribuicao (first/last/linear) e uma escolha; o default e
   last-click.
 - **Limitacoes conhecidas (avisar, nao mascarar):** Eduzz nao traz `utm_term`; Tutory traz so o que
-  estava na URL do checkout; PerfectPay ainda nao extrai UTM. Em gateway sem UTM no webhook, cair
-  para a jornada (`marca_user` → `events`).
+  estava na URL do checkout. Em gateway sem UTM no webhook, cair para a jornada
+  (`marca_user` → `events`).
 
 ---
 

@@ -1,13 +1,13 @@
 ---
 name: new-gateway
-description: Adiciona suporte a um novo gateway de pagamento no Verdadeiro Trackeamento, ou completa um parser skeleton existente (ex.: perfectpay). Mapeia o payload do webhook de compra aprovada, gera o parser e o registra. Use ao integrar um gateway ainda sem suporte completo ou quando webhooks de compra não chegam às plataformas.
+description: Adiciona suporte a um novo gateway de pagamento no Verdadeiro Trackeamento, ou completa um parser skeleton existente. Mapeia o payload do webhook de compra aprovada, gera o parser e o registra. Use ao integrar um gateway ainda sem suporte completo ou quando webhooks de compra não chegam às plataformas.
 ---
 
 # Skill: new_gateway
 
 ## Papel
 
-Adiciona suporte completo a um gateway novo ou completa o parser de um gateway skeleton existente (hoje, apenas perfectpay), permitindo que webhooks de compra aprovada sejam processados e os eventos enviados para todas as plataformas configuradas.
+Adiciona suporte completo a um gateway novo ou completa o parser de um gateway skeleton existente, permitindo que webhooks de compra aprovada sejam processados e os eventos enviados para todas as plataformas configuradas.
 
 Pode ser invocada durante o Step 2 (gateway detectado sem suporte completo) ou o Step 5 (cliente relata que webhooks de compra nao chegam nas plataformas).
 
@@ -16,12 +16,10 @@ Pode ser invocada durante o Step 2 (gateway detectado sem suporte completo) ou o
 ## Status dos gateways
 
 ### Parsers completos — NAO invocar esta skill
-hotmart, kiwify, kirvano, lastlink, pagtrust, eduzz, ticto, payt, hubla, green, tutory
+hotmart, kiwify, kirvano, lastlink, pagtrust, eduzz, ticto, payt, hubla, green, tutory, perfectpay
 
 ### Skeletons — invocar para completar
-| Gateway    | Arquivo                          | Situacao                        |
-|------------|----------------------------------|---------------------------------|
-| perfectpay | `gateways/perfectpay.js` | Apenas `marca_user` mapeado     |
+Nenhum no momento. Esta skill atende gateways novos (ainda sem parser).
 
 ---
 

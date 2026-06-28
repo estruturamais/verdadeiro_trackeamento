@@ -12,7 +12,6 @@ import { parseGreen } from './green.js';
 import { parseTutory } from './tutory.js';
 
 // Gateways com implementacao completa e validada
-// + Skeletons — mapeamento de marca_user confirmado, demais campos TODO
 export const GATEWAY_PARSERS = {
   hotmart:    parseHotmart,
   kiwify:     parseKiwify,
@@ -22,8 +21,6 @@ export const GATEWAY_PARSERS = {
   eduzz:      parseEduzz,
   payt:       parsePayt,
   ticto:      parseTicto,
-
-  // Skeleton — nao dispara eventos ricos (order_id vazio = sem custom_data rico para as APIs)
   perfectpay: parsePerfectPay,
 
   hubla:      parseHubla,
@@ -39,7 +36,7 @@ export const APPROVAL_EVENTS = {
   pagtrust:   { field: 'event',                value: 'PURCHASE_APPROVED' },
   ticto:      { field: 'status', value: 'authorized' },
   eduzz:      { field: 'data.status', value: 'paid' },
-  perfectpay: null,
+  perfectpay: { field: 'sale_status_enum_key', value: 'approved' },
   payt:       { field: 'status', value: 'paid' },
 
   hubla:      { field: 'type', value: 'invoice.payment_succeeded' },

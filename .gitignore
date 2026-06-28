@@ -5,3 +5,4 @@ node_modules/
 wrangler.toml
 src/web/
 tracking_memory.md
+.claude/settings.local.json

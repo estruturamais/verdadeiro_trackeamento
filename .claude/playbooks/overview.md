@@ -444,7 +444,7 @@ Delegar para a skill especialista de cada plataforma confirmada:
 
 ### Webhooks de gateway — apenas se modelo for infoproduto
 
-> Para gateways com parser incompleto (perfectpay) ou para um gateway nao listado abaixo, invocar `.claude/skills/new-gateway/SKILL.md` antes de continuar.
+> Para um gateway nao listado abaixo (ou com parser incompleto), invocar `.claude/skills/new-gateway/SKILL.md` antes de continuar.
 
 > **Setup correto no painel (evento/formato/versao/tipo):** ao instruir o cliente, seguir
 > `.claude/references/gateway-webhooks.md` — ele diz **qual evento marcar** (so o de compra aprovada,
@@ -485,7 +485,7 @@ npx wrangler d1 execute tracking_db --remote --command "SELECT gateway, order_id
 | `processed` | `order_id` | Causa provavel |
 |---|---|---|
 | `0` | preenchido | Evento de aprovacao filtrado — verificar se o gateway estava em modo de teste ou se o evento enviado nao era uma compra aprovada |
-| `0` | `null` | Parser nao extraiu order_id — gateway skeleton (perfectpay) ainda nao tem parser completo |
+| `0` | `null` | Parser nao extraiu order_id — revisar o path do order_id no parser com o payload real |
 | Linha ausente | — | Webhook nao chegou ao Worker — verificar URL configurada no painel do gateway e se o dominio esta correto |
 
 Se `processed = 0` com `order_id` preenchido e o evento era uma compra real aprovada, verificar a tabela `events` para detalhes do erro por plataforma:
