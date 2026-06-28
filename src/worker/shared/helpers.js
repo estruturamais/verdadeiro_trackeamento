@@ -37,3 +37,42 @@ export function splitLastName(fullname) {
   const parts = fullname.trim().split(/\s+/);
   return parts.length > 1 ? parts[parts.length - 1] : '';
 }
+
+// ---- UTM (last-click da venda) — normaliza para as 5 colunas do webhook_raw ----
+// Grava CRU (sem transformar valores). Ver .claude/references/utm-convention.md.
+
+// Chaves prefixadas: utm_source, utm_medium, ... (Kiwify, Kirvano, Ticto, Payt, Green, Tutory).
+export function utmPrefixed(obj) {
+  obj = obj || {};
+  return {
+    utm_source:   obj.utm_source   || '',
+    utm_medium:   obj.utm_medium   || '',
+    utm_campaign: obj.utm_campaign || '',
+    utm_term:     obj.utm_term     || '',
+    utm_content:  obj.utm_content  || ''
+  };
+}
+
+// Chaves "nuas": source, medium, campaign, term, content (Hubla, Eduzz).
+export function utmBare(obj) {
+  obj = obj || {};
+  return {
+    utm_source:   obj.source   || '',
+    utm_medium:   obj.medium   || '',
+    utm_campaign: obj.campaign || '',
+    utm_term:     obj.term     || '',
+    utm_content:  obj.content  || ''
+  };
+}
+
+// String unica "source|medium|campaign|term|content" (Hotmart, PagTrust — campo sck).
+export function utmFromPipe(str) {
+  const p = String(str || '').split('|');
+  return {
+    utm_source:   p[0] || '',
+    utm_medium:   p[1] || '',
+    utm_campaign: p[2] || '',
+    utm_term:     p[3] || '',
+    utm_content:  p[4] || ''
+  };
+}

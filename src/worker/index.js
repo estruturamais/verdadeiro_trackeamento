@@ -77,7 +77,7 @@ export default {
     } catch (err) {
       console.error('Worker fetch error:', err);
       if (err.message?.includes('D1_ERROR') || err.message?.includes('maximum DB size')) {
-        ctx.waitUntil(runCleanup(env.DB).catch(() => {}));
+        ctx.waitUntil(runCleanup(env.DB, env, { force: true }).catch(() => {}));
       }
       const headers = path.startsWith('/collect/')
         ? { 'Content-Type': 'application/json', ...getCorsHeaders(request.headers.get('Origin')) }
@@ -90,7 +90,7 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    await runCleanup(env.DB);
+    await runCleanup(env.DB, env);
   }
 };
 

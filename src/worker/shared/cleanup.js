@@ -1,4 +1,44 @@
-export async function runCleanup(db) {
+// Retencao dos dados no D1. Politica lida do SITE_CONFIG (fonte da verdade):
+//
+//   "retention": {
+//     "mode": "auto_clean" | "keep_all",        // default: auto_clean
+//     "when_full": "halt_writes" | "recycle_oldest"  // so vale em keep_all; default: recycle_oldest
+//   }
+//
+// - auto_clean (default): limpeza por janela roda normalmente (grátis, sem historico longo).
+// - keep_all: a limpeza de rotina NAO roda (dados persistem; exige pagar a Cloudflare).
+//     - when_full=halt_writes: nem a limpeza de emergencia (DB cheio) roda → as escritas falham
+//       (o tracking para — incentivo a pagar).
+//     - when_full=recycle_oldest: so a limpeza de emergencia roda, reciclando o lote mais antigo
+//       para o tracking nao travar.
+//
+// O catch de DB-cheio (index.js) e o retry do db-write.js chamam com { force: true }.
+// Ver .claude/references/utm-convention.md (vizinho) e o workflow (pergunta opt-in do analistA+).
+
+function getRetention(env) {
+  try {
+    const cfg = typeof env?.SITE_CONFIG === 'string'
+      ? JSON.parse(env.SITE_CONFIG)
+      : (env?.SITE_CONFIG || {});
+    const r = cfg.retention || {};
+    return {
+      mode: r.mode === 'keep_all' ? 'keep_all' : 'auto_clean',
+      when_full: r.when_full === 'halt_writes' ? 'halt_writes' : 'recycle_oldest'
+    };
+  } catch (e) {
+    return { mode: 'auto_clean', when_full: 'recycle_oldest' };
+  }
+}
+
+export async function runCleanup(db, env, opts = {}) {
+  const { mode, when_full } = getRetention(env);
+  const force = opts.force === true;
+
+  if (mode === 'keep_all') {
+    // Rotina nunca limpa em keep_all. Emergencia (force) so limpa se recycle_oldest.
+    if (!force || when_full === 'halt_writes') return;
+  }
+
   await db.batch([
     db.prepare("DELETE FROM events WHERE timestamp < datetime('now', '-7 days')"),
     db.prepare("DELETE FROM webhook_raw WHERE timestamp < datetime('now', '-14 days')"),

@@ -93,6 +93,22 @@
 
 ---
 
+## analistA+ (consulta de dados)
+
+<!-- Opt-in pos-Step 6. A captura de UTM ja roda por padrao desde o deploy;
+     estes campos definem a LEITURA (convencao) e a RETENCAO. Fonte da verdade = SITE_CONFIG. -->
+
+- ativo: sim | nao
+- convencao_utm: padrao | custom
+  - criativo: utm_content
+  - conjunto: utm_term
+  - sinal_pago: utm_medium=paid
+  - (se custom: descrever qual campo carrega o criativo e como marca trafego pago)
+- retencao_mode: auto_clean | keep_all
+- retencao_when_full: recycle_oldest | halt_writes  <!-- so quando keep_all -->
+
+---
+
 ## Status do workflow
 
 - [ ] Step 0: infraestrutura Cloudflare configurada

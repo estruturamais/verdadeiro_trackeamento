@@ -22,7 +22,9 @@ payload.
 - Todo visitante que carrega uma pagina com o script recebe `marca_user`: **pago ou organico, com
   UTM ou sem**.
 - O `web.js` injeta o `marca_user` no **parametro indexador** dos links de checkout (definido em
-  `gateways_config`). Ex: `xcod` (Hotmart/Hubla), `sck` (Kiwify), `utm_perfect` (PerfectPay).
+  `gateways_config`). Ex: `xcod` (Hotmart), `sck` (Kiwify), `utm_perfect` (PerfectPay). Gateways sem
+  campo de rastreamento proprio (que apenas ecoam a URL do checkout) usam a propria chave `marca_user`
+  como indexador: **Hubla, Lastlink, Tutory**.
 - No webhook de compra, o gateway devolve esse indexador. O parser do gateway o extrai como
   `marca_user`; o `fdvMerge` usa o `marca_user` para buscar o `user_store` e enriquecer o evento
   com os dados do browser (fbp, fbc, geo, email capturado etc.).

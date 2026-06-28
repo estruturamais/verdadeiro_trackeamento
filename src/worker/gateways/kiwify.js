@@ -1,8 +1,11 @@
-import { getNestedValue } from '../shared/helpers.js';
+import { getNestedValue, utmPrefixed } from '../shared/helpers.js';
 
 export function parseKiwify(body) {
-  // Value: formato em centavos sem ponto — regex: (.+)(\d{2})$ → $1.$2
-  var rawValue = String(getNestedValue(body, 'Commissions.my_commission') || '');
+  const utm = utmPrefixed(getNestedValue(body, 'TrackingParameters'));
+
+  // Value = o que o cliente pagou (bruto, em centavos). NAO usar my_commission (comissao liquida do produtor).
+  // Formato em centavos sem ponto — regex: (.+)(\d{2})$ → $1.$2
+  var rawValue = String(getNestedValue(body, 'Commissions.charge_amount') || '');
   var value = rawValue.replace(/(.+)(\d{2})$/, '$1.$2');
 
   // Phone: remover + inicial
@@ -12,6 +15,7 @@ export function parseKiwify(body) {
   var zip = String(getNestedValue(body, 'Customer.zipcode') || '').replace(/^(\d{5}).*/, '$1');
 
   return {
+    ...utm,
     marca_user: getNestedValue(body, 'TrackingParameters.sck'),
     email: getNestedValue(body, 'Customer.email'),
     phone: phone,

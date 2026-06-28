@@ -14,7 +14,7 @@ import { dbWrite } from '../shared/db-write.js';
 
 export async function handleWebhook(request, env, gateway, ctx) {
   // Cleanup proativo: roda em background em todo webhook (DELETE indexado, custo ~0 quando nada a deletar)
-  ctx.waitUntil(runCleanup(env.DB).catch(() => {}));
+  ctx.waitUntil(runCleanup(env.DB, env).catch(() => {}));
   const body = await request.json();
   const config = await getConfigForWebhook(env, gateway);
 
@@ -28,7 +28,8 @@ export async function handleWebhook(request, env, gateway, ctx) {
     () => env.DB.prepare(
       'INSERT INTO webhook_raw (site_id, gateway, order_id, payload) VALUES (?, ?, ?, ?)'
     ).bind(config.site_id || '', gateway, null, JSON.stringify(body).substring(0, 8192)).run(),
-    'webhook.insert_raw'
+    'webhook.insert_raw',
+    env
   );
   const rawId = insertResult?.meta?.last_row_id ?? null;
 
@@ -66,12 +67,27 @@ export async function handleWebhook(request, env, gateway, ctx) {
     // duplicata. webhook_raw e' input log: a auditoria precisa do txnId em
     // cada linha pra cruzar com events e identificar duplicatas via COUNT.
     if (rawId) {
+      // Enriquecimento da venda na MESMA linha (chave id=rawId): order_id + marca_user,
+      // value e UTM last-click (cru). Best-effort por cima do raw ja gravado.
       await dbWrite(
         env.DB,
         () => env.DB.prepare(
-          'UPDATE webhook_raw SET order_id = ? WHERE id = ?'
-        ).bind(txnId, rawId).run(),
-        'webhook.update_order_id'
+          'UPDATE webhook_raw SET order_id = ?, marca_user = ?, value = ?, ' +
+          'utm_source = ?, utm_medium = ?, utm_campaign = ?, utm_term = ?, utm_content = ? ' +
+          'WHERE id = ?'
+        ).bind(
+          txnId,
+          webhookData.marca_user || '',
+          webhookData.value || '',
+          webhookData.utm_source || '',
+          webhookData.utm_medium || '',
+          webhookData.utm_campaign || '',
+          webhookData.utm_term || '',
+          webhookData.utm_content || '',
+          rawId
+        ).run(),
+        'webhook.update_order_id',
+        env
       );
     }
 
@@ -166,7 +182,8 @@ export async function handleWebhook(request, env, gateway, ctx) {
       () => env.DB.prepare(
         'UPDATE webhook_raw SET processed = 1 WHERE id = ?'
       ).bind(rawId).run(),
-      'webhook.update_processed'
+      'webhook.update_processed',
+      env
     );
   }
 

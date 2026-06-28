@@ -1,4 +1,4 @@
-/*! Verdadeiro Trackeamento v1.1.1 | criado por @estruturamais | https://instagram.com/estruturamais */
+/*! Verdadeiro Trackeamento v1.2.0 | criado por @estruturamais | https://instagram.com/estruturamais */
 (function() {
   'use strict';
 
@@ -108,9 +108,11 @@
       indexador: 'utm_term'
     },
     lastlink: {
+      // Lastlink nao tem parametro de rastreamento proprio: usamos a chave 'marca_user'
+      // como indexador (preserva todas as UTMs). Volta na Data.Purchase.OriginUrl (ver lastlink.js).
       domains: ['lastlink.com', 'lastlink.com.br', 'pay.lastlink.com'],
       caminho: 'caminho',
-      indexador: 'utm_id'
+      indexador: 'marca_user'
     },
     perfectpay: {
       domains: ['perfectpay.com.br', 'checkout.perfectpay.com.br'],
@@ -123,14 +125,24 @@
       indexador: 'sck'
     },
     payt: {
-      domains: ['payt.com.br', 'checkout.payt.com.br'],
+      domains: ['payt.com.br', 'checkout.payt.com.br', 'payt.site'],
       caminho: 'caminho',
       indexador: 'src'
     },
     hubla: {
+      // Hubla nao tem parametro de rastreamento proprio: usamos a chave 'marca_user'
+      // como indexador. Volta na URL da paymentSession (ver hubla.js).
       domains: ['hubla.com.br', 'pay.hubla.com.br', 'checkout.hubla.com.br'],
       caminho: 'caminho',
-      indexador: 'xcod'
+      indexador: 'marca_user'
+    },
+    tutory: {
+      // Tutory nao tem parametro de rastreamento proprio: usamos a chave
+      // 'marca_user' como indexador (preserva todas as UTMs valiosas). O valor
+      // injetado aqui volta na URL do checkout dentro do webhook (ver tutory.js).
+      domains: ['plataformatutory.com.br'],
+      caminho: 'caminho',
+      indexador: 'marca_user'
     }
   };
 

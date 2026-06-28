@@ -13,7 +13,7 @@ import { dbWrite } from '../shared/db-write.js';
 export async function handleCollectEvent(request, env, ctx) {
   // Cleanup proativo: roda em background em ~1% dos eventos de browser
   if (Math.random() < 0.01) {
-    ctx.waitUntil(runCleanup(env.DB).catch(() => {}));
+    ctx.waitUntil(runCleanup(env.DB, env).catch(() => {}));
   }
   const body = await request.json();
   const siteId = body.site_id;
@@ -55,7 +55,8 @@ export async function handleCollectEvent(request, env, ctx) {
       country: body.user_data?.country || cfCountry,
       zip: body.user_data?.zip || cfZip
     }),
-    'event.upsertUserStore'
+    'event.upsertUserStore',
+    env
   );
 
   // 1.5 Log do beacon recebido (garante visibilidade mesmo sem plataformas)
@@ -65,7 +66,13 @@ export async function handleCollectEvent(request, env, ctx) {
     status_code: 200, request_ms: 0,
     sent_payload: JSON.stringify(body),
     error_message: '', response_payload: '',
-    marca_user: marcaUser, source_ip: clientIp, user_agent: userAgent
+    marca_user: marcaUser, source_ip: clientIp, user_agent: userAgent,
+    // UTMs da jornada web (cruas) — esta e a unica linha 1-por-evento (platform='collect')
+    utm_source:   body.utm_data?.utm_source   || '',
+    utm_medium:   body.utm_data?.utm_medium   || '',
+    utm_campaign: body.utm_data?.utm_campaign || '',
+    utm_term:     body.utm_data?.utm_term     || '',
+    utm_content:  body.utm_data?.utm_content  || ''
   });
 
   // 2. Preparar dados hasheados

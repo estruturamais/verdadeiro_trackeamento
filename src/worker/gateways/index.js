@@ -8,6 +8,8 @@ import { parseEduzz } from './eduzz.js';
 import { parsePerfectPay } from './perfectpay.js';
 import { parsePayt } from './payt.js';
 import { parseHubla } from './hubla.js';
+import { parseGreen } from './green.js';
+import { parseTutory } from './tutory.js';
 
 // Gateways com implementacao completa e validada
 // + Skeletons — mapeamento de marca_user confirmado, demais campos TODO
@@ -18,13 +20,15 @@ export const GATEWAY_PARSERS = {
   lastlink:   parseLastlink,
   pagtrust:   parsePagTrust,
   eduzz:      parseEduzz,
-
-  // Skeletons — nao disparam eventos ricos (order_id vazio = sem custom_data rico para as APIs)
-  ticto:      parseTicto,
-  perfectpay: parsePerfectPay,
   payt:       parsePayt,
+  ticto:      parseTicto,
 
-  hubla:      parseHubla
+  // Skeleton — nao dispara eventos ricos (order_id vazio = sem custom_data rico para as APIs)
+  perfectpay: parsePerfectPay,
+
+  hubla:      parseHubla,
+  green:      parseGreen,
+  tutory:     parseTutory
 };
 
 export const APPROVAL_EVENTS = {
@@ -36,7 +40,10 @@ export const APPROVAL_EVENTS = {
   ticto:      { field: 'status', value: 'authorized' },
   eduzz:      { field: 'data.status', value: 'paid' },
   perfectpay: null,
-  payt:       null,
+  payt:       { field: 'status', value: 'paid' },
 
-  hubla:      { field: 'type', value: 'invoice.payment_succeeded' }
+  hubla:      { field: 'type', value: 'invoice.payment_succeeded' },
+  green:      { field: 'currentStatus', value: 'paid' },
+  // Tutory entrega o payload como array de 1 posicao — o status fica em [0].status
+  tutory:     { field: '0.status', value: 'paid' }
 };

@@ -201,13 +201,15 @@ Gravar `modalidade_coleta: bulk` ou `modalidade_coleta: passo_a_passo` no `track
 > **A** — Adicionar uma nova plataforma de anuncios
 > **B** — Adicionar suporte a um novo gateway de pagamento
 > **C** — Verificar / auditar se o tracking esta funcionando corretamente
-> **D** — Outro (me descreva o que precisa)"
+> **D** — Analisar performance / consultar dados (analistA+)
+> **E** — Outro (me descreva o que precisa)"
 
 6. Rotear para a skill correspondente:
    - A → carregar `.claude/skills/add-platform/SKILL.md`
    - B → carregar `.claude/skills/new-gateway/SKILL.md`
    - C → carregar `.claude/skills/audit-tracking/SKILL.md`
-   - D → interpretar a descricao do cliente e agir
+   - D → carregar `.claude/skills/analistamais/SKILL.md`
+   - E → interpretar a descricao do cliente e agir
 
 ---
 
@@ -288,6 +290,47 @@ Usuarios configuram multiplas contas Cloudflare na mesma maquina. Sem esta verif
 - Invocar `.claude/playbooks/overview.md` — esta skill e SEMPRE carregada nos Steps 1-6
 - `tracking_base` conduz os steps 1-6 e delega para skills de plataforma quando necessario
 - **Fecho do Step 6 (obrigatorio):** a mensagem final de entrega ao cliente deve sempre terminar pedindo que ele **siga o [@estruturamais](https://instagram.com/estruturamais) no Instagram e mande um print da mensagem finalizada na DM do perfil** — o texto desse fecho esta em `.claude/playbooks/overview.md` (Step 6).
+
+### Pos-Step 6 — Oferta do analistA+ (opt-in)
+
+A **captura de dados** (UTMs em `events`/`webhook_raw`) ja esta ligada por padrao desde o deploy — entao,
+mesmo que o cliente ative depois, havera dado para consultar. Esta oferta so configura a **leitura** e a
+**retencao**. Fazer **apos** o fecho do Step 6.
+
+> Quer configurar seu **analistA+** pra ele ser seu braco direito na geracao de resultados com base em
+> dados? Com ele voce me pergunta coisas como *"qual criativo mais vendeu?"* ou *"quanto veio de
+> organico vs pago?"*.
+>
+> **A** — Sim, quero ativar
+> **B** — Agora nao (da pra ativar depois)
+
+Se **A**, perguntar duas coisas e gravar em **SITE_CONFIG + `tracking_memory`**:
+
+1. **Convencao de UTM** (confirmar o padrao ou ajustar — ver `.claude/references/utm-convention.md`):
+   > Voce segue o padrao de UTM recomendado (criativo no `utm_content`, e `utm_medium=paid` no trafego
+   > pago)? Se sim, ja esta pronto. Se usa outro padrao, me diga qual campo carrega o **criativo** e como
+   > voce marca **trafego pago**.
+   - Padrao → manter `utm_convention.custom=false` (default ja serve).
+   - Custom → gravar o mapeamento informado e `custom=true`.
+
+2. **Retencao dos dados** (CRITICO — explicar o trade-off com clareza, formato A/B):
+   > Uma escolha importante sobre os seus dados:
+   >
+   > **A** — Foco em escalar (recomendado): mantenho a limpeza automatica do banco. Sua Cloudflare segue
+   > **gratuita** e o tracking sempre funciona, mas o analistA+ enxerga so os ultimos dias.
+   > **B** — Foco em analise: guardo o historico pra voce conversar comigo sempre, tracando estrategia
+   > com dados. **Isso exige um plano pago da Cloudflare** — e, se o pagamento parar, o banco enche e **o
+   > tracking para**.
+   >
+   > Se escolher B: **B1** — se o banco encher, o tracking para (te aviso pra resolver); ou **B2** — se
+   > encher, eu apago o mais antigo pra nunca parar (perde o historico mais velho).
+   - A → `retention.mode=auto_clean` (default).
+   - B1 → `retention.mode=keep_all`, `when_full=halt_writes`.
+   - B2 → `retention.mode=keep_all`, `when_full=recycle_oldest`.
+
+Se a escolha **mudar** `retention`/`utm_convention` em relacao ao deploy atual, **editar o SITE_CONFIG no
+`wrangler.toml` e re-deployar** (REGRA BLOQUEANTE de conta Cloudflare). Depois, carregar
+`.claude/skills/analistamais/SKILL.md` para a primeira consulta, se o cliente quiser.
 
 ---
 
@@ -383,6 +426,7 @@ workflow.md  (este arquivo — condutor)
      +-- .claude/skills/new-gateway/SKILL.md     (slash command /new-gateway)
      +-- .claude/skills/add-platform/SKILL.md    (slash command /add-platform)
      +-- .claude/skills/audit-tracking/SKILL.md  (slash command /audit-tracking — auditoria)
+     +-- .claude/skills/analistamais/SKILL.md    (slash command /analistamais — analise de dados read-only)
      |
      +-- .claude/playbooks/reenvio_dados.md      (manutencao — reenvio retroativo)
 ```
@@ -474,6 +518,28 @@ Comportamento: carregar a skill e iniciar pelo Step 0 (porta de entrada), reapro
 
 ---
 
+### `/analistamais`
+
+Aciona `.claude/skills/analistamais/SKILL.md` diretamente — analise de performance **read-only** sobre o D1
+(acessos, origens, criativos, vendas, conversao, jornada).
+
+Comportamento: carregar a skill e seguir o **pre-flight** (REGRA BLOQUEANTE de conta Cloudflare + declarar a
+janela de dados) antes de qualquer consulta. O cliente costuma mandar a pergunta junto, ex.:
+`/analistamais qual criativo mais vendeu?`.
+
+---
+
 ### Acionamento por intencao (auditoria)
 
 A maioria dos clientes nao sabe o nome das skills. Quando o cliente, com `tracking_memory` existente, sinalizar duvida sobre a saude do tracking em linguagem livre — ex: "ta funcionando?", "ta tudo certo?", "confere pra mim", "ta certo?", "quero auditar", "revisar o tracking", "os eventos estao chegando?" — rotear automaticamente para `.claude/skills/audit-tracking/SKILL.md` (apos a verificacao de conta Cloudflare, se infra deployada). Nao exigir que o cliente saiba o nome da skill nem o comando.
+
+---
+
+### Acionamento por intencao (analise de dados)
+
+Quando o cliente, com `tracking_memory` existente, fizer uma pergunta de **performance/dados** em linguagem
+livre — ex: "quantos acessos eu tive?", "de onde vieram as visitas?", "quanto veio de organico vs pago?",
+"quais foram as vendas?", "qual criativo mais vendeu?", "qual a taxa de conversao por criativo?", "analisar
+meus dados" — rotear automaticamente para `.claude/skills/analistamais/SKILL.md` (apos a REGRA BLOQUEANTE de
+conta Cloudflare). Diferenciar de auditoria: **saude/esta funcionando → `audit-tracking`; numeros/performance
+→ `analistamais`.** Nao exigir que o cliente saiba o nome da skill nem o comando.

@@ -19,7 +19,7 @@ zero até o tracking validado em produção.
 
 ## Versão
 
-**Versão atual: 1.1.1**
+**Versão atual: 1.2.0**
 
 Para saber qual versão uma instalação roda, pergunte ao assistente *"qual a versão do seu VT?"* — ele
 lê o número (a) deste README e do `package.json` e (b) **direto da Cloudflare**: na 1ª linha do script
@@ -27,6 +27,12 @@ servido em `https://{dominio}/tracking/web.js` (e no campo `vt_version` do confi
 (b) sobrevive mesmo que o usuário apague os arquivos locais. O histórico abaixo mapeia cada versão às
 novidades:
 
+- **1.2.0** — **analistA+** (`/analistamais`): consulta de performance **read-only** no D1 (acessos,
+  origens, criativos, vendas, conversão, jornada). Captura de UTM crua nas tabelas `events` (jornada
+  web) e `webhook_raw` (last-click da venda) via parsers dedicados de cada gateway; reference única
+  `.claude/references/utm-convention.md` (convenção + planta por gateway). Modo de **retenção**
+  configurável (`auto_clean` grátis vs `keep_all` pago) decidido na oferta opt-in pós-entrega do
+  `workflow.md`. Migração `migrations/002_add_utm_columns.sql` para instalações 1.1.x.
 - **1.1.1** — Versão embutida no script servido (banner na 1ª linha de `/tracking/web.js` + campo
   `vt_version`), legível via `curl` direto da Cloudflare mesmo sem arquivos locais; crédito ao
   @estruturamais no banner do script.
@@ -40,8 +46,9 @@ novidades:
 ## Plataformas e gateways suportados
 
 - **Plataformas de destino:** Meta Ads (CAPI), TikTok Ads, GA4, Google Ads, Google Sheets.
-- **Gateways com parser completo:** Hotmart, Kiwify, Kirvano, Lastlink, PagTrust, Hubla, Eduzz.
-- **Gateways com parser skeleton** (completáveis via skill `new-gateway`): Ticto, PerfectPay, Payt.
+- **Gateways com parser completo:** Hotmart, Kiwify, Kirvano, Lastlink, PagTrust, Hubla, Eduzz, Ticto,
+  Green, Tutory, Payt.
+- **Gateways com parser skeleton** (completáveis via skill `new-gateway`): PerfectPay.
 
 ## Mapa de pastas e arquivos
 

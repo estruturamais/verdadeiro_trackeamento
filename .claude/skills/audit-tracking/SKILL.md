@@ -196,9 +196,10 @@ elos em `.claude/references/marca-user.md`):
 
 1. **(parser) `webhook_raw.payload` tem o campo do indexador?** Sim mas o parser retornou vazio →
    corrigir o `path` em `src/worker/gateways/{gateway}.js`. Nao tem no raw → seguir.
-2. **(injecao) `gateways_config`** tem o `indexador` certo (`xcod` Hotmart/Hubla, `sck` Kiwify,
-   `utm_perfect` PerfectPay)? A URL do checkout carrega o parametro? (confirmar na Camada 3 — URL pos
-   redirecionamento). Errado/ausente → corrigir config e re-deploy.
+2. **(injecao) `gateways_config`** tem o `indexador` certo (`xcod` Hotmart, `sck` Kiwify,
+   `marca_user` Hubla/Lastlink/Tutory, `utm_perfect` PerfectPay)? A URL do checkout carrega o
+   parametro? (confirmar na Camada 3 — URL pos redirecionamento). Errado/ausente → corrigir config e
+   re-deploy.
 3. **(persistencia) o cookie sobrevive entre paginas/dominios?** Checkout em dominio diferente,
    bloqueio de cookie (incognito/ITP), `web.js` carregado tarde → `?debug=1` deve mostrar o **mesmo**
    `marca_user` entre paginas (Camada 3).
@@ -267,8 +268,9 @@ print analogo **so** se o banco indicar duvida.
 - **3.1 `?debug=1`:** orientar acessar `{dominio}/{pagina}?debug=1`, abrir o console (F12 > Console)
   e relatar os logs `[Tracking] ...` e o `marca_user` capturado.
 - **3.2 Passagem do indexador:** pedir a **URL completa do checkout apos o redirecionamento** e
-  confirmar que o **parametro certo daquele gateway** carrega o `marca_user` (`xcod` Hotmart/Hubla,
-  `sck` Kiwify, `utm_perfect` PerfectPay, etc. — ler de `gateways_config`).
+  confirmar que o **parametro certo daquele gateway** carrega o `marca_user` (`xcod` Hotmart,
+  `sck` Kiwify, `marca_user` Hubla/Lastlink/Tutory, `utm_perfect` PerfectPay, etc. — ler de
+  `gateways_config`).
 
 ---
 

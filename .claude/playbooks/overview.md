@@ -162,6 +162,8 @@ Se **A**, montar o bloco `qualification` (que sera escrito no `SITE_CONFIG` no S
 | pagtrust   | pagtrust.com, pagtrust.com.br, checkout.pagtrust.com.br           |
 | payt       | payt.com.br, checkout.payt.com.br                                  |
 | hubla      | hubla.com.br, pay.hubla.com.br, checkout.hubla.com.br             |
+| green      | green.com.br, payfast.green.com.br                                 |
+| tutory     | plataformatutory.com.br, pay.plataformatutory.com.br               |
 
 ### WhatsApp
 Links contendo `wa.me` ou `api.whatsapp.com`
@@ -442,7 +444,13 @@ Delegar para a skill especialista de cada plataforma confirmada:
 
 ### Webhooks de gateway — apenas se modelo for infoproduto
 
-> Para gateways com parser incompleto (ticto, eduzz, perfectpay, payt) ou para um gateway nao listado abaixo, invocar `.claude/skills/new-gateway/SKILL.md` antes de continuar.
+> Para gateways com parser incompleto (perfectpay) ou para um gateway nao listado abaixo, invocar `.claude/skills/new-gateway/SKILL.md` antes de continuar.
+
+> **Setup correto no painel (evento/formato/versao/tipo):** ao instruir o cliente, seguir
+> `.claude/references/gateway-webhooks.md` — ele diz **qual evento marcar** (so o de compra aprovada,
+> para nao poluir o `webhook_raw`), em **JSON**, e a **versao/variante** que o parser entende (ex.:
+> Ticto = evento "Venda Realizada", v2, JSON, "Enviar Order Bump | Combo junto com a oferta
+> principal"). Evento/versao/formato errado = compra nao parseada = venda perdida.
 
 Instruir o cliente a configurar a URL de webhook no painel do gateway detectado:
 
@@ -457,6 +465,8 @@ Instruir o cliente a configurar a URL de webhook no painel do gateway detectado:
 | PerfectPay | Configuracoes > Webhook      | `https://{dominio}/collect/webhook/perfectpay`     |
 | PagTrust   | Configuracoes > Integracao   | `https://{dominio}/collect/webhook/pagtrust`       |
 | Payt       | Configuracoes > Webhook      | `https://{dominio}/collect/webhook/payt`           |
+| Green      | Configuracoes > Webhooks     | `https://{dominio}/collect/webhook/green`          |
+| Tutory     | Configuracoes > Webhooks     | `https://{dominio}/collect/webhook/tutory`         |
 
 ### 5.4 Validacao de webhooks (apenas infoproduto)
 
@@ -475,7 +485,7 @@ npx wrangler d1 execute tracking_db --remote --command "SELECT gateway, order_id
 | `processed` | `order_id` | Causa provavel |
 |---|---|---|
 | `0` | preenchido | Evento de aprovacao filtrado — verificar se o gateway estava em modo de teste ou se o evento enviado nao era uma compra aprovada |
-| `0` | `null` | Parser nao extraiu order_id — gateway skeleton (eduzz, ticto, perfectpay, payt) ainda nao tem parser completo |
+| `0` | `null` | Parser nao extraiu order_id — gateway skeleton (perfectpay) ainda nao tem parser completo |
 | Linha ausente | — | Webhook nao chegou ao Worker — verificar URL configurada no painel do gateway e se o dominio esta correto |
 
 Se `processed = 0` com `order_id` preenchido e o evento era uma compra real aprovada, verificar a tabela `events` para detalhes do erro por plataforma:

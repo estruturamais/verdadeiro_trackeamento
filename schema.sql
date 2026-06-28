@@ -46,7 +46,14 @@ CREATE TABLE IF NOT EXISTS events (
   response_payload  TEXT,
   marca_user        TEXT,
   source_ip     TEXT,
-  user_agent    TEXT
+  user_agent    TEXT,
+  -- UTMs do lado WEB (jornada). Populadas SO no insert do beacon (platform='collect'),
+  -- cruas, a partir de body.utm_data. Demais linhas (despacho por plataforma) ficam NULL.
+  utm_source    TEXT,
+  utm_medium    TEXT,
+  utm_campaign  TEXT,
+  utm_term      TEXT,
+  utm_content   TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_site_time   ON events (site_id, timestamp DESC);
@@ -66,7 +73,16 @@ CREATE TABLE IF NOT EXISTS webhook_raw (
   order_id    TEXT,
   payload     TEXT    NOT NULL,
   processed   INTEGER NOT NULL DEFAULT 0,
-  error       TEXT
+  error       TEXT,
+  -- Enriquecimento da venda (preenchido pelo UPDATE pos-parse, chave id=rawId).
+  -- marca_user/value cruzam com user_store/analise; utm_* = last-click da venda (cru).
+  marca_user  TEXT,
+  value       TEXT,
+  utm_source  TEXT,
+  utm_medium  TEXT,
+  utm_campaign TEXT,
+  utm_term    TEXT,
+  utm_content TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_webhook_raw_site_time ON webhook_raw (site_id, timestamp DESC);

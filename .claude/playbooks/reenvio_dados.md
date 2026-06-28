@@ -75,7 +75,8 @@ O product_id vive em caminhos diferentes no payload de cada gateway — **fonte 
 - **Hubla**: `event.product.id` (ou `event.products.0.id`)
 - **Eduzz**: `data.items.0.productId`
 - **Ticto**: `item.product_id`
-- **PerfectPay / Payt**: product_id ainda não mapeado (parser skeleton) — sem filtro por produto até completar via `/new-gateway`
+- **Payt**: `product.code`
+- **PerfectPay**: product_id ainda não mapeado (parser skeleton) — sem filtro por produto até completar via `/new-gateway`
 
 ---
 
@@ -214,7 +215,8 @@ curl -s -X POST https://{WORKER_DOMAIN}/collect/reprocess-selective \
 | Hubla | `event.product.id` (ou `event.products.0.id`) |
 | Eduzz | `data.items.0.productId` |
 | Ticto | `item.product_id` |
-| PerfectPay / Payt | não mapeado (skeleton) |
+| Payt | `product.code` |
+| PerfectPay | não mapeado (skeleton) |
 
 ### Banco D1
 

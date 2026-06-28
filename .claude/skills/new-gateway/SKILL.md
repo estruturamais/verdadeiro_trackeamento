@@ -1,13 +1,13 @@
 ---
 name: new-gateway
-description: Adiciona suporte a um novo gateway de pagamento no Verdadeiro Trackeamento, ou completa um parser skeleton existente (ticto, eduzz, perfectpay, payt). Mapeia o payload do webhook de compra aprovada, gera o parser e o registra. Use ao integrar um gateway ainda sem suporte completo ou quando webhooks de compra não chegam às plataformas.
+description: Adiciona suporte a um novo gateway de pagamento no Verdadeiro Trackeamento, ou completa um parser skeleton existente (ex.: perfectpay). Mapeia o payload do webhook de compra aprovada, gera o parser e o registra. Use ao integrar um gateway ainda sem suporte completo ou quando webhooks de compra não chegam às plataformas.
 ---
 
 # Skill: new_gateway
 
 ## Papel
 
-Adiciona suporte completo a um gateway novo ou completa o parser de um gateway skeleton existente (ticto, eduzz, perfectpay, payt), permitindo que webhooks de compra aprovada sejam processados e os eventos enviados para todas as plataformas configuradas.
+Adiciona suporte completo a um gateway novo ou completa o parser de um gateway skeleton existente (hoje, apenas perfectpay), permitindo que webhooks de compra aprovada sejam processados e os eventos enviados para todas as plataformas configuradas.
 
 Pode ser invocada durante o Step 2 (gateway detectado sem suporte completo) ou o Step 5 (cliente relata que webhooks de compra nao chegam nas plataformas).
 
@@ -16,15 +16,12 @@ Pode ser invocada durante o Step 2 (gateway detectado sem suporte completo) ou o
 ## Status dos gateways
 
 ### Parsers completos — NAO invocar esta skill
-hotmart, kiwify, kirvano, lastlink, pagtrust
+hotmart, kiwify, kirvano, lastlink, pagtrust, eduzz, ticto, payt, hubla, green, tutory
 
 ### Skeletons — invocar para completar
 | Gateway    | Arquivo                          | Situacao                        |
 |------------|----------------------------------|---------------------------------|
-| ticto      | `gateways/ticto.js`      | Apenas `marca_user` mapeado     |
-| eduzz      | `gateways/eduzz.js`      | Apenas `marca_user` mapeado     |
 | perfectpay | `gateways/perfectpay.js` | Apenas `marca_user` mapeado     |
-| payt       | `gateways/payt.js`       | Apenas `marca_user` mapeado     |
 
 ---
 
@@ -35,6 +32,11 @@ Todo parser retorna exatamente este objeto. Campos sem dado disponivel: string v
 ```js
 {
   marca_user:   string | undefined,  // parametro de rastreamento (xcod/sck/src/etc)
+  utm_source:   string,              // \
+  utm_medium:   string,              //  } UTMs last-click da venda — 5 colunas do webhook_raw (analistA+).
+  utm_campaign: string,              //  } Onde cada uma mora no payload varia por gateway:
+  utm_term:     string,              //  } ver .claude/references/utm-convention.md
+  utm_content:  string,              // /
   email:        string,
   phone:        string,              // sem + inicial
   name:         string,
@@ -104,11 +106,12 @@ Com o payload, identificar cada campo:
 |--------------|-------------------------------------------------------------------------------------|
 | evento       | Campo que indica aprovacao: `event`, `data.event`, `status`, `type`, `webhook_event_type` |
 | `marca_user` | Parametro de URL injetado pelo web.js: `sck`, `src`, `xcod`, `sf_trk`, `utm_id`, `utm_content`, `utm_perfect`, `utm_term` — geralmente dentro de um objeto de UTMs ou tracking. Sem parametro dedicado, cair num UTM padrao (ver nota abaixo) |
+| UTMs (5)     | `utm_source/medium/campaign/term/content` — origem (last-click) da venda, gravadas no `webhook_raw`. Onde moram varia por gateway: ver `.claude/references/utm-convention.md`. Extrair com o helper certo e espalhar com `...utm` (Passos 3-4) |
 | `email`      | Email do comprador                                                                  |
 | `phone`      | Telefone — verificar prefixo `+`                                                    |
 | `name`       | Nome completo                                                                       |
 | `order_id`   | ID unico da transacao                                                               |
-| `value`      | Valor — verificar formato: decimal, centavos (9700) ou string com moeda ("BRL 97") |
+| `value`      | **O que o cliente PAGOU** (bruto/total) — NUNCA a comissao liquida do produtor. Formato: decimal, centavos (9700) ou string com moeda ("BRL 97") |
 | `currency`   | Moeda — se ausente, inferir ("BRL" para gateways brasileiros)                      |
 | `product_name` / `product_id` | Nome e ID do produto                                                |
 | endereco     | city, state, country, zip                                                           |
@@ -116,15 +119,35 @@ Com o payload, identificar cada campo:
 
 > **marca_user sem parametro dedicado:** se o gateway nao oferecer um parametro proprio de rastreamento (`sck`/`src`/`xcod`/`sf_trk`/etc.), usar um **campo de UTM padrao** como indexador — foi o caso da **Eduzz**, que usa `utm_term` (`utm.term` no payload, ver `src/worker/gateways/eduzz.js`). Regra de ouro: o campo escolhido para o `marca_user` no parser tem que ser o **mesmo** definido como `indexador` no `gateways_config` (Passo 7) — round-trip checkout↔webhook. Confirmar com a venda real que o valor injetado na URL voltou nesse campo do `webhook_raw.payload`.
 
+> **value — o que o cliente PAGOU (regra fixa, sem excecao):** o `value` e SEMPRE o valor bruto/total
+> que o comprador pagou, **nunca** a comissao liquida do produtor. **Armadilha conhecida:** alguns
+> gateways expoem o liquido num campo de aparencia "principal" — Hotmart em
+> `data.commissions[].value` (com `source: "PRODUCER"`) e Kiwify em `Commissions.my_commission`.
+> Esses ja foram corrigidos para o total pago (Hotmart `data.purchase.price.value`, Kiwify
+> `Commissions.charge_amount`). Ao mapear um gateway novo, escolher o campo do **total pago**
+> (`total`/`paid`/`total_price`/`charge_amount`/`paid_amount`/`OriginalPrice` etc.), nunca um campo de
+> comissao/repasse/`my_commission`/`producer`.
+
+> **As 5 UTMs (captura para o analistA+):** alem do `marca_user`, todo parser extrai as 5 UTMs
+> last-click e as retorna nas chaves **exatas** `utm_source/utm_medium/utm_campaign/utm_term/utm_content`.
+> O Worker as grava no `webhook_raw` por um `UPDATE` **generico** (`src/worker/collect/webhook.js`) que
+> le essas chaves do objeto do parser — por isso os nomes tem que ser exatos (contrato modular: o
+> servidor nao sabe de gateway). Onde cada UTM mora no payload e a planta por gateway estao em
+> `.claude/references/utm-convention.md`. Helpers em `src/worker/shared/helpers.js`: `utmPrefixed`
+> (chaves `utm_*`), `utmBare` (chaves nuas `source/medium/...`), `utmFromPipe` (string unica
+> `source|medium|campaign|term|content`). Se o gateway sacrificar uma UTM para o `marca_user` (ex.:
+> Eduzz usa `utm_term`), zerar essa coluna apos o spread (`utm_term: ''`) — ver `eduzz.js`.
+
 Apresentar mapeamento proposto antes de escrever qualquer arquivo:
 
 > "Baseado no payload, vou usar estes mapeamentos:
 >
 > - Evento de aprovacao: `{campo}` = `{valor}`
 > - `marca_user`: `{path}`
+> - UTMs: `{path da origem}` via `{utmPrefixed|utmBare|utmFromPipe}`
 > - `email`: `{path}`
 > - `order_id`: `{path}`
-> - `value`: `{path}` ({observacao de formato se houver})
+> - `value`: `{path}` (o que o cliente pagou — bruto/total; {observacao de formato se houver})
 > ...
 >
 > Confirma ou precisa ajustar algum campo?"
@@ -138,13 +161,21 @@ Aguardar confirmacao antes de continuar.
 Aplicar conforme necessario (ver parsers existentes como referencia em `gateways/`):
 
 ```js
+// UTMs (last-click) — escolher 1 dos 3 helpers conforme o formato do payload:
+var utm = utmPrefixed(getNestedValue(body, '{path}'));  // chaves utm_* diretas (Kiwify, Kirvano, Ticto, Payt)
+// var utm = utmBare(getNestedValue(body, '{path}'));      // chaves nuas source/medium/... (Hubla, Eduzz)
+// var utm = utmFromPipe(getNestedValue(body, '{path}'));  // string unica "source|medium|campaign|term|content" (Hotmart, PagTrust)
+// Casos especiais — pre-processar o objeto e so depois passar ao helper: Green (iterar saleMetas[]),
+// Tutory (parse do referer), Lastlink (chaves PascalCase). Ver .claude/references/utm-convention.md.
+
 // Phone — remover + inicial
 var phone = String(getNestedValue(body, '{path}') || '').replace(/^\+?(.*)$/, '$1');
 
 // Zip — extrair 5 primeiros digitos
 var zip = String(getNestedValue(body, '{path}') || '').replace(/(\d{5}).*/, '$1');
 
-// Value em centavos (ex: 9700 → "97.00")
+// Value — SEMPRE o que o cliente pagou (bruto/total), NUNCA a comissao do produtor.
+// Em centavos (ex: 9700 → "97.00"):
 var rawValue = String(getNestedValue(body, '{path}') || '');
 var value = rawValue.replace(/(.+)(\d{2})$/, '$1.$2');
 
@@ -166,18 +197,20 @@ name:  (getNestedValue(body, '{path}') || '').toLowerCase(),
 **Gateway novo:** criar `gateways/{gateway}.js`
 
 ```js
-import { getNestedValue } from '../shared/helpers.js';
+import { getNestedValue, utmPrefixed } from '../shared/helpers.js'; // ou utmBare / utmFromPipe
 
 export function parse{Gateway}(body) {
-  // {transformacoes necessarias}
+  const utm = utmPrefixed(getNestedValue(body, '{path_das_utms}')); // helper conforme o formato (Passo 3)
+  // {demais transformacoes: phone, zip, value}
 
   return {
+    ...utm,                                          // 5 colunas utm_* do webhook_raw (analistA+)
     marca_user:   getNestedValue(body, '{path}'),
     email:        (getNestedValue(body, '{path}') || '').toLowerCase(),
     phone:        phone,
     name:         (getNestedValue(body, '{path}') || '').toLowerCase(),
     order_id:     getNestedValue(body, '{path}'),
-    value:        value,
+    value:        value,                             // o que o cliente PAGOU (bruto) — nunca comissao
     currency:     '{ISO}',
     product_name: getNestedValue(body, '{path}') || '',
     product_id:   String(getNestedValue(body, '{path}') || ''),
@@ -229,6 +262,11 @@ Em `.claude/playbooks/overview.md`:
 | {Gateway} | {Onde configurar no painel} | `https://{dominio}/collect/webhook/{gateway}` |
 ```
 
+> **Setup exato no painel:** ao confirmar o **rotulo do evento / formato / versao / tipo** desse
+> gateway, registrar uma secao propria em `.claude/references/gateway-webhooks.md` (modelo: a secao da
+> Ticto). Regra: **marcar so o evento de compra aprovada, em JSON** — nada de pix/boleto/reembolso —
+> para nao poluir o `webhook_raw`.
+
 ---
 
 ## Passo 7 — Config do checkout: gateways_config + trigger (web.js)
@@ -251,7 +289,7 @@ Este e o elo mais critico do gateway: garantir que o `marca_user` seja **injetad
 ```
 
 - `domains`: o(s) dominio(s) do checkout real. O `detectGateway` casa por dominio exato ou subdominio (ancorado no final). **Sem o dominio certo aqui, o `web.js` nao reconhece o link e nao injeta o `marca_user`.**
-- `indexador`: o parametro que carrega o `marca_user` na URL. **Decisao mais importante do gateway:** tem que ser (a) o **mesmo campo** que o parser le como `marca_user` no webhook, e (b) um parametro que o gateway **preserva** da URL ate o webhook. O round-trip e confirmado na venda real (Passo 8): o valor injetado na URL apareceu no `webhook_raw.payload`? Ex: `xcod` (Hotmart/Hubla), `sck` (Kiwify), `utm_perfect` (PerfectPay), `utm_term` (Eduzz — sem parametro dedicado, cai num UTM padrao).
+- `indexador`: o parametro que carrega o `marca_user` na URL. **Decisao mais importante do gateway:** tem que ser (a) o **mesmo campo** que o parser le como `marca_user` no webhook, e (b) um parametro que o gateway **preserva** da URL ate o webhook. O round-trip e confirmado na venda real (Passo 8): o valor injetado na URL apareceu no `webhook_raw.payload`? Ex: `xcod` (Hotmart), `sck` (Kiwify), `utm_perfect` (PerfectPay), `utm_term` (Eduzz — sem parametro dedicado, cai num UTM padrao). **Gateways que so ecoam a URL do checkout (sem campo de rastreamento proprio) usam a propria chave `marca_user` como indexador** — Hubla, Lastlink, Tutory (defesa de marca e nao sobrescreve UTMs reais).
 - `caminho`: parametro que recebe a string de UTMs (geralmente `caminho`; Hotmart/Kiwify usam `sck`).
 - `user_params`: so se o gateway aceitar pre-preenchimento de email/phone/name na URL (ex: `{"email": "email", "phone": "phonenumber"}`).
 - **Omitir `gateways_config` so se o gateway nao aceitar NENHUM parametro de query** na URL do checkout (raro). Se ele repassa UTMs ate o webhook (caso comum), **nao** omitir: usar um UTM padrao como `indexador` (ver a nota do Passo 2 — a Eduzz usa `utm_term`). Sem `gateways_config`, nao ha como cruzar a compra via FDV no Purchase.

@@ -6,8 +6,27 @@ export function parseLastlink(body) {
   // Zip: extrair 5 primeiros digitos
   var zip = String(getNestedValue(body, 'Data.Buyer.Address.ZipCode') || '').replace(/(\d{5}).*/, '$1');
 
+  // UTMs em PascalCase (Data.Utm.Utm*)
+  var utmBase = getNestedValue(body, 'Data.Utm') || {};
+  var utm = {
+    utm_source:   utmBase.UtmSource   || '',
+    utm_medium:   utmBase.UtmMedium   || '',
+    utm_campaign: utmBase.UtmCampaign || '',
+    utm_term:     utmBase.UtmTerm     || '',
+    utm_content:  utmBase.UtmContent  || ''
+  };
+
+  // Lastlink nao tem campo de rastreamento proprio: usamos a chave 'marca_user' (indexador)
+  // injetada no checkout, devolvida na URL de origem (Data.Purchase.OriginUrl).
+  var marcaUser = '';
+  try {
+    var originUrl = getNestedValue(body, 'Data.Purchase.OriginUrl');
+    if (originUrl) marcaUser = new URL(originUrl).searchParams.get('marca_user') || '';
+  } catch (e) {}
+
   return {
-    marca_user: getNestedValue(body, 'Data.Utm.UtmId'),
+    ...utm,
+    marca_user: marcaUser,
     email: (getNestedValue(body, 'Data.Buyer.Email') || '').toLowerCase(),
     phone: phone,
     name: (getNestedValue(body, 'Data.Buyer.Name') || '').toLowerCase(),

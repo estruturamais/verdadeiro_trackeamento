@@ -1,6 +1,8 @@
-import { getNestedValue } from '../shared/helpers.js';
+import { getNestedValue, utmPrefixed } from '../shared/helpers.js';
 
 export function parseTicto(body) {
+  const utm = utmPrefixed(getNestedValue(body, 'tracking'));
+
   // paid_amount vem em centavos (ex: 10000 = R$100,00)
   const paidAmount = getNestedValue(body, 'order.paid_amount');
   const value = paidAmount ? (paidAmount / 100).toFixed(2) : '';
@@ -19,6 +21,7 @@ export function parseTicto(body) {
   const phone = [phoneDdi, phoneDdd, phoneNumber].join('').replace(/\D/g, '');
 
   return {
+    ...utm,
     marca_user:   getNestedValue(body, 'tracking.sck') || '',
     email:        getNestedValue(body, 'customer.email') || '',
     phone:        phone,

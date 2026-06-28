@@ -26,7 +26,7 @@
       "page_event_names": { "registrol20": "L20_LG_SLPC", "brasilia": "BSB_LEAD" }
     }
   },
-  "gateways": ["hotmart", "kiwify", "hubla"],
+  "gateways": ["hotmart", "kiwify", "hubla", "payt"],
   "gateways_config": {
     "hotmart": {
       "domains": ["hotmart.com", "pay.hotmart.com"],
@@ -37,7 +37,12 @@
     "hubla": {
       "domains": ["hubla.com.br", "pay.hubla.com.br", "checkout.hubla.com.br"],
       "caminho": "caminho",
-      "indexador": "xcod"
+      "indexador": "marca_user"
+    },
+    "payt": {
+      "domains": ["payt.com.br", "checkout.payt.com.br", "payt.site"],
+      "caminho": "caminho",
+      "indexador": "src"
     }
   },
   "triggers": {
@@ -87,5 +92,17 @@
     "enabled": true,
     "retention_days": 30,
     "log_bearer_token": "{token-secreto-opcional}"
+  },
+  "retention": {
+    "mode": "auto_clean",
+    "when_full": "recycle_oldest"
+  },
+  "utm_convention": {
+    "creative": "utm_content",
+    "adset": "utm_term",
+    "campaign": "utm_campaign",
+    "source": "utm_source",
+    "paid_signal": { "field": "utm_medium", "equals": "paid" },
+    "custom": false
   }
 }

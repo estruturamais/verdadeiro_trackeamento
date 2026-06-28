@@ -1,9 +1,12 @@
-import { getNestedValue } from '../shared/helpers.js';
+import { getNestedValue, utmBare } from '../shared/helpers.js';
 
 export function parseEduzz(body) {
   // Webhook real (myeduzz.invoice_paid) aninha tudo em data.*; fallback para body
   // mantem compatibilidade com payloads achatados de teste.
   const data = body.data || body;
+
+  // UTMs (chaves nuas) em data.utm. utm_term e sacrificado para o marca_user → fica vazio.
+  const utm = { ...utmBare(getNestedValue(data, 'utm')), utm_term: '' };
 
   // Phone: buyer.phone vem null; o numero com DDI esta em cellphone — remover + inicial
   var phone = String(getNestedValue(data, 'buyer.cellphone') || '').replace(/^\+?(.*)$/, '$1');
@@ -12,6 +15,7 @@ export function parseEduzz(body) {
   var zip = String(getNestedValue(data, 'buyer.address.zipCode') || '').replace(/^(\d{5}).*/, '$1');
 
   return {
+    ...utm,
     marca_user: getNestedValue(data, 'utm.term'),
     email: getNestedValue(data, 'buyer.email'),
     phone: phone,

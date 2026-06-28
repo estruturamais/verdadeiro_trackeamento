@@ -4,3 +4,4 @@ node_modules/
 *.env
 wrangler.toml
 src/web/
+tracking_memory.md

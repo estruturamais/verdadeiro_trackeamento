@@ -1,14 +1,18 @@
-import { getNestedValue } from '../shared/helpers.js';
+import { getNestedValue, utmBare } from '../shared/helpers.js';
 
 export function parseHubla(body) {
   let marcaUser = '';
 
-  // Hubla embute os parametros UTM dentro da URL da sessao de pagamento
+  // UTMs (chaves nuas) na sessao de pagamento
+  const utm = utmBare(getNestedValue(body, 'event.invoice.paymentSession.utm'));
+
+  // Hubla nao tem campo de rastreamento proprio: ecoa a URL da sessao de pagamento.
+  // O web.js injeta o marca_user na chave 'marca_user' (indexador), lida de volta aqui.
   const urlString = getNestedValue(body, 'event.invoice.paymentSession.url');
   if (urlString) {
     try {
       const url = new URL(urlString);
-      marcaUser = url.searchParams.get('xcod') || '';
+      marcaUser = url.searchParams.get('marca_user') || '';
     } catch(e) {}
   }
 
@@ -24,6 +28,7 @@ export function parseHubla(body) {
   const phone = phoneRaw.replace(/^\+/, '');
 
   return {
+    ...utm,
     marca_user:   marcaUser,
     email:        getNestedValue(body, 'event.invoice.payer.email'),
     phone:        phone,
