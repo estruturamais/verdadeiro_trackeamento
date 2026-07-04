@@ -168,7 +168,7 @@ Se **A**, montar o bloco `qualification` (que sera escrito no `SITE_CONFIG` no S
 ### Tipo de site: tradicional vs quiz/SPA — CONDICIONAL (so quando ha checkout)
 
 Ramo extra do Step 2, **so quando o modelo for infoproduto** (ha botao de compra p/ gateway). Decide
-o `spa_mode` (IZZO-14). **Critico p/ evitar retrabalho:** sem isso, funil/quiz fica sem `marca_user`
+o `spa_mode`. **Critico p/ evitar retrabalho:** sem isso, funil/quiz fica sem `marca_user`
 no checkout e o `InitiateCheckout` nao dispara. Ver `.claude/references/spa-checkout-tracking.md`.
 
 > **Modelo por location (não por site inteiro).** O quiz/SPA é ligado por **slug/subdomínio**, não
@@ -180,7 +180,7 @@ no checkout e o `InitiateCheckout` nao dispara. Ver `.claude/references/spa-chec
 
 Perguntar em formato de alternativa:
 
-> "Você usa algum **funil de quiz / página SPA** (Next.js, React, XQuiz, Cakto, etc.) — aquela em que
+> "Você usa algum **funil de quiz / página SPA** (Next.js, React, XQuiz, InLead, etc.) — aquela em que
 > a página é toda em JavaScript e o botão final monta o link do checkout copiando os parâmetros da
 > URL atual?
 >
@@ -207,7 +207,7 @@ Perguntar em formato de alternativa:
   páginas fora delas seguem no `link_click` tradicional.
 - **C** → analisar o HTML (o Step 2 já raspa). Sinais fortes de SPA: `__NEXT_DATA__`, `/_next/`,
   `id="__nuxt"`, `<div id="root">`, `window.location.href = ...URLSearchParams`, domínios de builder
-  (`xquiz`, `cakto`, `plug.lo`, `funnelytics`). `<a>` com href p/ domínio de gateway → tradicional.
+  (`xquiz`, `inlead`, `plug.lo`, `funnelytics`). `<a>` com href p/ domínio de gateway → tradicional.
   Ao concluir que há quiz, **perguntar os slugs/subdomínios e o gateway de cada um** (como no B) antes
   de gravar.
 
@@ -221,7 +221,7 @@ URL ou titulo contendo: "obrigado", "thankyou", "confirmacao", "sucesso"
 Detectar inicializacoes preexistentes de: `fbq(`, `ttq.`, `gtag(`, `dataLayer.push`
 Se detectados: **alertar o cliente e orientar remocao ANTES de continuar.** Scripts conflitantes causam dupla contagem.
 
-### UTMify (coexistencia) — IZZO-8
+### UTMify (coexistencia)
 Procurar no HTML o padrao `cdn.utmify.com.br/scripts/utms`. Se presente: gravar `utmify_detectada: sim`
 no `tracking_memory.md` e **nao** pedir remocao — os dois convivem. Orientar ordem de instalacao (VT
 como primeiro elemento do `<head>`, antes da UTMify) e manter as flags `data-utmify-prevent-xcod-sck`
@@ -547,7 +547,7 @@ Se `processed = 0` com `order_id` preenchido e o evento era uma compra real apro
 npx wrangler d1 execute tracking_db --remote --command "SELECT event_name, platform, status_code, error_message FROM events WHERE site_id = '{site_id}' ORDER BY id DESC LIMIT 10;"
 ```
 
-### 5.5 Validacao E2E do caminho do `marca_user` — IZZO-9
+### 5.5 Validacao E2E do caminho do `marca_user`
 
 Ramo extra do Step 5, **so infoproduto** (com checkout). Prova que o `marca_user` foi gerado,
 propagado e chegou ao webhook — antes de uma compra real revelar o elo quebrado. **Essencial em
@@ -562,7 +562,8 @@ propagado e chegou ao webhook — antes de uma compra real revelar o elo quebrad
 **5.5.2 — Validacao cruzada (o agente executa):**
 
 1. **URL inicial contem o `indexador` do gateway?** (consultar `gateways_config[gw].indexador` — ex.:
-   `utm_id` na Lastlink, `xcod` na Hotmart). Ausente → a reescrita de URL do VT nao rodou:
+   `marca_user` na Lastlink — devolvido no webhook via `Data.Purchase.OriginUrl` —, `xcod` na Hotmart).
+   Ausente → a reescrita de URL do VT nao rodou:
    - Em `tipo_site: spa`/`misto`: confirmar que a URL testada casa uma `spa_mode.locations[].match`
      (slug/subdominio certo) e que o gateway daquela location (`location.gateways`) e o esperado.
    - Checar CSP/bloqueio do script, ou `disable_url_rewrite` ligado indevidamente.

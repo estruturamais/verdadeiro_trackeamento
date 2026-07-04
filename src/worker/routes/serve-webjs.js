@@ -12,7 +12,7 @@ function getRootDomain(request) {
   return parts.length >= 2 ? '.' + parts.slice(-2).join('.') : host;
 }
 
-// IZZO-3 / QZIC-5 — DEFAULT_TRIGGERS: o agente nao precisa mais explicitar os
+// DEFAULT_TRIGGERS: o agente nao precisa mais explicitar os
 // triggers canonicos no SITE_CONFIG. O cliente so define um trigger quando quer
 // override; o merge profundo (mergeTriggers) preenche o resto.
 //   - initiate_checkout: SEMPRE link_click com match = uniao dos dominios dos
@@ -87,9 +87,9 @@ export async function handleServeWebJs(request, env) {
     gateways_config: config.gateways_config,
     custom_data: config.custom_data,
     qualification: config.qualification,
-    // IZZO-14 — SPA mode (opt-in): gate da injecao same-origin do indexador no web.js.
+    // SPA mode (opt-in): gate da injecao same-origin do indexador no web.js.
     spa_mode: config.spa_mode,
-    // IZZO-10 — escape hatch da reescrita de URL (modais/routers/PWA).
+    // escape hatch da reescrita de URL (modais/routers/PWA).
     disable_url_rewrite: config.disable_url_rewrite,
     collect_url: '/collect/event'
   };

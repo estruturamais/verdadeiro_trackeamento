@@ -15,7 +15,7 @@ Em pagina de vendas tradicional o botao de compra e' um `<a href="https://{gatew
 intercepta o clique (`handleLinkClicks` → `e.target.closest('a')`), injeta `caminho`+`indexador` no
 href e dispara o `initiate_checkout` (trigger `link_click`).
 
-Em **funil/quiz** (Next.js/React/XQuiz/Cakto e afins) o botao final costuma ser um `<button>`/`<div>`
+Em **funil/quiz** (Next.js/React/XQuiz/InLead e afins) o botao final costuma ser um `<button>`/`<div>`
 que navega via `window.location.href = checkoutUrl` — **sem `<a>`**. Consequencias:
 
 1. `handleLinkClicks` nao acha nenhum `<a>` → o `initiate_checkout` **nunca dispara**.
@@ -28,8 +28,8 @@ metade):
 
 | Causa | Conserto | Onde |
 |---|---|---|
-| O evento nao dispara (botao nao-ancora) | `element_click` + `require_navigation` (QZIC-1/2/3) | `src/web.js` |
-| O `marca_user` nao chega ao checkout | ramo same-origin em `addParamsToUrl`, gated por `spa_mode` (IZZO-7/14) | `src/web.js` |
+| O evento nao dispara (botao nao-ancora) | `element_click` + `require_navigation` | `src/web.js` |
+| O `marca_user` nao chega ao checkout | ramo same-origin em `addParamsToUrl`, gated por `spa_mode` | `src/web.js` |
 
 ---
 
@@ -60,21 +60,21 @@ onde o browser permitir; **nunca** como caminho principal do disparo em SPA.
 Tres pecas no `src/web.js` (Module 2b), todas **aditivas** — so atuam em triggers
 `type: "element_click"`, sem tocar em `link_click`/`form_submit`:
 
-- **`element_click` (QZIC-1)** — handler no `document` em **capture-phase** (dispara antes de o
+- **`element_click`** — handler no `document` em **capture-phase** (dispara antes de o
   builder navegar). Casa o elemento clicado por **seletor CSS** (`selector`, default cobre
   `<button>`/`<a>`/`[role=button]`/inputs) e/ou **texto visivel** (`text`, OR por `|`,
   case-insensitive).
-- **`require_navigation` (QZIC-2)** — no clique **arma** o disparo; so dispara se a pagina realmente
+- **`require_navigation`** — no clique **arma** o disparo; so dispara se a pagina realmente
   **sair** (`pagehide`, com `visibilitychange=hidden` como fallback mobile, janela ~2,5s). Distingue
   o botao de checkout (que navega p/ fora) dos botoes que so rolam a pagina / avancam etapa — e
   **independe do texto** (nao quebra se o cliente mudar o rotulo do botao).
-- **`_icFired` (QZIC-3)** — guard que **nao reseta** durante a vida da pagina: o `InitiateCheckout`
+- **`_icFired`** — guard que **nao reseta** durante a vida da pagina: o `InitiateCheckout`
   dispara **uma vez por visita**, mesmo com varios CTAs iguais.
 
 ### Configuracao (SITE_CONFIG → triggers)
 
 Com `spa_mode.enabled: true`, o `serve-webjs.js` ja monta o default abaixo automaticamente
-(IZZO-3/QZIC-5) — o agente **nao** precisa escrever isto. Mostrado aqui so p/ override manual:
+— o agente **nao** precisa escrever isto. Mostrado aqui so p/ override manual:
 
 ```json
 "triggers": {
@@ -95,7 +95,7 @@ Com `spa_mode.enabled: true`, o `serve-webjs.js` ja monta o default abaixo autom
 
 ---
 
-## Propagacao do `marca_user` (ramo same-origin — IZZO-7, escopado por `spa_mode.locations`)
+## Propagacao do `marca_user` (ramo same-origin, escopado por `spa_mode.locations`)
 
 Para o `marca_user` chegar ao checkout que copia `window.location.search`, a URL da **propria
 pagina** precisa ganhar o `indexador` do gateway. Isso e' feito no `addParamsToUrl` (ramo
@@ -147,7 +147,7 @@ location, o `handleSpaCheckoutClicks` (no client) arma o disparo no clique e con
 configurar `element_click` para o fluxo de quiz padrao; o tipo `element_click` (secao 1) fica
 disponivel so para overrides manuais.
 
-### Escape hatch `disable_url_rewrite` (IZZO-10)
+### Escape hatch `disable_url_rewrite`
 
 A reescrita da URL usa `history.replaceState`. Em sites com modais/routers/PWA que escutam
 `popstate`, isso pode interferir. Duas defesas ja embutidas:

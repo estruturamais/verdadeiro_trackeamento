@@ -19,7 +19,7 @@ zero até o tracking validado em produção.
 
 ## Versão
 
-**Versão atual: 1.3.0**
+**Versão atual: 1.4.0**
 
 Para saber qual versão uma instalação roda, pergunte ao assistente *"qual a versão do seu VT?"* — ele
 lê o número (a) deste README e do `package.json` e (b) **direto da Cloudflare**: na 1ª linha do script
@@ -27,6 +27,17 @@ servido em `https://{dominio}/tracking/web.js` (e no campo `vt_version` do confi
 (b) sobrevive mesmo que o usuário apague os arquivos locais. O histórico abaixo mapeia cada versão às
 novidades:
 
+- **1.4.0** — **Funis de quiz/SPA**: o VT passa a funcionar de ponta a ponta em páginas construídas
+  em JavaScript (Next.js/React/XQuiz/InLead) cujo botão de compra é um `<button>` que navega via
+  `window.location` (não um `<a>`). O `InitiateCheckout` dispara no clique (server-side via
+  `pagehide`, já que `Location` é `[LegacyUnforgeable]` no Chrome) e o `marca_user` chega ao checkout
+  pela reescrita da URL da própria página. Tudo **opt-in e escopado por slug/subdomínio** via
+  `spa_mode.locations` (cada local com o gateway pré-fixado — o `marca_user` entra no indexador
+  correto p/ o FDV merge no `Purchase`): o **mesmo script** atende página tradicional **e** funil de
+  quiz no mesmo site, sem toggle e sem poluir a URL de páginas tradicionais. Inclui `DEFAULT_TRIGGERS`
+  (o agente não precisa mais configurar triggers canônicos), coexistência documentada com a **UTMify**,
+  validação E2E do caminho do `marca_user` no onboarding e o escape hatch `disable_url_rewrite` para
+  sites com modais/routers/PWA.
 - **1.3.0** — **PerfectPay** com parser completo: deixa de ser skeleton e passa a processar a compra
   aprovada (evento `sale_status_enum_key = approved`), com `marca_user` em `metadata.utm_perfect`
   (parâmetro dedicado), as 5 UTMs em `metadata.*`, `value` = total pago (`sale_amount`, nunca a

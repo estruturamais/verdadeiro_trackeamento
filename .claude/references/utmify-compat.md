@@ -54,13 +54,15 @@ Ordem correta no `<head>`:
 
 ## Por que os dois convivem (a chave e' a injecao same-origin)
 
-A injecao de `utm_id`/indexador na URL same-origin (IZZO-7, so com `spa_mode.enabled`; ver
+A injecao do `indexador` do gateway na URL same-origin (so com `spa_mode` ligado; ver
 `spa-checkout-tracking.md`) e' o elo que faz UTMify e VT conviverem sem conflito:
 
-- O VT injeta o `indexador` do gateway (ex.: `utm_id={marca_user}` na Lastlink) na URL da pagina via
-  `replaceState`.
-- A UTMify detecta `utm_id` como UTM padrao e o **propaga** em todos os links de checkout.
-- O checkout recebe o `utm_id` mesmo quando o site usa o sistema da UTMify para gerenciar os links.
+- O VT injeta o `indexador` do gateway na URL da pagina via `replaceState` (ex.: `xcod` na Hotmart;
+  na Lastlink a propria chave `marca_user`, devolvida no webhook em `Data.Purchase.OriginUrl`).
+- A UTMify **propaga** os parametros que ja estao na URL para os links de checkout que ela reescreve.
+- Assim o checkout recebe o indexador mesmo quando o site usa o sistema da UTMify para gerenciar os
+  links. Para indexadores que a UTMify tende a mexer (`xcod`/`sck`), as flags
+  `data-utmify-prevent-xcod-sck`/`-subids` deixam esse trabalho por conta do VT.
 
 Resultado: zero retrabalho do cliente que ja tem UTMify; o `marca_user` chega ao gateway pelos dois
 caminhos (VT direto + propagacao UTMify).

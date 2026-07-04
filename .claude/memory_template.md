@@ -27,13 +27,13 @@
 - dominio: {valor}
 - cms_detectado: {valor}
 - modelo: infoproduto | negocio_local
-- tipo_site: tradicional | spa | misto   <!-- IZZO-14: spa/misto quando ha funil de quiz cujo botao de compra copia window.location.search p/ o checkout (Next.js/React/XQuiz/Cakto). 'misto' = tradicional + quiz em slugs/subdominios especificos. Decidido pela pergunta A/B/C do Step 2. -->
+- tipo_site: tradicional | spa | misto   <!-- spa/misto quando ha funil de quiz cujo botao de compra copia window.location.search p/ o checkout (Next.js/React/XQuiz/InLead). 'misto' = tradicional + quiz em slugs/subdominios especificos. Decidido pela pergunta A/B/C do Step 2. -->
 - spa_mode_locations:                     <!-- so quando ha funil de quiz: cada slug/subdominio de quiz + o gateway que ele usa (pre-fixa o indexador do marca_user). Vira spa_mode.locations no SITE_CONFIG. -->
   - match: {/quiz  ou  quiz.seusite.com}
     gateways: [{lastlink}]
-- disable_url_rewrite: nao           <!-- IZZO-10: sim so se a reescrita de URL conflitar com modais/router/PWA do site (cai p/ modo "so links externos"). -->
-- utmify_detectada: nao | sim        <!-- IZZO-8: se cdn.utmify.com.br presente no <head>; ver references/utmify-compat.md p/ ordem de instalacao. -->
-- urls_validacao_e2e:                <!-- IZZO-9: preenchido no Step 5 (validacao do caminho do marca_user). -->
+- disable_url_rewrite: nao           <!-- sim so se a reescrita de URL conflitar com modais/router/PWA do site (cai p/ modo "so links externos"). -->
+- utmify_detectada: nao | sim        <!-- se cdn.utmify.com.br presente no <head>; ver references/utmify-compat.md p/ ordem de instalacao. -->
+- urls_validacao_e2e:                <!-- preenchido no Step 5 (validacao do caminho do marca_user). -->
   - inicial: {URL completa com params, apos load}
   - checkout: {URL completa com params, apos clicar em comprar}
 

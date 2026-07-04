@@ -301,7 +301,7 @@ Os `name`/`id` dos campos mudam por form e a ordem dos steps define onde cada ga
 
 ---
 
-## 7. Ingestao builder-agnostic — `VT_qualify` / `dataLayer` (`QUAL-13`, AS-BUILT)
+## 7. Ingestao builder-agnostic — `VT_qualify` / `dataLayer` (AS-BUILT)
 
 A auto-deteccao da secao 2-4 e **Elementor-only** (depende do DOM do form e da duplicacao da pop-up). Para qualquer outro builder (InLead, GreatPages, Wix, HTML puro, SPA) o Modulo 7 expoe um **escape hatch**: o snippet do builder entrega os **dados crus** e o nosso codigo faz todo o resto (computeScore/knockout/nearest-tier/emissao). O `lead_score` e os eventos sao **identicos** ao caminho Elementor.
 
@@ -356,7 +356,7 @@ Nao colide com o GA4: o `gtag()` empilha um objeto `Arguments` (sem `.event` str
 
 ---
 
-## 8. `value_map` por pergunta (`QUAL-14`, AS-BUILT)
+## 8. `value_map` por pergunta (AS-BUILT)
 
 Antes, o `value` de cada opcao **precisava ser a letra** (A/B/C/X) — se fosse o rotulo legivel ("Acima de 50 mil"), o score nao computava. Agora cada pergunta pode trazer um `value_map` que traduz **rotulo legivel → letra**:
 

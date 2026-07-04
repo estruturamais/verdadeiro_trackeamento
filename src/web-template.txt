@@ -1,4 +1,4 @@
-/*! Verdadeiro Trackeamento v1.3.0 | criado por @estruturamais | https://instagram.com/estruturamais */
+/*! Verdadeiro Trackeamento v1.4.0 | criado por @estruturamais | https://instagram.com/estruturamais */
 (function() {
   'use strict';
 
@@ -146,7 +146,7 @@
     }
   };
 
-  // IZZO-14 / QZIC — SPA mode (opt-in), ESCOPADO por slug/subdominio.
+  // SPA mode (opt-in), ESCOPADO por slug/subdominio.
   // Default OFF: sites tradicionais/multi-gateway nao mudam de comportamento.
   // `spa_mode.locations[]` diz ONDE o comportamento de quiz/SPA vale e PRE-FIXA o
   // gateway daquele local — `match` = prefixo de slug ("/quiz") ou host
@@ -356,7 +356,7 @@
         }
       }
     } else if (userId) {
-      // IZZO-7 (gated por spa_mode / IZZO-14): sites quiz/SPA copiam
+      // Injecao same-origin (gated por spa_mode): sites quiz/SPA copiam
       // window.location.search da propria pagina para a URL do checkout. So injeta
       // quando a pagina atual casa uma `spa_mode.location` — e injeta SO o indexador
       // (nunca o caminho, que codifica UTMs em key=value:: e poluiria a barra) do(s)
@@ -444,7 +444,7 @@
   }
 
   // ============================================================
-  // MODULE 2b — Checkout em quiz/SPA (element_click) — QZIC-1/2/3
+  // MODULE 2b — Checkout em quiz/SPA (element_click)
   // ============================================================
   // Em funil/quiz o botao de compra costuma ser <button>/<div> que navega via
   // window.location. Location e [LegacyUnforgeable] no Chrome/Firefox (o patch do
@@ -453,7 +453,7 @@
   // .claude/references/spa-checkout-tracking.md. Tudo aqui e' aditivo: so atua em
   // triggers type==='element_click' — nao toca em link_click/form_submit.
 
-  // QZIC-3: InitiateCheckout uma vez por visita de pagina (guard sem reset — a SPA
+  // InitiateCheckout uma vez por visita de pagina (guard sem reset — a SPA
   // nao recarrega ate ir ao checkout). Todos os caminhos novos passam por aqui.
   var _icFired = false;
   function fireCheckoutOnce() {
@@ -462,7 +462,7 @@
     fireTrigger('initiate_checkout', {});
   }
 
-  // QZIC-2: require_navigation — arma no clique e so dispara se a pagina realmente
+  // require_navigation — arma no clique e so dispara se a pagina realmente
   // sair (pagehide / visibilitychange=hidden). Distingue o botao de checkout (navega
   // p/ fora) dos botoes de scroll/etapa; independe do texto. Janela ~2,5s.
   var _pendingNavFire = null, _pendingNavAt = 0;
@@ -475,7 +475,7 @@
     }
   }
 
-  // QZIC-1: casa por texto visivel (OR por '|', case-insensitive).
+  // Casa por texto visivel (OR por '|', case-insensitive).
   function elementTextMatches(el, patternStr) {
     if (!patternStr) return true;
     var txt = String(el.textContent || el.value || '').toLowerCase();
@@ -487,7 +487,7 @@
     return false;
   }
 
-  // QZIC-1: dispara no clique (capture-phase, antes de o builder navegar). Casa por
+  // Dispara no clique (capture-phase, antes de o builder navegar). Casa por
   // seletor CSS (default abrange <button>/<a>/[role=button]/inputs) e/ou texto.
   function handleElementClicks(e) {
     var triggers = (__CONFIG__ && __CONFIG__.triggers) || {};
@@ -501,7 +501,7 @@
       var fireFn = (name === 'initiate_checkout')
         ? fireCheckoutOnce
         : (function(n) { return function() { fireTrigger(n, {}); }; })(name);
-      if (t.require_navigation) armNavigationFire(fireFn);  // QZIC-2
+      if (t.require_navigation) armNavigationFire(fireFn);  // require_navigation
       else fireFn();
       if (__CONFIG__.debug || getUrlParam('debug') === '1') {
         console.log('[Tracking] element_click → ' + name + (t.require_navigation ? ' (armado p/ navegacao)' : ''));
@@ -580,7 +580,7 @@
     });
   }
 
-  // IZZO-10: reescreve a URL da propria pagina de forma segura.
+  // Reescreve a URL da propria pagina de forma segura.
   function rewriteCurrentUrl() {
     // Escape hatch p/ sites com modais/routers/PWA que reagem a mudanca de URL:
     // desliga a reescrita e cai no modo "so links externos" (ver reference).
@@ -601,10 +601,10 @@
     processAllLinks();
 
     document.addEventListener('click', handleLinkClicks, true);
-    document.addEventListener('click', handleElementClicks, true);   // QZIC-1 (manual)
+    document.addEventListener('click', handleElementClicks, true);   // element_click (manual)
     document.addEventListener('click', handleSpaCheckoutClicks, true); // SPA auto (escopo por location)
 
-    // QZIC-2: require_navigation dispara so quando a pagina realmente sai.
+    // require_navigation dispara so quando a pagina realmente sai.
     window.addEventListener('pagehide', flushNavigationFire, true);
     document.addEventListener('visibilitychange', function() {
       if (document.visibilityState === 'hidden') flushNavigationFire();
@@ -1320,7 +1320,7 @@
 
   function initQualification() {
     var Q = __CONFIG__.qualification;
-    if (!Q) return; // QUAL-13: roda mesmo sem form_signature (escape hatch VT_qualify/dataLayer)
+    if (!Q) return; // roda mesmo sem form_signature (escape hatch VT_qualify/dataLayer)
 
     var questions = Array.isArray(Q.questions) ? Q.questions : [];
     var contactFields = Q.contact_fields || {};
@@ -1396,7 +1396,7 @@
       return best;
     }
 
-    // QUAL-14: resolve o valor cru de uma resposta para a letra do tier.
+    // resolve o valor cru de uma resposta para a letra do tier.
     // Com `value_map` na pergunta, mapeia "rotulo legivel" -> letra (match exato,
     // depois case-insensitive). Sem value_map (ou sem hit), usa o valor cru em
     // maiuscula — preserva o comportamento legado "value da opcao = letra".
@@ -1497,7 +1497,7 @@
       }, 1000);
     }
 
-    // QUAL-13: casa uma resposta externa a uma pergunta por `id` (amigavel p/
+    // casa uma resposta externa a uma pergunta por `id` (amigavel p/
     // snippet) ou pelo `field` (mesma chave da auto-deteccao Elementor).
     function findQuestion(key) {
       for (var i = 0; i < questions.length; i++) {
@@ -1508,7 +1508,7 @@
       return null;
     }
 
-    // QUAL-13: ingestao builder-agnostic. O snippet so entrega dados crus
+    // ingestao builder-agnostic. O snippet so entrega dados crus
     // (answers/contact/extras/resultado); o calculo continua no nosso codigo.
     // Merge (nao substitui), p/ aceitar chamada unica ou progressiva.
     function ingestExternal(data) {
@@ -1540,7 +1540,7 @@
       }
     };
 
-    // QUAL-13: listener de dataLayer (OPT-IN). So liga quando Q.datalayer_event
+    // listener de dataLayer (OPT-IN). So liga quando Q.datalayer_event
     // esta definido. Encaminha pushes { event: <nome>, answers, contact, ... }
     // p/ VT_qualify. Nao colide com gtag (que empilha Arguments, sem `.event`).
     if (Q.datalayer_event) {
