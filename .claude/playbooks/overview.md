@@ -165,6 +165,38 @@ Se **A**, montar o bloco `qualification` (que sera escrito no `SITE_CONFIG` no S
 | green      | green.com.br, payfast.green.com.br                                 |
 | tutory     | plataformatutory.com.br, pay.plataformatutory.com.br               |
 
+### Tipo de site: tradicional vs quiz/SPA — CONDICIONAL (so quando ha checkout)
+
+Ramo extra do Step 2, **so quando o modelo for infoproduto** (ha botao de compra p/ gateway). Decide
+o `spa_mode` (IZZO-14) e o tipo de trigger do `initiate_checkout` (QZIC-5). **Critico p/ evitar
+retrabalho:** sem isso, funil/quiz fica sem `marca_user` no checkout e o `InitiateCheckout` nao
+dispara. Ver `.claude/references/spa-checkout-tracking.md`.
+
+Perguntar em formato de alternativa:
+
+> "Como funcionam os botoes de compra do seu site?
+>
+> **A** — Botoes diretos (`<a href="https://{gateway}/...">`). Cada botao aponta direto para o
+>     gateway. Padrao comum em WordPress/Wix/paginas de vendas tradicionais.
+>
+> **B** — Quiz / SPA / Funnel (Next.js, React, XQuiz, Cakto, etc.). A pagina e' construida em
+>     JavaScript; o botao final monta a URL do checkout copiando os parametros da URL atual
+>     (`window.location.search`) e navega via `window.location.href`.
+>
+> **C** — Nao sei. Me manda a URL da pagina inicial e o(s) gateway(s); eu analiso o codigo."
+
+- **A** → **nao** adicionar `spa_mode` (default off). Multi-gateway puro, sem poluicao de URL. O
+  `initiate_checkout` fica `link_click` (auto — via `DEFAULT_TRIGGERS`, match = uniao dos dominios
+  dos gateways). Gravar `tipo_site: tradicional`.
+- **B** → `spa_mode.enabled: true` com `spa_mode.gateways` listando **apenas** o(s) gateway(s) do
+  fluxo SPA (geralmente 1 — XQuiz tipicamente integra so 1 gateway). O `serve-webjs` monta o
+  `initiate_checkout` como `element_click`+`require_navigation` automaticamente. Gravar
+  `tipo_site: spa` e `spa_mode_gateways`.
+- **C** → analisar o HTML (o Step 2 ja raspa). Sinais fortes de SPA: `__NEXT_DATA__`, `/_next/`,
+  `id="__nuxt"`, `<div id="root">`, `window.location.href = ...URLSearchParams`, dominios de builder
+  (`xquiz`, `cakto`, `plug.lo`, `funnelytics`). `<a>` com href p/ dominio de gateway → tradicional.
+  Confirmar a conclusao com o cliente antes de gravar.
+
 ### WhatsApp
 Links contendo `wa.me` ou `api.whatsapp.com`
 
@@ -174,6 +206,13 @@ URL ou titulo contendo: "obrigado", "thankyou", "confirmacao", "sucesso"
 ### Scripts conflitantes
 Detectar inicializacoes preexistentes de: `fbq(`, `ttq.`, `gtag(`, `dataLayer.push`
 Se detectados: **alertar o cliente e orientar remocao ANTES de continuar.** Scripts conflitantes causam dupla contagem.
+
+### UTMify (coexistencia) — IZZO-8
+Procurar no HTML o padrao `cdn.utmify.com.br/scripts/utms`. Se presente: gravar `utmify_detectada: sim`
+no `tracking_memory.md` e **nao** pedir remocao — os dois convivem. Orientar ordem de instalacao (VT
+como primeiro elemento do `<head>`, antes da UTMify) e manter as flags `data-utmify-prevent-xcod-sck`
+e `data-utmify-prevent-subids` na tag da UTMify. Detalhe e' o "porque" em
+`.claude/references/utmify-compat.md`.
 
 ### Determinar modelo
 - **Infoproduto:** link de checkout para gateway detectado
@@ -493,6 +532,50 @@ Se `processed = 0` com `order_id` preenchido e o evento era uma compra real apro
 ```bash
 npx wrangler d1 execute tracking_db --remote --command "SELECT event_name, platform, status_code, error_message FROM events WHERE site_id = '{site_id}' ORDER BY id DESC LIMIT 10;"
 ```
+
+### 5.5 Validacao E2E do caminho do `marca_user` — IZZO-9
+
+Ramo extra do Step 5, **so infoproduto** (com checkout). Prova que o `marca_user` foi gerado,
+propagado e chegou ao webhook — antes de uma compra real revelar o elo quebrado. **Essencial em
+`tipo_site: spa`** (o caminho novo do quiz), util em qualquer infoproduto.
+
+**5.5.1 — Pedir as URLs reais visitadas** (copiar da barra de enderecos, com tudo apos o `?`):
+
+> "Para validar o funil inteiro, me envie duas URLs, copiadas da barra de enderecos:
+> 1. **Pagina inicial** — depois que o site terminar de carregar.
+> 2. **Checkout** — depois de clicar em comprar."
+
+**5.5.2 — Validacao cruzada (o agente executa):**
+
+1. **URL inicial contem o `indexador` do gateway?** (consultar `gateways_config[gw].indexador` — ex.:
+   `utm_id` na Lastlink, `xcod` na Hotmart). Ausente → a reescrita de URL do VT nao rodou:
+   - Em `tipo_site: spa`: confirmar que `spa_mode.enabled: true` e o gateway esta em `spa_mode.gateways`.
+   - Checar CSP/bloqueio do script, ou `disable_url_rewrite` ligado indevidamente.
+2. **URL do checkout contem o MESMO indexador com o MESMO valor?** Comparar string-a-string. Diferente
+   ou ausente → o site quebrou a propagacao (a SPA nao copiou `window.location.search`, ou a UTMify
+   nao esta com as flags — ver `utmify-compat.md`).
+3. **`marca_user` no D1 bate com a URL inicial?**
+   ```bash
+   npx wrangler d1 execute tracking_db --remote --command "SELECT marca_user, MAX(timestamp) FROM events WHERE site_id = '{site_id}' AND event_name = 'page_view' ORDER BY id DESC LIMIT 1;"
+   ```
+   Comparar com o valor do indexador da URL inicial — devem ser identicos.
+4. **Webhook (se houve compra de teste) bate com o mesmo valor?**
+   ```bash
+   npx wrangler d1 execute tracking_db --remote --command "SELECT marca_user FROM events WHERE site_id = '{site_id}' AND event_name = 'Purchase' AND platform = 'meta_ads' ORDER BY id DESC LIMIT 1;"
+   ```
+   Igual ao inicial → ciclo completo. Gravar as URLs em `urls_validacao_e2e` no `tracking_memory.md`.
+
+**5.5.3 — Reportar em linguagem simples:**
+
+```
+✓ marca_user gerado na pagina inicial: 1778161...
+✓ marca_user propagado para o checkout: 1778161... (igual ao inicial)
+✓ Webhook recebido com marca_user correto
+Tracking do funil 100% validado.
+```
+
+Se algum passo falhar, apontar o que olhar (script no head? spa_mode desligado? UTMify sem flags?
+site reescreve a URL apos o load?).
 
 ---
 

@@ -146,6 +146,12 @@
     }
   };
 
+  // IZZO-14 — SPA mode (opt-in). Gate da injecao same-origin do indexador (IZZO-7).
+  // Default OFF: sites tradicionais/multi-gateway nao mudam de comportamento.
+  var SPA_MODE = (__CONFIG__ && __CONFIG__.spa_mode) || null;
+  var SPA_MODE_ENABLED = !!(SPA_MODE && SPA_MODE.enabled);
+  var SPA_MODE_GATEWAYS = (SPA_MODE && SPA_MODE.gateways) || null;
+
   function getCookie(name) {
     var match = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/([\.$?*|{}\(\)\[\]\\\/\+^])/g, '\\$1') + '=([^;]*)'));
     return match ? decodeURIComponent(match[1]) : undefined;
@@ -319,6 +325,22 @@
           existingParams.set('indexador', userId);
         }
       }
+    } else if (userId && SPA_MODE_ENABLED) {
+      // IZZO-7 (gated por spa_mode / IZZO-14): sites quiz/SPA copiam
+      // window.location.search da propria pagina para a URL do checkout. Sem o
+      // indexador do gateway ja presente na URL da pagina, o marca_user nao chega
+      // ao gateway (Purchase perde external_id/match). Injeta SO o indexador
+      // (nunca o caminho, que codifica UTMs em key=value:: e poluiria a barra),
+      // restrito a spa_mode.gateways quando definido. Fora do spa_mode este ramo
+      // nao roda — zero mudanca para sites tradicionais/multi-gateway.
+      for (var gwName in GATEWAYS) {
+        if (!GATEWAYS.hasOwnProperty(gwName)) continue;
+        if (SPA_MODE_GATEWAYS && SPA_MODE_GATEWAYS.indexOf(gwName) === -1) continue;
+        var gwConf = GATEWAYS[gwName];
+        if (gwConf && gwConf.indexador && !existingParams.get(gwConf.indexador)) {
+          existingParams.set(gwConf.indexador, userId);
+        }
+      }
     }
 
     newUrl.search = existingParams.toString();
@@ -387,6 +409,72 @@
     }
   }
 
+  // ============================================================
+  // MODULE 2b — Checkout em quiz/SPA (element_click) — QZIC-1/2/3
+  // ============================================================
+  // Em funil/quiz o botao de compra costuma ser <button>/<div> que navega via
+  // window.location. Location e [LegacyUnforgeable] no Chrome/Firefox (o patch do
+  // setter e' silenciosamente ignorado), entao o disparo do InitiateCheckout tem
+  // que ser click-based, NUNCA interceptando a navegacao. Ver
+  // .claude/references/spa-checkout-tracking.md. Tudo aqui e' aditivo: so atua em
+  // triggers type==='element_click' — nao toca em link_click/form_submit.
+
+  // QZIC-3: InitiateCheckout uma vez por visita de pagina (guard sem reset — a SPA
+  // nao recarrega ate ir ao checkout). Todos os caminhos novos passam por aqui.
+  var _icFired = false;
+  function fireCheckoutOnce() {
+    if (_icFired) return;
+    _icFired = true;
+    fireTrigger('initiate_checkout', {});
+  }
+
+  // QZIC-2: require_navigation — arma no clique e so dispara se a pagina realmente
+  // sair (pagehide / visibilitychange=hidden). Distingue o botao de checkout (navega
+  // p/ fora) dos botoes de scroll/etapa; independe do texto. Janela ~2,5s.
+  var _pendingNavFire = null, _pendingNavAt = 0;
+  function armNavigationFire(fireFn) { _pendingNavFire = fireFn; _pendingNavAt = Date.now(); }
+  function flushNavigationFire() {
+    if (_pendingNavFire && (Date.now() - _pendingNavAt) < 2500) {
+      var f = _pendingNavFire;
+      _pendingNavFire = null;
+      try { f(); } catch (e) {}
+    }
+  }
+
+  // QZIC-1: casa por texto visivel (OR por '|', case-insensitive).
+  function elementTextMatches(el, patternStr) {
+    if (!patternStr) return true;
+    var txt = String(el.textContent || el.value || '').toLowerCase();
+    var pats = String(patternStr).split('|');
+    for (var i = 0; i < pats.length; i++) {
+      var p = pats[i].trim().toLowerCase();
+      if (p && txt.indexOf(p) !== -1) return true;
+    }
+    return false;
+  }
+
+  // QZIC-1: dispara no clique (capture-phase, antes de o builder navegar). Casa por
+  // seletor CSS (default abrange <button>/<a>/[role=button]/inputs) e/ou texto.
+  function handleElementClicks(e) {
+    var triggers = (__CONFIG__ && __CONFIG__.triggers) || {};
+    for (var name in triggers) {
+      if (!triggers.hasOwnProperty(name)) continue;
+      var t = triggers[name];
+      if (!t || t.type !== 'element_click') continue;
+      var sel = t.selector || 'a,button,[role="button"],input[type="submit"],input[type="button"]';
+      var el = e.target && e.target.closest ? e.target.closest(sel) : null;
+      if (!el || !elementTextMatches(el, t.text)) continue;
+      var fireFn = (name === 'initiate_checkout')
+        ? fireCheckoutOnce
+        : (function(n) { return function() { fireTrigger(n, {}); }; })(name);
+      if (t.require_navigation) armNavigationFire(fireFn);  // QZIC-2
+      else fireFn();
+      if (__CONFIG__.debug || getUrlParam('debug') === '1') {
+        console.log('[Tracking] element_click → ' + name + (t.require_navigation ? ' (armado p/ navegacao)' : ''));
+      }
+    }
+  }
+
   function processLink(link) {
     var href = link.getAttribute('href');
     if (!href) return;
@@ -441,22 +529,38 @@
     });
   }
 
-  function initTransfer() {
+  // IZZO-10: reescreve a URL da propria pagina de forma segura.
+  function rewriteCurrentUrl() {
+    // Escape hatch p/ sites com modais/routers/PWA que reagem a mudanca de URL:
+    // desliga a reescrita e cai no modo "so links externos" (ver reference).
+    if (__CONFIG__ && __CONFIG__.disable_url_rewrite) return;
+    var current = window.location.href;
+    var augmented = addParamsToUrl(current);
+    // Idempotencia: so chama replaceState se algo mudou de fato (evita loop e
+    // nao dispara re-render de routers quando nao ha nada a acrescentar).
+    if (augmented === current) return;
     isInternalReplace = true;
-    try { history.replaceState(null, '', addParamsToUrl(window.location.href)); } catch(e) {}
+    try { history.replaceState(null, '', augmented); } catch(e) {}
     isInternalReplace = false;
+  }
+
+  function initTransfer() {
+    rewriteCurrentUrl();
 
     processAllLinks();
 
     document.addEventListener('click', handleLinkClicks, true);
+    document.addEventListener('click', handleElementClicks, true); // QZIC-1
+
+    // QZIC-2: require_navigation dispara so quando a pagina realmente sai.
+    window.addEventListener('pagehide', flushNavigationFire, true);
+    document.addEventListener('visibilitychange', function() {
+      if (document.visibilityState === 'hidden') flushNavigationFire();
+    }, true);
 
     observeDynamicElements();
 
-    window.addEventListener('popstate', function() {
-      isInternalReplace = true;
-      try { history.replaceState(null, '', addParamsToUrl(window.location.href)); } catch(e) {}
-      isInternalReplace = false;
-    });
+    window.addEventListener('popstate', rewriteCurrentUrl);
   }
 
   try {

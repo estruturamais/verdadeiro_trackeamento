@@ -12,6 +12,58 @@ function getRootDomain(request) {
   return parts.length >= 2 ? '.' + parts.slice(-2).join('.') : host;
 }
 
+// IZZO-3 / QZIC-5 — DEFAULT_TRIGGERS: o agente nao precisa mais explicitar os
+// triggers canonicos no SITE_CONFIG. O cliente so define um trigger quando quer
+// override; o merge profundo (mergeTriggers) preenche o resto.
+//   - initiate_checkout tradicional: link_click com match = uniao dos dominios dos
+//     gateways configurados (auto — nao depende de o agente lembrar de listar).
+//   - initiate_checkout em quiz/SPA (spa_mode.enabled): element_click +
+//     require_navigation (link_click nao dispara em botao nao-ancora — QZIC-5).
+function buildDefaultTriggers(config) {
+  const spaEnabled = !!(config.spa_mode && config.spa_mode.enabled);
+
+  const gwDomains = [];
+  const gwc = config.gateways_config || {};
+  for (const g of Object.keys(gwc)) {
+    const doms = (gwc[g] && gwc[g].domains) || [];
+    for (const d of doms) if (gwDomains.indexOf(d) === -1) gwDomains.push(d);
+  }
+
+  const initiateCheckout = spaEnabled
+    ? { type: 'element_click', require_navigation: true }
+    : { type: 'link_click', match: gwDomains.join('|') };
+
+  return {
+    initiate_checkout: initiateCheckout,
+    contact: { type: 'link_click', match: 'wa.me|api.whatsapp' },
+    lead: { type: 'form_submit', selectors: { elementor: true, cf7: true, generic: true } }
+  };
+}
+
+// Merge profundo (2 niveis) dos triggers do cliente sobre os defaults. Quando o
+// cliente troca o `type` de um trigger, ele passa a ser dono total daquele trigger
+// (evita herdar chaves incompativeis, ex.: require_navigation em link_click).
+function mergeTriggers(defaults, override) {
+  const out = {};
+  for (const k of Object.keys(defaults)) out[k] = defaults[k];
+  if (override && typeof override === 'object') {
+    for (const name of Object.keys(override)) {
+      const o = override[name];
+      const d = out[name];
+      // Merge (cliente preenche/override chaves do default) quando ha um default do
+      // mesmo tipo OU quando o cliente nao declara type (override parcial, ex.: so
+      // `match`). So substitui inteiro quando o cliente declara um type DIFERENTE —
+      // evita herdar chaves incompativeis (ex.: require_navigation num link_click).
+      if (d && o && typeof o === 'object' && typeof d === 'object' && (!o.type || o.type === d.type)) {
+        out[name] = { ...d, ...o };
+      } else {
+        out[name] = o;
+      }
+    }
+  }
+  return out;
+}
+
 export async function handleServeWebJs(request, env) {
   const url = new URL(request.url);
   const siteId = url.searchParams.get('site_id') || url.searchParams.get('siteId') || detectSiteId(request, env);
@@ -35,11 +87,15 @@ export async function handleServeWebJs(request, env) {
     google_ads_conversion_id: config.platforms?.google_ads?.conversion_id,
     google_ads_label_contact: config.platforms?.google_ads?.conversion_label_contact,
     google_ads_label_lead: config.platforms?.google_ads?.conversion_label_lead,
-    triggers: config.triggers,
+    triggers: mergeTriggers(buildDefaultTriggers(config), config.triggers),
     cookies: config.cookies,
     gateways_config: config.gateways_config,
     custom_data: config.custom_data,
     qualification: config.qualification,
+    // IZZO-14 — SPA mode (opt-in): gate da injecao same-origin do indexador no web.js.
+    spa_mode: config.spa_mode,
+    // IZZO-10 — escape hatch da reescrita de URL (modais/routers/PWA).
+    disable_url_rewrite: config.disable_url_rewrite,
     collect_url: '/collect/event'
   };
 

@@ -27,6 +27,13 @@
 - dominio: {valor}
 - cms_detectado: {valor}
 - modelo: infoproduto | negocio_local
+- tipo_site: tradicional | spa       <!-- IZZO-14: spa quando o botao de compra copia window.location.search p/ o checkout (Next.js/React/XQuiz/Cakto). Decidido pela pergunta A/B/C do Step 2. -->
+- spa_mode_gateways: []              <!-- so quando tipo_site = spa: gateways usados no fluxo SPA (geralmente 1). Vira spa_mode.gateways no SITE_CONFIG. -->
+- disable_url_rewrite: nao           <!-- IZZO-10: sim so se a reescrita de URL conflitar com modais/router/PWA do site (cai p/ modo "so links externos"). -->
+- utmify_detectada: nao | sim        <!-- IZZO-8: se cdn.utmify.com.br presente no <head>; ver references/utmify-compat.md p/ ordem de instalacao. -->
+- urls_validacao_e2e:                <!-- IZZO-9: preenchido no Step 5 (validacao do caminho do marca_user). -->
+  - inicial: {URL completa com params, apos load}
+  - checkout: {URL completa com params, apos clicar em comprar}
 
 ---
 

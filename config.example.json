@@ -26,6 +26,12 @@
       "page_event_names": { "registrol20": "L20_LG_SLPC", "brasilia": "BSB_LEAD" }
     }
   },
+  "spa_mode": {
+    "_doc": "IZZO-14/QZIC — opt-in. Ligar SO em quiz/SPA (Next.js/React/XQuiz/Cakto) cujo botao de compra copia window.location.search para o checkout via window.location. enabled=true injeta o indexador do gateway na URL da propria pagina (via replaceState) para o marca_user chegar ao checkout; gateways restringe a injecao (omita para injetar de todos). Com enabled=true, o serve-webjs monta initiate_checkout como element_click+require_navigation por padrao. Deixe enabled=false em sites tradicionais/<a href>/multi-gateway (sem poluicao de URL).",
+    "enabled": false,
+    "gateways": ["lastlink"]
+  },
+  "disable_url_rewrite": false,
   "gateways": ["hotmart", "kiwify", "hubla", "payt"],
   "gateways_config": {
     "hotmart": {
