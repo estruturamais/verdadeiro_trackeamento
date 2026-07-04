@@ -27,9 +27,11 @@
     }
   },
   "spa_mode": {
-    "_doc": "IZZO-14/QZIC — opt-in. Ligar SO em quiz/SPA (Next.js/React/XQuiz/Cakto) cujo botao de compra copia window.location.search para o checkout via window.location. enabled=true injeta o indexador do gateway na URL da propria pagina (via replaceState) para o marca_user chegar ao checkout; gateways restringe a injecao (omita para injetar de todos). Com enabled=true, o serve-webjs monta initiate_checkout como element_click+require_navigation por padrao. Deixe enabled=false em sites tradicionais/<a href>/multi-gateway (sem poluicao de URL).",
+    "_doc": "IZZO-14/QZIC — opt-in. Ligar SO se houver funil de quiz/SPA (Next.js/React/XQuiz/Cakto) cujo botao de compra copia window.location.search para o checkout. `locations` escopa ONDE o modo SPA vale e PRE-FIXA o gateway de cada local: `match` = prefixo de slug ('/quiz') ou host ('quiz.seusite.com'); `gateways` = qual gateway aquele local usa (o marca_user entra no indexador desse gateway -> viabiliza o FDV merge no Purchase). Paginas fora das locations seguem tradicionais (sem poluicao de URL; initiate_checkout via link_click). Sem `locations` e com enabled:true, o dominio inteiro vira SPA (usa spa_mode.gateways). Deixe enabled:false em sites 100% tradicionais.",
     "enabled": false,
-    "gateways": ["lastlink"]
+    "locations": [
+      { "match": "/quiz", "gateways": ["lastlink"] }
+    ]
   },
   "disable_url_rewrite": false,
   "gateways": ["hotmart", "kiwify", "hubla", "payt"],

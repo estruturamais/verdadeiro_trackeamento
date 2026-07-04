@@ -168,34 +168,48 @@ Se **A**, montar o bloco `qualification` (que sera escrito no `SITE_CONFIG` no S
 ### Tipo de site: tradicional vs quiz/SPA — CONDICIONAL (so quando ha checkout)
 
 Ramo extra do Step 2, **so quando o modelo for infoproduto** (ha botao de compra p/ gateway). Decide
-o `spa_mode` (IZZO-14) e o tipo de trigger do `initiate_checkout` (QZIC-5). **Critico p/ evitar
-retrabalho:** sem isso, funil/quiz fica sem `marca_user` no checkout e o `InitiateCheckout` nao
-dispara. Ver `.claude/references/spa-checkout-tracking.md`.
+o `spa_mode` (IZZO-14). **Critico p/ evitar retrabalho:** sem isso, funil/quiz fica sem `marca_user`
+no checkout e o `InitiateCheckout` nao dispara. Ver `.claude/references/spa-checkout-tracking.md`.
+
+> **Modelo por location (não por site inteiro).** O quiz/SPA é ligado por **slug/subdomínio**, não
+> globalmente. Um mesmo site pode ter páginas tradicionais **e** um funil de quiz em `/quiz` (ou
+> `quiz.seusite.com`): só as páginas que casam uma `location` entram no modo SPA; o resto segue
+> tradicional. Por isso **coletar os slugs/subdomínios de quiz aqui** — assim o mesmo script atende
+> os dois casos sem toggle, e cada slug já sai com o gateway certo (o `marca_user` entra no indexador
+> correto → FDV merge no `Purchase`).
 
 Perguntar em formato de alternativa:
 
-> "Como funcionam os botoes de compra do seu site?
+> "Você usa algum **funil de quiz / página SPA** (Next.js, React, XQuiz, Cakto, etc.) — aquela em que
+> a página é toda em JavaScript e o botão final monta o link do checkout copiando os parâmetros da
+> URL atual?
 >
-> **A** — Botoes diretos (`<a href="https://{gateway}/...">`). Cada botao aponta direto para o
->     gateway. Padrao comum em WordPress/Wix/paginas de vendas tradicionais.
+> **A** — Não. Meus botões de compra são links diretos (`<a href>`) para o gateway (WordPress/Wix/
+>     página de vendas tradicional).
 >
-> **B** — Quiz / SPA / Funnel (Next.js, React, XQuiz, Cakto, etc.). A pagina e' construida em
->     JavaScript; o botao final monta a URL do checkout copiando os parametros da URL atual
->     (`window.location.search`) e navega via `window.location.href`.
+> **B** — Sim, tenho funil de quiz/SPA. (Me diga em **quais slugs ou subdomínios** ele roda e **qual
+>     gateway** cada um usa — ex.: `/quiz → lastlink`, `quiz.meusite.com → hotmart`.)
 >
-> **C** — Nao sei. Me manda a URL da pagina inicial e o(s) gateway(s); eu analiso o codigo."
+> **C** — Não sei. Me manda a URL da página inicial e o(s) gateway(s); eu analiso o código."
 
-- **A** → **nao** adicionar `spa_mode` (default off). Multi-gateway puro, sem poluicao de URL. O
-  `initiate_checkout` fica `link_click` (auto — via `DEFAULT_TRIGGERS`, match = uniao dos dominios
-  dos gateways). Gravar `tipo_site: tradicional`.
-- **B** → `spa_mode.enabled: true` com `spa_mode.gateways` listando **apenas** o(s) gateway(s) do
-  fluxo SPA (geralmente 1 — XQuiz tipicamente integra so 1 gateway). O `serve-webjs` monta o
-  `initiate_checkout` como `element_click`+`require_navigation` automaticamente. Gravar
-  `tipo_site: spa` e `spa_mode_gateways`.
-- **C** → analisar o HTML (o Step 2 ja raspa). Sinais fortes de SPA: `__NEXT_DATA__`, `/_next/`,
-  `id="__nuxt"`, `<div id="root">`, `window.location.href = ...URLSearchParams`, dominios de builder
-  (`xquiz`, `cakto`, `plug.lo`, `funnelytics`). `<a>` com href p/ dominio de gateway → tradicional.
-  Confirmar a conclusao com o cliente antes de gravar.
+- **A** → **não** adicionar `spa_mode` (default off). Multi-gateway puro, sem poluição de URL.
+  `initiate_checkout` fica `link_click` (auto — `DEFAULT_TRIGGERS`, match = união dos domínios dos
+  gateways). Gravar `tipo_site: tradicional`.
+- **B** → montar `spa_mode.enabled: true` + `spa_mode.locations[]`, **uma entrada por slug/subdomínio
+  de quiz**, cada uma com o gateway pré-fixado:
+  ```json
+  "spa_mode": { "enabled": true, "locations": [ { "match": "/quiz", "gateways": ["lastlink"] } ] }
+  ```
+  `match` = prefixo de caminho (começa com `/`) **ou** host (`quiz.seusite.com`). Se o **site inteiro**
+  é o quiz, use uma location `{ "match": "/", "gateways": ["..."] }`. Gravar `tipo_site: spa` (ou
+  `misto` se houver também páginas tradicionais) e `spa_mode_locations`. **Não** trocar o tipo do
+  trigger — o checkout do quiz é detectado automaticamente no client, escopado por essas locations;
+  páginas fora delas seguem no `link_click` tradicional.
+- **C** → analisar o HTML (o Step 2 já raspa). Sinais fortes de SPA: `__NEXT_DATA__`, `/_next/`,
+  `id="__nuxt"`, `<div id="root">`, `window.location.href = ...URLSearchParams`, domínios de builder
+  (`xquiz`, `cakto`, `plug.lo`, `funnelytics`). `<a>` com href p/ domínio de gateway → tradicional.
+  Ao concluir que há quiz, **perguntar os slugs/subdomínios e o gateway de cada um** (como no B) antes
+  de gravar.
 
 ### WhatsApp
 Links contendo `wa.me` ou `api.whatsapp.com`
@@ -549,7 +563,8 @@ propagado e chegou ao webhook — antes de uma compra real revelar o elo quebrad
 
 1. **URL inicial contem o `indexador` do gateway?** (consultar `gateways_config[gw].indexador` — ex.:
    `utm_id` na Lastlink, `xcod` na Hotmart). Ausente → a reescrita de URL do VT nao rodou:
-   - Em `tipo_site: spa`: confirmar que `spa_mode.enabled: true` e o gateway esta em `spa_mode.gateways`.
+   - Em `tipo_site: spa`/`misto`: confirmar que a URL testada casa uma `spa_mode.locations[].match`
+     (slug/subdominio certo) e que o gateway daquela location (`location.gateways`) e o esperado.
    - Checar CSP/bloqueio do script, ou `disable_url_rewrite` ligado indevidamente.
 2. **URL do checkout contem o MESMO indexador com o MESMO valor?** Comparar string-a-string. Diferente
    ou ausente → o site quebrou a propagacao (a SPA nao copiou `window.location.search`, ou a UTMify

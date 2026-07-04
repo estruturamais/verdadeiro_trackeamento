@@ -145,11 +145,41 @@
     }
   };
 
-  // IZZO-14 — SPA mode (opt-in). Gate da injecao same-origin do indexador (IZZO-7).
+  // IZZO-14 / QZIC — SPA mode (opt-in), ESCOPADO por slug/subdominio.
   // Default OFF: sites tradicionais/multi-gateway nao mudam de comportamento.
+  // `spa_mode.locations[]` diz ONDE o comportamento de quiz/SPA vale e PRE-FIXA o
+  // gateway daquele local — `match` = prefixo de slug ("/quiz") ou host
+  // ("quiz.site.com"); `gateways` = qual gateway aquele local usa. Assim o
+  // marca_user entra no INDEXADOR CORRETO (viabiliza o FDV merge no Purchase), e
+  // paginas fora das locations seguem 100% tradicionais (sem poluicao de URL, sem
+  // element_click). Sem `locations` mas com enabled:true, o dominio inteiro e' SPA
+  // (usa spa_mode.gateways) — retrocompat.
   var SPA_MODE = (__CONFIG__ && __CONFIG__.spa_mode) || null;
   var SPA_MODE_ENABLED = !!(SPA_MODE && SPA_MODE.enabled);
-  var SPA_MODE_GATEWAYS = (SPA_MODE && SPA_MODE.gateways) || null;
+
+  function matchesSpaLocation(loc) {
+    if (!loc || !loc.match) return false;
+    var m = String(loc.match);
+    if (m.charAt(0) === '/') {
+      return window.location.pathname.indexOf(m) === 0; // prefixo de slug
+    }
+    var host = window.location.hostname.toLowerCase();
+    var mm = m.toLowerCase();
+    // host exato OU subdominio (host termina com ".mm")
+    return host === mm || (host.length > mm.length && host.indexOf('.' + mm) === host.length - (mm.length + 1));
+  }
+
+  // Location SPA que casa a pagina atual (ou null). Sem `locations` mas enabled =>
+  // location implicita cobrindo o dominio inteiro, com os gateways globais.
+  function getSpaLocation() {
+    if (!SPA_MODE_ENABLED) return null;
+    var locs = SPA_MODE.locations;
+    if (!locs || !locs.length) return { gateways: SPA_MODE.gateways || null };
+    for (var i = 0; i < locs.length; i++) {
+      if (matchesSpaLocation(locs[i])) return locs[i];
+    }
+    return null;
+  }
 
   function getCookie(name) {
     var match = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/([\.$?*|{}\(\)\[\]\\\/\+^])/g, '\\$1') + '=([^;]*)'));
@@ -324,20 +354,24 @@
           existingParams.set('indexador', userId);
         }
       }
-    } else if (userId && SPA_MODE_ENABLED) {
+    } else if (userId) {
       // IZZO-7 (gated por spa_mode / IZZO-14): sites quiz/SPA copiam
-      // window.location.search da propria pagina para a URL do checkout. Sem o
-      // indexador do gateway ja presente na URL da pagina, o marca_user nao chega
-      // ao gateway (Purchase perde external_id/match). Injeta SO o indexador
-      // (nunca o caminho, que codifica UTMs em key=value:: e poluiria a barra),
-      // restrito a spa_mode.gateways quando definido. Fora do spa_mode este ramo
-      // nao roda — zero mudanca para sites tradicionais/multi-gateway.
-      for (var gwName in GATEWAYS) {
-        if (!GATEWAYS.hasOwnProperty(gwName)) continue;
-        if (SPA_MODE_GATEWAYS && SPA_MODE_GATEWAYS.indexOf(gwName) === -1) continue;
-        var gwConf = GATEWAYS[gwName];
-        if (gwConf && gwConf.indexador && !existingParams.get(gwConf.indexador)) {
-          existingParams.set(gwConf.indexador, userId);
+      // window.location.search da propria pagina para a URL do checkout. So injeta
+      // quando a pagina atual casa uma `spa_mode.location` — e injeta SO o indexador
+      // (nunca o caminho, que codifica UTMs em key=value:: e poluiria a barra) do(s)
+      // gateway(s) PRE-FIXADO(s) daquela location. Assim o marca_user chega ao
+      // gateway no parametro certo (Purchase mantem external_id/match → FDV merge).
+      // Fora das locations este ramo nao roda — zero mudanca para paginas tradicionais.
+      var spaLoc = getSpaLocation();
+      if (spaLoc) {
+        var allowedGw = spaLoc.gateways || null;
+        for (var gwName in GATEWAYS) {
+          if (!GATEWAYS.hasOwnProperty(gwName)) continue;
+          if (allowedGw && allowedGw.indexOf(gwName) === -1) continue;
+          var gwConf = GATEWAYS[gwName];
+          if (gwConf && gwConf.indexador && !existingParams.get(gwConf.indexador)) {
+            existingParams.set(gwConf.indexador, userId);
+          }
         }
       }
     }
@@ -474,6 +508,23 @@
     }
   }
 
+  // Deteccao AUTOMATICA de checkout nas locations SPA (quiz/funnel) — escopada.
+  // Ativa SO quando a pagina casa uma `spa_mode.location`: arma no clique e dispara
+  // no pagehide (require_navigation implicito), distinguindo o botao que redireciona
+  // dos de etapa/scroll sem depender de texto/seletor. Convive com o `link_click`
+  // tradicional (paginas fora das locations) — o guard `_icFired` deduplica. Assim
+  // o mesmo script serve pagina tradicional E funil de quiz sem trocar nada.
+  function handleSpaCheckoutClicks(e) {
+    if (!getSpaLocation()) return;
+    var sel = (SPA_MODE && SPA_MODE.selector) || 'a,button,[role="button"],input[type="submit"],input[type="button"]';
+    var el = e.target && e.target.closest ? e.target.closest(sel) : null;
+    if (!el) return;
+    armNavigationFire(fireCheckoutOnce);
+    if (__CONFIG__.debug || getUrlParam('debug') === '1') {
+      console.log('[Tracking] SPA checkout armado (location) — dispara no pagehide');
+    }
+  }
+
   function processLink(link) {
     var href = link.getAttribute('href');
     if (!href) return;
@@ -549,7 +600,8 @@
     processAllLinks();
 
     document.addEventListener('click', handleLinkClicks, true);
-    document.addEventListener('click', handleElementClicks, true); // QZIC-1
+    document.addEventListener('click', handleElementClicks, true);   // QZIC-1 (manual)
+    document.addEventListener('click', handleSpaCheckoutClicks, true); // SPA auto (escopo por location)
 
     // QZIC-2: require_navigation dispara so quando a pagina realmente sai.
     window.addEventListener('pagehide', flushNavigationFire, true);
