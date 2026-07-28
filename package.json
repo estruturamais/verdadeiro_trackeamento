@@ -1,6 +1,6 @@
 {
   "name": "verdadeiro-trackeamento",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "private": true,
   "scripts": {
     "prebuild": "node scripts/sync-webtemplate.mjs",

@@ -19,7 +19,7 @@ zero até o tracking validado em produção.
 
 ## Versão
 
-**Versão atual: 1.4.0**
+**Versão atual: 1.4.1**
 
 Para saber qual versão uma instalação roda, pergunte ao assistente *"qual a versão do seu VT?"* — ele
 lê o número (a) deste README e do `package.json` e (b) **direto da Cloudflare**: na 1ª linha do script
@@ -27,6 +27,22 @@ servido em `https://{dominio}/tracking/web.js` (e no campo `vt_version` do confi
 (b) sobrevive mesmo que o usuário apague os arquivos locais. O histórico abaixo mapeia cada versão às
 novidades:
 
+- **1.4.1** — **Secret com whitespace deixa de derrubar os envios (e de se disfarçar de erro de
+  rede)**. Bug reproduzido em produção em dois clientes: todo envio a uma plataforma gravava
+  `status_code = 0` + `Error: Network connection lost.`, com o token **correto** — o que estava errado
+  era o valor no cofre, gravado com CRLF pelo pipe do PowerShell (`echo "token" | wrangler secret
+  put`, o comando que os próprios playbooks recomendavam). O código passa a **higienizar toda
+  credencial** na entrada de cada envio (Meta, TikTok, GA4, Sheets — header e query string) e a falhar
+  de forma legível (`invalid_access_token_whitespace`) quando o valor tem whitespace no meio; o
+  `catch` deixa de zerar o `status_code` quando a resposta já havia chegado (o evento pode ter sido
+  aceito) e passa a distinguir `fetch_failed:` de `body_read_failed:`. Na documentação, `wrangler
+  secret bulk` vira o comando canônico (portável em bash, zsh e PowerShell), o Step 3b ganha um
+  **smoke test sintético obrigatório** que confirma 200/204 em cada plataforma antes de avançar — com
+  retry, porque a propagação do secret no edge faz o reteste imediato falhar mesmo quando a correção
+  está certa — e o `audit-tracking` ganha a tabela de assinaturas do sintoma, o roteiro de descarte e
+  o alerta de que token de CAPI se valida por **envio**, nunca por leitura do pixel (que dá falso
+  negativo `(#100) Missing Permission`). Inclui ainda a leitura do warning de escopos de OAuth no
+  `wrangler whoami` (token antigo sobe o Worker e as rotas, mas leva `403` ao registrar o cron).
 - **1.4.0** — **Funis de quiz/SPA**: o VT passa a funcionar de ponta a ponta em páginas construídas
   em JavaScript (Next.js/React/XQuiz/InLead) cujo botão de compra é um `<button>` que navega via
   `window.location` (não um `<a>`). O `InitiateCheckout` dispara no clique (server-side via
