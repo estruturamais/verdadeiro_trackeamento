@@ -305,7 +305,7 @@ Delegar coleta para a skill especialista de cada plataforma confirmada:
 | Tipo      | Campos                                            | Destino                          |
 |-----------|---------------------------------------------------|----------------------------------|
 | Publicos  | pixel_id, measurement_id, conversion_id, labels  | Config JSON no `SITE_CONFIG`     |
-| Secretos  | access_token (Meta), api_secret (GA4)             | `npx wrangler secret put`        |
+| Secretos  | access_token (Meta), api_secret (GA4)             | `npx wrangler secret bulk` (ver Step 3b) |
 
 **EXCECAO TikTok:** o `access_token` do TikTok vai no **config JSON** (`platforms.tiktok.access_token`) — NAO como wrangler secret. O codigo le `tiktokConfig.access_token` sem fallback para env. Ver `.claude/playbooks/tiktok_ads.md` para detalhes.
 
@@ -350,23 +350,74 @@ O JSON deve ser serializado em uma unica linha (sem quebras de linha) para o wra
 
 Executar apenas os secrets das plataformas confirmadas. Explicar ao cliente o que vai acontecer antes de executar.
 
-```bash
-# Meta Ads (sempre que Meta confirmado)
-# Um unico token cobre o pixel primario e todos os espelhos via fallback
-echo "{access_token}" | npx wrangler secret put META_ACCESS_TOKEN
+Criar um arquivo JSON temporario com os secrets das plataformas confirmadas e subir de uma vez. Este e o **comando canonico** — portavel em bash, zsh e PowerShell:
 
-# GA4 (apenas se GA4 confirmado)
-echo "{api_secret}" | npx wrangler secret put GA4_API_SECRET
+```bash
+# secrets.json — incluir apenas as plataformas confirmadas
+# {"META_ACCESS_TOKEN": "{access_token}", "GA4_API_SECRET": "{api_secret}"}
+#
+# Meta: um unico token cobre o pixel primario e todos os espelhos via fallback
+npx wrangler secret bulk secrets.json
+
+# Apagar o arquivo logo apos o upload
+rm secrets.json                          # PowerShell: Remove-Item secrets.json -Force
 ```
 
-> **TikTok:** nao usar `wrangler secret put` para o access_token do TikTok — ele ja foi incluido no config JSON no passo 1 (excecao de arquitetura: o codigo nao le de env).
+> **NUNCA** subir secret por pipe (`echo "{token}" | npx wrangler secret put NOME`). No
+> Windows/PowerShell `echo` e `Write-Output` e o pipe para um executavel nativo acrescenta **CRLF** —
+> o secret e gravado com whitespace no fim, o header vira `Authorization: Bearer <token>\r\n` e o
+> runtime derruba a conexao. O sintoma aparece so depois, como `status_code = 0` +
+> `Error: Network connection lost.` nos envios as plataformas, e **parece erro de rede**. O
+> `secret bulk` resolve os dois problemas de uma vez: nao passa pelo historico do shell e nao depende
+> do comportamento de pipe do shell.
 
-Usar `echo | wrangler secret put` para evitar que o valor fique no historico do shell. Nunca exibir o valor do secret em mensagem de chat.
+> **TikTok:** nao usar `wrangler secret bulk` para o access_token do TikTok — ele ja foi incluido no config JSON no passo 1 (excecao de arquitetura: o codigo nao le de env).
+
+Nunca exibir o valor do secret em mensagem de chat.
 
 ### 4. Re-deploy apos secrets
 
 ```bash
 npx wrangler deploy
+```
+
+### 5. Smoke test sintetico (OBRIGATORIO — nao pular)
+
+Os passos acima e o Step 4 confirmam que o script e servido e que o config esta certo, mas **nenhum
+deles toca a plataforma**. Sem este smoke test, uma credencial quebrada passa despercebida ate o
+cliente navegar no site. Disparar um evento de teste direto no beacon fecha o ciclo sem depender do
+browser do cliente:
+
+```bash
+# 1. Dispara um page_view sintetico (marca_user reconhecivel)
+curl -s -X POST "https://{dominio}/collect/event" \
+  -H "Content-Type: application/json" \
+  -d '{"site_id":"{site_id}","event":"page_view","event_id":"smoke-test","marca_user":"smoke-test","page_url":"https://{dominio}/","browser_data":{},"user_data":{},"utm_data":{}}'
+
+# 2. Confirma que CADA plataforma respondeu 200/204 — nao so o 'collect'
+npx wrangler d1 execute tracking_db --remote --command \
+  "SELECT platform, status_code, error_message FROM events WHERE marca_user = 'smoke-test';"
+```
+
+**Criterio de aprovacao do Step 3b:** toda linha com `platform != 'collect'` tem `status_code` 200 ou
+204 (GA4 responde 204 = sucesso). Qualquer `status_code = 0` bloqueia o avanco para o Step 4.
+
+> **Antes de reprovar, repita o disparo.** Subir secret cria uma nova versao do Worker, e ela leva
+> alguns instantes para propagar no edge — **o teste imediato pode falhar mesmo com o secret
+> correto**. Um `status_code = 0` na primeira tentativa **nao** e conclusivo: repita o passo 1 (e o 2)
+> uma vez, espacado, e so trate como "nao resolvido" se falhar tambem na segunda. Nunca descarte a
+> hipotese de whitespace no secret com base no reteste imediato.
+
+Se falhar nas duas tentativas, diagnosticar antes de seguir: `status_code = 0` +
+`Network connection lost` (ou `fetch_failed:`) em **uma** plataforma enquanto as outras respondem =
+secret daquela plataforma gravado com whitespace → reenviar por `secret bulk`. Roteiro completo em
+`.claude/skills/audit-tracking/SKILL.md`.
+
+Limpar as linhas de teste depois e registrar na memoria que foram geradas pelo agente:
+
+```bash
+npx wrangler d1 execute tracking_db --remote --command \
+  "DELETE FROM events WHERE marca_user = 'smoke-test';"
 ```
 
 Marcar "Step 3b" como concluido no `tracking_memory.md`.
@@ -407,13 +458,16 @@ page_view | google_analytics_4 | web | collect | 204 |
 
 **IMPORTANTE:** GA4 Measurement Protocol retorna **204** como sucesso — NAO tratar 204 como erro.
 
-Se `status_code = 0` com `error_message` preenchido: exibir o erro em linguagem simples e resolver antes de continuar.
+Se `status_code = 0` com `error_message` preenchido: exibir o erro em linguagem simples e resolver antes de continuar. `error_message` comecando com `fetch_failed:` ou contendo `Network connection lost` **nao** e erro de rede por default — a causa mais comum e secret gravado com whitespace (ver Step 3b.5 e a tabela de diagnostico do `audit-tracking`).
 
 Se a tabela `events` estiver vazia: normal nesta etapa — o script ainda nao esta instalado no site. Os eventos aparacerao apos o Step 5.
 
 ### 4.3 Criterios de sucesso desta etapa
 - curl retorna `__CONFIG__` com todos os campos das plataformas confirmadas
 - Worker acessivel (sem erro de conexao)
+- **Smoke test do Step 3b.5 aprovado** — toda plataforma confirmada respondeu 200/204 ao evento
+  sintetico. Sem isso o Step 4 fica verde com a plataforma quebrada: as checagens acima confirmam o
+  script e o config, nenhuma delas toca a plataforma.
 
 > Validacao visual por plataforma e feita no Step 5, apos instalacao do script.
 

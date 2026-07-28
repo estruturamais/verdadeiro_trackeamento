@@ -254,12 +254,18 @@ Gravar `modalidade_coleta: bulk` ou `modalidade_coleta: passo_a_passo` no `track
 Antes de executar qualquer um destes comandos (em qualquer step, em qualquer momento):
 - `npx wrangler deploy`
 - `npx wrangler d1 execute --remote`
-- `npx wrangler secret put`
+- `npx wrangler secret bulk` (ou `secret put`)
 - `npx wrangler d1 create`
 
 ### Procedimento obrigatorio
 
 1. Executar `npx wrangler whoami` e exibir o resultado completo para o cliente
+   - **Ler tambem o rodape, nao so a conta.** Se aparecer
+     `▲ [WARNING] Wrangler is missing some expected Oauth scopes`, rodar `npx wrangler login`
+     **antes** do Step 0: um token criado antes dos escopos atuais sobe o Worker e registra as rotas
+     normalmente, mas leva `403` ao registrar o cron — o deploy falha **parcialmente** e o erro nao
+     parece o que e. Depois do relogin, **repetir esta regra bloqueante** (a conta pode ter mudado) e
+     rodar `npx wrangler triggers deploy` para registrar o cron.
 2. Perguntar explicitamente:
    > "Esta e a conta Cloudflare correta para este projeto? Conta ativa: **[email retornado]**. Confirma com S ou N."
 3. Aguardar resposta afirmativa ("S", "sim", "pode") antes de executar o comando
@@ -397,7 +403,7 @@ Ao final de cada step, atualizar a secao "Status do workflow":
 11. **Perguntas com alternativas em formato A/B/C** — toda pergunta com opcoes pre-definidas (plataformas, modalidade, tipo de instalacao, etc.) deve ser formatada como alternativas letradas (A, B, C...). Informar que pode escolher mais de uma quando cabivel.
 12. **Nao executar wrangler sem confirmar conta** — ver secao "REGRA BLOQUEANTE — Confirmacao de Conta Cloudflare". Esta regra e absoluta e nao admite excecoes.
 13. **Gravar na memoria antes de perguntar** — qualquer dado recebido deve ser gravado no `tracking_memory.md` antes de formular a proxima pergunta. Nunca acumular dados para gravar no final. Quando o cliente envia multiplas informacoes de uma vez, gravar todas antes de responder.
-14. **Comandos de terminal sao executados automaticamente** — A unica aprovacao obrigatoria antes de executar qualquer comando e a confirmacao da conta Cloudflare (REGRA BLOQUEANTE: `wrangler whoami` + S/N explicito). Todos os outros comandos (`wrangler deploy`, `wrangler d1 execute`, `wrangler secret put`, `npm install`, `curl`, etc.) devem ser executados diretamente — sem pedir "posso executar?", sem aguardar confirmacao previa. O usuario nao tem conhecimento tecnico dos comandos; o fluxo ja foi validado. Executar → exibir resultado → continuar. Nunca travar o fluxo esperando aprovacao de comando tecnico que o usuario nao sabe avaliar.
+14. **Comandos de terminal sao executados automaticamente** — A unica aprovacao obrigatoria antes de executar qualquer comando e a confirmacao da conta Cloudflare (REGRA BLOQUEANTE: `wrangler whoami` + S/N explicito). Todos os outros comandos (`wrangler deploy`, `wrangler d1 execute`, `wrangler secret bulk`, `npm install`, `curl`, etc.) devem ser executados diretamente — sem pedir "posso executar?", sem aguardar confirmacao previa. O usuario nao tem conhecimento tecnico dos comandos; o fluxo ja foi validado. Executar → exibir resultado → continuar. Nunca travar o fluxo esperando aprovacao de comando tecnico que o usuario nao sabe avaliar.
 
 ---
 

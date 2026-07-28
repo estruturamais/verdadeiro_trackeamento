@@ -275,10 +275,19 @@ for (const pixelId of [metaConfig.pixel_id, ...mirrors]) {
 | `pixel_ids_mirror` | Config JSON (`SITE_CONFIG`) — array, omitir se nao tiver espelhos | — |
 | `access_token` | Wrangler secret | `META_ACCESS_TOKEN` |
 
-**NUNCA incluir access tokens no Config JSON.** Configurar via:
+**NUNCA incluir access tokens no Config JSON.** Configurar via `wrangler secret bulk` (portavel em
+bash, zsh e PowerShell):
 ```bash
-echo "{access_token}" | npx wrangler secret put META_ACCESS_TOKEN
+# secrets.json: {"META_ACCESS_TOKEN": "{access_token}"}
+npx wrangler secret bulk secrets.json
+rm secrets.json                          # PowerShell: Remove-Item secrets.json -Force
 ```
+
+> **NUNCA** usar `echo "{access_token}" | npx wrangler secret put META_ACCESS_TOKEN`. No
+> Windows/PowerShell o pipe acrescenta CRLF, o secret e gravado com whitespace e o header
+> `Authorization: Bearer <token>\r\n` derruba a conexao — todo evento Meta grava `status_code = 0` +
+> `Error: Network connection lost.`, que **parece erro de rede** e manda a investigacao para o lugar
+> errado. Ver o Step 3b do `overview.md`.
 
 Um unico secret cobre o pixel primario e todos os pixels espelho via fallback no codigo.
 

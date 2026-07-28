@@ -1,4 +1,5 @@
 import { logEvent } from '../shared/logger.js';
+import { cleanSecret } from '../shared/helpers.js';
 
 const TIKTOK_EVENT_NAMES = {
   page_view: 'Pageview', contact: 'Contact', lead: 'SubmitForm',
@@ -6,10 +7,25 @@ const TIKTOK_EVENT_NAMES = {
 };
 
 export async function sendTikTokEvent(tiktokConfig, eventName, eventId, hashed, body, clientIp, userAgent, env, siteId) {
-  const accessToken = tiktokConfig?.access_token || env?.TIKTOK_ACCESS_TOKEN;
+  const accessToken = cleanSecret(tiktokConfig?.access_token || env?.TIKTOK_ACCESS_TOKEN);
   if (!tiktokConfig?.pixel_id || !accessToken) return;
 
   const tiktokEventName = TIKTOK_EVENT_NAMES[eventName] || eventName;
+
+  // Whitespace interno = credencial corrompida (o trim() nao salva). No header 'Access-Token'
+  // isso derruba a conexao — falhar explicito em vez de gravar um erro de rede opaco.
+  if (/\s/.test(accessToken)) {
+    await logEvent(env.DB, {
+      site_id: siteId, event_name: tiktokEventName, event_id: eventId,
+      platform: 'tiktok_ads', channel: 'web', source: 'collect',
+      status_code: 0, request_ms: 0,
+      sent_payload: '', error_message: 'invalid_access_token_whitespace',
+      response_payload: '',
+      marca_user: body.marca_user || '',
+      source_ip: clientIp, user_agent: userAgent
+    });
+    return;
+  }
 
   const properties = {};
   if (body.custom_data?.value) {
@@ -43,6 +59,7 @@ export async function sendTikTokEvent(tiktokConfig, eventName, eventId, hashed, 
   let statusCode = 0;
   let errorMsg = '';
   let responsePayload = '';
+  let gotResponse = false;
   try {
     const res = await fetch(
       'https://business-api.tiktok.com/open_api/v1.3/event/track/',
@@ -56,12 +73,18 @@ export async function sendTikTokEvent(tiktokConfig, eventName, eventId, hashed, 
       }
     );
     statusCode = res.status;
+    gotResponse = true;
     const responseText = await res.text();
     responsePayload = responseText.substring(0, 1000);
     if (!res.ok) errorMsg = responseText.substring(0, 500);
   } catch (e) {
-    statusCode = 0;
-    errorMsg = String(e).substring(0, 500);
+    // Preserva o status quando a resposta JA tinha chegado e a excecao veio de ler o corpo:
+    // zerar faria a linha parecer "nunca saiu", quando o evento pode ter sido aceito.
+    if (!gotResponse) statusCode = 0;
+    errorMsg = (gotResponse
+      ? `body_read_failed: ${String(e)}`
+      : `fetch_failed: ${String(e)} | endpoint=business-api.tiktok.com pixel=${tiktokConfig.pixel_id} — se for "Network connection lost", verifique o access_token (whitespace) antes de suspeitar de rede`
+    ).substring(0, 500);
   }
 
   await logEvent(env.DB, {
@@ -76,8 +99,22 @@ export async function sendTikTokEvent(tiktokConfig, eventName, eventId, hashed, 
 }
 
 export async function sendTikTokWebhook(tiktokConfig, eventName, hashed, merged, env, siteId) {
-  const accessToken = tiktokConfig?.access_token || env?.TIKTOK_ACCESS_TOKEN;
+  const accessToken = cleanSecret(tiktokConfig?.access_token || env?.TIKTOK_ACCESS_TOKEN);
   if (!tiktokConfig?.pixel_id || !accessToken) return;
+
+  // Ver o guard equivalente em sendTikTokEvent: whitespace interno = credencial corrompida.
+  if (/\s/.test(accessToken)) {
+    await logEvent(env.DB, {
+      site_id: siteId, event_name: eventName, event_id: '',
+      platform: 'tiktok_ads', channel: 'webhook', source: `${merged.gateway || 'unknown'}`,
+      status_code: 0, request_ms: 0,
+      sent_payload: '', error_message: 'invalid_access_token_whitespace',
+      response_payload: '',
+      marca_user: merged.marca_user || '',
+      source_ip: merged.ip || '', user_agent: merged.user_agent || ''
+    });
+    return;
+  }
 
   const properties = {};
   if (merged.value) {
@@ -119,6 +156,7 @@ export async function sendTikTokWebhook(tiktokConfig, eventName, hashed, merged,
   let statusCode = 0;
   let errorMsg = '';
   let responsePayload = '';
+  let gotResponse = false;
   try {
     const res = await fetch(
       'https://business-api.tiktok.com/open_api/v1.3/event/track/',
@@ -132,12 +170,17 @@ export async function sendTikTokWebhook(tiktokConfig, eventName, hashed, merged,
       }
     );
     statusCode = res.status;
+    gotResponse = true;
     const responseText = await res.text();
     responsePayload = responseText.substring(0, 1000);
     if (!res.ok) errorMsg = responseText.substring(0, 500);
   } catch (e) {
-    statusCode = 0;
-    errorMsg = String(e).substring(0, 500);
+    // Resposta ja chegada + excecao ao ler o corpo != "nunca saiu" (o evento pode ter sido aceito).
+    if (!gotResponse) statusCode = 0;
+    errorMsg = (gotResponse
+      ? `body_read_failed: ${String(e)}`
+      : `fetch_failed: ${String(e)} | endpoint=business-api.tiktok.com pixel=${tiktokConfig.pixel_id} — se for "Network connection lost", verifique o access_token (whitespace) antes de suspeitar de rede`
+    ).substring(0, 500);
   }
 
   await logEvent(env.DB, {

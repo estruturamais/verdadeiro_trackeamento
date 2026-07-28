@@ -27,6 +27,14 @@ export function generateId() {
   return Date.now() + '-' + crypto.randomUUID();
 }
 
+// Credencial vinda de wrangler secret / SITE_CONFIG pode chegar com whitespace
+// (CRLF do pipe do PowerShell, espaco colado no copiar/colar do painel da plataforma).
+// Em header HTTP isso derruba a conexao ("Network connection lost", status_code 0);
+// em query string vira valor invalido que a plataforma rejeita em silencio.
+export function cleanSecret(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 export function splitFirstName(fullname) {
   if (!fullname) return '';
   return fullname.trim().split(/\s+/)[0];

@@ -1,4 +1,5 @@
 import { logEvent } from '../shared/logger.js';
+import { cleanSecret } from '../shared/helpers.js';
 
 // Eventos de qualificacao -> colunas derivadas do `event` (meta_event/qualificacao).
 // Esses eventos NAO criam linha nova: fazem UPSERT por user_id, completando a
@@ -27,7 +28,8 @@ function fullName(userData) {
 // - upsert por user_id (`_mode=upsert&_key=user_id`): qualified_lead/disqualified_lead,
 //   completando a linha do lead (preserva contato/data/hora; grava so as colunas de qualificacao).
 export async function sendSheetsLead(sheetsConfig, eventName, body, clientIp, userAgent, config, siteId, env) {
-  const idScript = sheetsConfig?.id_script;
+  // id_script vai interpolado na URL — whitespace no valor quebra a requisicao.
+  const idScript = cleanSecret(sheetsConfig?.id_script);
   if (!idScript) return;
 
   const qual = QUAL_EVENTS[eventName];

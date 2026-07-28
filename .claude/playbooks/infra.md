@@ -148,6 +148,10 @@ database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 - Gravar no `tracking_memory.md`: `d1_database_id: {valor}`
 - Abrir o `wrangler.toml` e substituir o `database_id` existente pelo novo ID na secao `[[d1_databases]]`
 
+> **Copiar so o `database_id`, nunca o bloco inteiro.** Dependendo da versao, o `wrangler d1 create`
+> sugere `binding = "tracking_db"` na saida — mas o codigo le `env.DB`. O `wrangler.toml` precisa
+> manter `binding = "DB"`; colar o bloco sugerido como veio quebra o acesso ao banco.
+
 **Alternativa via npm script:**
 ```bash
 npm run db:create
@@ -205,6 +209,23 @@ npm run deploy
 ```
 
 Aguardar confirmacao do cliente antes de executar ("Vou fazer o deploy do sistema. Pode continuar?").
+
+**O deploy pode falhar PARCIALMENTE — ler a saida inteira.** Se aparecer:
+
+```
+Uploaded tracking-worker (7.61 sec)
+Deployed tracking-worker triggers (12.26 sec)
+X [ERROR] Some triggers failed to deploy for tracking-worker:
+    - A request to the Cloudflare API (/accounts/{id}/workers/scripts/{worker}/schedules) failed.
+```
+
+isso **nao** significa deploy perdido: o Worker e as rotas ja subiram — so o cron falhou. Confirmar
+com `curl https://{dominio}/tracking/web.js` (o 0.11 ja faz isso) e tratar **so** o cron. A causa
+tipica e um token do `wrangler login` criado antes dos escopos atuais, que devolve `403` no endpoint
+de `schedules` (o log so mostra o `403` com `WRANGLER_LOG_SANITIZE=false` ou lendo o arquivo de log).
+Correcao: `npx wrangler login` → reconfirmar a conta (REGRA BLOQUEANTE) → `npx wrangler triggers deploy`.
+O `wrangler whoami` **ja avisa antes** disso — ver a regra bloqueante no `workflow.md`. Se o cron
+ficar sem registrar, anotar no `tracking_memory.md`: sem ele a retencao automatica nao roda.
 
 ---
 

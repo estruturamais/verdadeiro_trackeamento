@@ -50,7 +50,8 @@ Delegar completamente para a skill especializada da plataforma confirmada.
 Seguir o mesmo procedimento do Step 3 do workflow principal:
 - Coletar IDs e tokens conforme instrucoes da skill especializada
 - Campos que vao para o config JSON: coletar e preparar para integracao
-- Secrets (access tokens, api secrets): executar `npx wrangler secret put {SECRET_NAME}` automaticamente apos coleta (sem pedir aprovacao — apenas exibir o resultado)
+- Secrets (access tokens, api secrets): subir automaticamente apos coleta via `npx wrangler secret bulk secrets.json` (sem pedir aprovacao — apenas exibir o resultado), apagando o `secrets.json` em seguida (`rm secrets.json` / PowerShell `Remove-Item secrets.json -Force`)
+  - **NUNCA** usar `echo "{valor}" | npx wrangler secret put {SECRET_NAME}`: no Windows/PowerShell o pipe acrescenta CRLF, o secret e gravado com whitespace e os envios passam a falhar com `status_code = 0` + `Error: Network connection lost.` — que **parece erro de rede**. Ver o Step 3b do `.claude/playbooks/overview.md`.
 
 ---
 

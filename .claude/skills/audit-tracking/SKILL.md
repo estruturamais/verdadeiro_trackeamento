@@ -158,6 +158,70 @@ Interpretar **por plataforma**: GA4 `204` = sucesso; Meta `200` pode trazer `fbt
 `response_payload`; etc. Para o significado da resposta de cada API, ver a doc da plataforma (lista
 no fim desta Camada) — **somente leitura, sem reexecutar setup**.
 
+### 2.3b Falha de transporte — o secret com whitespace que se disfarca de erro de rede
+
+**Reproduzido em producao 2x** (clientes e gateways diferentes, ambos com operador Windows/PowerShell).
+Todo envio de uma plataforma gravando `status_code = 0` + `Error: Network connection lost.` em ~37ms
+**nao** e erro de rede: e o valor **armazenado no cofre** com whitespace. Subir secret por pipe
+(`echo "{token}" | wrangler secret put`) no PowerShell acrescenta CRLF; o header vira
+`Authorization: Bearer <token>\r\n` e o runtime derruba a conexao antes da resposta.
+
+O sintoma aponta para o lugar errado — parece rede, parece bloqueio de saida do Worker, parece
+instabilidade da plataforma. **Nao investigar rede antes de descartar o secret.**
+
+| Assinatura em `events` | Causa provavel | Correcao |
+|---|---|---|
+| `status_code = 0` + `Network connection lost` (ou prefixo `fetch_failed:`) em **uma** plataforma, enquanto as outras respondem | Secret daquela plataforma gravado com whitespace | Reenviar por `wrangler secret bulk` e refazer o teste (ver o aviso de propagacao abaixo) |
+| `status_code = 0` + `Network connection lost` em **todas** as plataformas | Ai sim, saida do Worker | Testar `GET https://{dominio}/scripts/ga.js` — se responder (traz o script do googletagmanager), a saida esta boa e o problema e credencial |
+| `status_code = 400` com corpo **HTML** (`<title>Facebook \| Error</title>`) em vez de JSON | Requisicao rejeitada na borda por **header malformado** — mesma causa do `status_code = 0`, outra assinatura | Tratar como whitespace no secret: reenviar por `secret bulk`. **Nao** investigar o `sent_payload` |
+| `status_code = 0` + `invalid_access_token_whitespace` / `invalid_api_secret_whitespace` | Guard do codigo: whitespace **no meio** do valor (colagem quebrada em duas linhas) | Reenviar o secret por `secret bulk`, em uma linha so |
+| `status_code = 0` + `missing_access_token` / `missing_pixel_id` | Secret nunca foi criado (ou config sem o ID) | `npx wrangler secret list` e recriar por `secret bulk` |
+| `error_message` com prefixo `body_read_failed:` (status **preservado**, nao zerado) | A resposta **chegou** e a excecao veio de ler o corpo — o evento **pode ter sido aceito** | Conferir duplicidade na plataforma **antes** de reenviar; nao e caso de credencial |
+
+> **Regra que generaliza para qualquer plataforma:** resposta **HTML** onde a API sempre devolve JSON
+> = requisicao malformada no **transporte**. Olhe o header, nao o corpo.
+
+**AVISO DE PROPAGACAO — nunca reprovar a hipotese no reteste imediato.** Subir secret cria uma nova
+versao do Worker, e ela leva alguns instantes para propagar no edge. Na segunda reproducao o teste
+logo apos o `secret bulk` voltou `Network connection lost` de novo, e a causa correta chegou a ser
+dada como descartada antes de um segundo teste, minutos depois, passar (`200`). Depois de regravar o
+secret, **aguarde a propagacao antes de concluir qualquer coisa**: um `status_code = 0` no teste
+imediato **nao** invalida a hipotese de whitespace. Repita o disparo; so trate como "nao resolvido"
+se falhar tambem numa segunda tentativa espacada.
+
+**Roteiro de descarte** (o que funcionou nas duas implantacoes — nao refazer a investigacao do zero):
+
+1. **Descartar o browser** — reproduzir com POST server-side direto no beacon:
+   ```bash
+   curl -s -X POST "https://{dominio}/collect/event" -H "Content-Type: application/json" \
+     -d '{"site_id":"{site_id}","event":"page_view","event_id":"diag","marca_user":"diag","page_url":"https://{dominio}/","browser_data":{},"user_data":{},"utm_data":{}}'
+   ```
+   Se a falha se repete sem browser nenhum, o problema esta no Worker/credencial.
+2. **Descartar a saida do Worker** — `curl -s "https://{dominio}/scripts/ga.js" | head -c 200`. Se o
+   Worker consegue buscar um script externo, a saida esta boa.
+3. **Descartar a credencial — por ENVIO, nunca por leitura.** Enviar um `PageView` sintetico direto a
+   Graph API, fora do Worker, com o mesmo token:
+   ```bash
+   curl -s -X POST "https://graph.facebook.com/v21.0/{pixel_id}/events" \
+     -H "Authorization: Bearer {token}" -H "Content-Type: application/json" \
+     -d '{"data":[{"event_name":"PageView","event_time":{epoch_s},"event_id":"diag","action_source":"website","user_data":{"external_id":["diag"]}}]}'
+   ```
+   - `{"events_received":1}` → credencial e permissao OK → o problema esta no **valor armazenado**.
+   - Erro OAuth → ai sim a credencial e o problema.
+4. Sobrou o **valor armazenado no cofre** → reenviar o **mesmo** token por `wrangler secret bulk` e
+   retestar (respeitando o aviso de propagacao).
+
+> **NAO validar token de CAPI por leitura.** `GET graph.facebook.com/v21.0/{pixel_id}` da **falso
+> negativo**: um token de CAPI perfeitamente funcional pode nao ter permissao de *leitura* e devolver
+> `{"error":{"message":"(#100) Missing Permission","code":100}}` enquanto o **envio** com o mesmo
+> token responde `{"events_received":1}`. Quem le o `(#100)` como "token ruim" pede um token novo ao
+> cliente — e o token novo, subido pelo mesmo pipe quebrado, falha igual. **Permissao de leitura do
+> pixel nao e requisito da CAPI.**
+
+Ao corrigir, orientar sempre o comando portavel — `npx wrangler secret bulk secrets.json` (apagando o
+arquivo em seguida), **nunca** `echo | wrangler secret put`. Detalhe no Step 3b do
+`.claude/playbooks/overview.md`.
+
 ### 2.4 Cobertura de parametros (calculada do nosso lado)
 ```bash
 npx wrangler d1 execute tracking_db --remote --command "SELECT event_name, channel, sent_payload FROM events WHERE site_id = '{site_id}' AND platform = 'meta_ads' AND timestamp >= datetime('now','-{X} days') ORDER BY id DESC LIMIT 50;"

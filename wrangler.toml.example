@@ -28,11 +28,21 @@ database_id = "{YOUR_D1_DATABASE_ID}"
 
 [vars]
 # Cole aqui o JSON do config.example.json preenchido com seus valores reais.
-# IMPORTANTE: Não inclua access tokens ou api secrets aqui — use wrangler secret put.
+# IMPORTANTE: Não inclua access tokens ou api secrets aqui — use wrangler secret bulk.
 SITE_CONFIG = '{}'
 
-# Secrets a configurar via CLI (nunca em arquivo):
-# wrangler secret put META_ACCESS_TOKEN   (um unico token cobre todos os pixels, inclusive espelhos)
-# wrangler secret put TIKTOK_ACCESS_TOKEN
-# wrangler secret put GA4_API_SECRET
-# wrangler secret put LOG_BEARER_TOKEN
+# Secrets a configurar via CLI (nunca neste arquivo). Comando canonico — portavel em
+# bash, zsh e PowerShell — a partir de um secrets.json temporario:
+#
+#   npx wrangler secret bulk secrets.json
+#   rm secrets.json          # PowerShell: Remove-Item secrets.json -Force
+#
+# Chaves possiveis no secrets.json:
+#   META_ACCESS_TOKEN    (um unico token cobre todos os pixels, inclusive espelhos)
+#   TIKTOK_ACCESS_TOKEN
+#   GA4_API_SECRET
+#   LOG_BEARER_TOKEN
+#
+# NUNCA subir por pipe (echo "valor" | wrangler secret put NOME): no Windows/PowerShell o pipe
+# acrescenta CRLF, o secret fica com whitespace e os envios falham com status_code = 0 +
+# "Error: Network connection lost." — que parece erro de rede, mas e o valor no cofre.

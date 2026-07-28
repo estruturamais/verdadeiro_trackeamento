@@ -199,7 +199,18 @@ Extraido de `sendGA4MP` em `src/worker/platforms/ga4.js` linhas 74-101:
 | Campo | Destino |
 |---|---|
 | `measurement_id` (ex: `G-XXXXXXXXXX`) | Config JSON no `SITE_CONFIG` do `wrangler.toml` |
-| `api_secret` | `npx wrangler secret put GA4_API_SECRET` |
+| `api_secret` | `npx wrangler secret bulk` (chave `GA4_API_SECRET`) |
+
+```bash
+# secrets.json: {"GA4_API_SECRET": "{api_secret}"}
+npx wrangler secret bulk secrets.json
+rm secrets.json                          # PowerShell: Remove-Item secrets.json -Force
+```
+
+> **NUNCA** subir por pipe (`echo "{api_secret}" | npx wrangler secret put GA4_API_SECRET`). No
+> Windows/PowerShell o pipe acrescenta CRLF e o secret e gravado com whitespace — na query string do
+> Measurement Protocol isso vira um `api_secret` invalido, rejeitado em silencio. Ver o Step 3b do
+> `overview.md`.
 
 **Nota do codigo:** `ga4Config.api_secret || env.GA4_API_SECRET` — se o `api_secret` estiver no config JSON, ele tem prioridade sobre o env secret. O padrao recomendado e usar o wrangler secret e nao incluir o `api_secret` no config JSON.
 
