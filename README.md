@@ -19,7 +19,7 @@ zero até o tracking validado em produção.
 
 ## Versão
 
-**Versão atual: 1.4.1**
+**Versão atual: 1.5.0**
 
 Para saber qual versão uma instalação roda, pergunte ao assistente *"qual a versão do seu VT?"* — ele
 lê o número (a) deste README e do `package.json` e (b) **direto da Cloudflare**: na 1ª linha do script
@@ -27,6 +27,27 @@ servido em `https://{dominio}/tracking/web.js` (e no campo `vt_version` do confi
 (b) sobrevive mesmo que o usuário apague os arquivos locais. O histórico abaixo mapeia cada versão às
 novidades:
 
+- **1.5.0** — **Planilha de vendas via webhook + GAS universal v3 zero-config**. Toda compra
+  aprovada recebida dos gateways pode virar uma linha na aba `transactions` da planilha padrão —
+  novo conector `sendSheetsPurchase` (opt-in pelo bloco `sheets.purchase` no `SITE_CONFIG`; sem o
+  bloco, nada muda), disparado no dispatch do webhook **depois** do dedup (reenvio do gateway não
+  duplica linha; order bump entra como linha própria), com 25 colunas: comprador (via FDV merge),
+  produto, oferta, método/parcelas, UTMs last-click e os três valores (`total` = o que o cliente
+  pagou; `gateway` = taxa retida; `nosso` = líquido do produtor). Para isso, o contrato dos parsers
+  ganhou **7 campos extras opcionais** (`offer_id`, `offer_name`, `payment_method`, `installments`,
+  `order_bump`, `value_gateway`, `value_net`), preenchidos nos **12 gateways completos** a partir de
+  payloads reais de compra aprovada (comissões buscadas por `source`/`type`/`role`, nunca por
+  índice), e o `fdvMerge` passou a propagar os extras + UTMs. O Apps Script virou **GAS universal
+  v3, zero-config**: `SpreadsheetApp.getActiveSpreadsheet()` mata o bug crítico de duplicação da
+  planilha modelo (o `SHEET_KEY` hardcoded viajava no *Fazer uma cópia* e a cópia do aluno gravava
+  na planilha do professor, com resposta `success`); a aba de destino vai por request (`_sheet` —
+  leads e vendas na mesma implantação), com `TEXT_COLUMNS` (telefone/IDs sem notação científica),
+  `NUMERIC_COLUMNS`/`coerceVal` (`lead_score` não vira `625` em planilha pt-BR), fuso da própria
+  planilha e resposta com o campo `sheet` (teste de versão). O playbook `planilha.md` foi reescrito
+  como condutor (leads e/ou vendas, 3 cenários de config com o mesmo `id_script`, tabela de versões
+  v1/v2/v3, erros comuns novos), o `workflow.md` ganhou acionamento por intenção "planilhar" e a
+  skill `new-gateway` passou a mapear os 7 extras em todo gateway novo. **Validado em produção**
+  (E2E: webhook → Worker → linha real na aba `transactions`).
 - **1.4.1** — **Secret com whitespace deixa de derrubar os envios (e de se disfarçar de erro de
   rede)**. Bug reproduzido em produção em dois clientes: todo envio a uma plataforma gravava
   `status_code = 0` + `Error: Network connection lost.`, com o token **correto** — o que estava errado
