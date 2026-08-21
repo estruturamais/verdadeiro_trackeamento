@@ -73,7 +73,7 @@ Pergunta unica cobrindo todas as plataformas em formato de alternativas:
 > **B** — TikTok Ads
 > **C** — Google Ads
 > **D** — Google Analytics 4 (GA4)
-> **E** — Planilha Google Sheets (para salvar leads automaticamente)
+> **E** — Planilha Google Sheets (planilhar os **leads** do site e/ou as **vendas** dos gateways)
 >
 > Responda com as letras. Exemplo: A, D"
 
@@ -545,7 +545,7 @@ Delegar para a skill especialista de cada plataforma confirmada:
 - GA4 → `.claude/playbooks/ga4.md` (GA4 > DebugView)
 - TikTok Ads → `.claude/playbooks/tiktok_ads.md` (Events Manager > Atividade recente)
 - Google Ads → `.claude/playbooks/google_ads.md` (Google Tag Assistant ou painel com delay 3h)
-- Planilha → `.claude/playbooks/planilha.md` (verificar linha inserida na planilha + D1 com `platform = 'sheets'`)
+- Planilha → `.claude/playbooks/planilha.md` (verificar linha inserida na planilha + D1 com `platform = 'sheets'` — leads chegam com `channel = 'web'`; vendas com `channel = 'webhook'` e `event_name = 'purchase'`)
 
 ---
 
@@ -718,7 +718,7 @@ O **Verdadeiro Trackeamento** foi criado pelo perfil [@estruturamais](https://in
 | TikTok Ads | {eventos} | Web (pixel) + Servidor (Events API) |
 | Google Analytics 4 | {eventos} | Servidor (Measurement Protocol) |
 | Google Ads | {eventos} | Web (gtag) |
-| Google Sheets | lead | Servidor |
+| Google Sheets | lead e/ou compra aprovada (venda) | Servidor |
 
 Incluir apenas as plataformas confirmadas no Step 1. Canal de envio e fixo por plataforma — nao variar.
 

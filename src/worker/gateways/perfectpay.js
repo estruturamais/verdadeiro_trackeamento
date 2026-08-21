@@ -1,5 +1,15 @@
 import { getNestedValue, utmPrefixed } from '../shared/helpers.js';
 
+// commission[] da PerfectPay: o liquido do produtor vem no item com
+// affiliation_type_enum_key = 'producer'; a taxa da PerfectPay vem no item com
+// affiliation_type_enum = 0 (sem *_key). Buscar pelo tipo, nunca por indice.
+function commissionAmount(body, predicate) {
+  const list = getNestedValue(body, 'commission');
+  if (!Array.isArray(list)) return '';
+  const found = list.find(function (c) { return c && predicate(c); });
+  return found && found.commission_amount != null ? found.commission_amount : '';
+}
+
 export function parsePerfectPay(body) {
   // UTMs (chaves prefixadas) em metadata.utm_*. O marca_user mora em metadata.utm_perfect
   // (parametro dedicado da PerfectPay), entao nenhuma das 5 UTMs padrao e sacrificada.
@@ -32,6 +42,17 @@ export function parsePerfectPay(body) {
     country:      (getNestedValue(body, 'customer.country') || '').toLowerCase(),
     zip:          zip,
     ip:           getNestedValue(body, 'customer.ip') || '',
-    user_agent:   ''
+    user_agent:   '',
+
+    // --- Extras da transacao (planilha de vendas; nao usados pelas plataformas de ads) ---
+    // A "oferta" da PerfectPay e o plano do checkout (plan.code/plan.name)
+    offer_id:       getNestedValue(body, 'plan.code') || '',
+    offer_name:     getNestedValue(body, 'plan.name') || '',
+    payment_method: getNestedValue(body, 'payment_type_enum_key') || '',
+    installments:   getNestedValue(body, 'installments') ?? '',
+    // PerfectPay nao informa order bump no payload — fica undefined (coluna vazia)
+    order_bump:     undefined,
+    value_gateway:  commissionAmount(body, function (c) { return c.affiliation_type_enum === 0; }),
+    value_net:      commissionAmount(body, function (c) { return c.affiliation_type_enum_key === 'producer'; })
   };
 }

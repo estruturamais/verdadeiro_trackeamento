@@ -36,6 +36,19 @@ export function parseTicto(body) {
     country:      country,
     zip:          zip,
     ip:           '',
-    user_agent:   ''
+    user_agent:   '',
+
+    // --- Extras da transacao (planilha de vendas; nao usados pelas plataformas de ads) ---
+    offer_id:       getNestedValue(body, 'item.offer_code') || '',
+    offer_name:     getNestedValue(body, 'item.offer_name') || '',
+    payment_method: getNestedValue(body, 'payment_method') || '',
+    installments:   getNestedValue(body, 'order.installments') ?? '',
+    // Ticto nao traz flag de bump no payload (bump/combo chega como webhook proprio) — fica undefined
+    order_bump:     undefined,
+    // marketplace_commission (taxa Ticto) e producer.amount (liquido) vem em centavos
+    value_gateway:  getNestedValue(body, 'marketplace_commission') != null
+      ? (getNestedValue(body, 'marketplace_commission') / 100).toFixed(2) : '',
+    value_net:      getNestedValue(body, 'producer.amount') != null
+      ? (getNestedValue(body, 'producer.amount') / 100).toFixed(2) : ''
   };
 }

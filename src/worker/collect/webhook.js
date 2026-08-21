@@ -9,6 +9,7 @@ import { sendMetaCAPIWebhook } from '../platforms/meta.js';
 import { sendTikTokWebhook } from '../platforms/tiktok.js';
 import { sendGA4MP } from '../platforms/ga4.js';
 import { sendGoogleAdsWebhook } from '../platforms/google-ads.js';
+import { sendSheetsPurchase } from '../platforms/sheets.js';
 import { runCleanup } from '../shared/cleanup.js';
 import { dbWrite } from '../shared/db-write.js';
 
@@ -168,6 +169,16 @@ export async function handleWebhook(request, env, gateway, ctx) {
   if (config.platforms?.google_ads?.conversion_label_purchase) {
     promises.push(
       sendGoogleAdsWebhook(config.platforms.google_ads, hashed, merged, env, config.site_id)
+    );
+  }
+
+  // Google Sheets — planilha de vendas (append de 1 linha por compra aprovada).
+  // Opt-in via `sheets.purchase` no SITE_CONFIG; a aba vai no parametro `_sheet`.
+  // Ja e pos-dedup por construcao: reenvio do gateway nao duplica linha; order bump
+  // com mesmo order_id e product_id diferente entra como linha propria.
+  if (config.platforms?.sheets?.id_script) {
+    promises.push(
+      sendSheetsPurchase(config.platforms.sheets, gateway, merged, env, config.site_id)
     );
   }
 

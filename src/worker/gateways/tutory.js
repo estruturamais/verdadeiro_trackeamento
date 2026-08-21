@@ -58,6 +58,27 @@ export function parseTutory(body) {
     country:      getNestedValue(data, 'endereco.pais') || '',
     zip:          zip,
     ip:           ip,
-    user_agent:   userAgent
+    user_agent:   userAgent,
+
+    // --- Extras da transacao (planilha de vendas; nao usados pelas plataformas de ads) ---
+    offer_id:       String(getNestedValue(data, 'oferta.id') || ''),
+    offer_name:     getNestedValue(data, 'oferta.nome') || '',
+    payment_method: getNestedValue(data, 'meio') || '',
+    installments:   getNestedValue(data, 'cobrancas.0.parcelas') ?? '',
+    // Tutory nao traz flag de bump no payload — fica undefined (coluna vazia)
+    order_bump:     undefined,
+    // A Tutory nao manda a taxa isolada; deriva de bruto - liquido (mesmo criterio do
+    // invariante total = gateway + nosso). Liquido em valores.liquido.
+    value_gateway:  gatewayFee(data),
+    value_net:      getNestedValue(data, 'valores.liquido') ?? ''
   };
+}
+
+// Taxa da Tutory = valores.bruto - valores.liquido (arredondada a 2 casas).
+// So calcula quando os dois numeros existem — nunca chutar.
+function gatewayFee(data) {
+  const gross = getNestedValue(data, 'valores.bruto');
+  const net = getNestedValue(data, 'valores.liquido');
+  if (gross == null || net == null || isNaN(gross) || isNaN(net)) return '';
+  return (Math.round((gross - net) * 100) / 100).toFixed(2);
 }

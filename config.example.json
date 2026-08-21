@@ -21,9 +21,16 @@
       "conversion_label_purchase": "MnOpQr789"
     },
     "sheets": {
+      "_doc": "GAS universal v3: a aba de destino vai no parametro de controle `_sheet` (nao fica hardcoded no Apps Script). `sheet` = aba dos eventos web (leads/qualificacao). `purchase` = opt-in da planilha de VENDAS, uma linha por compra aprovada vinda do webhook do gateway; omita o bloco para nao planilhar vendas. `events: []` desliga o append dos eventos web sem desligar as vendas.",
       "id_script": "AKfycbwEXEMPLO0000000000000000000000000000000000000000",
+      "sheet": "users",
       "events": ["lead"],
-      "page_event_names": { "registrol20": "L20_LG_SLPC", "brasilia": "BSB_LEAD" }
+      "page_event_names": { "registrol20": "L20_LG_SLPC", "brasilia": "BSB_LEAD" },
+      "purchase": {
+        "sheet": "transactions",
+        "evento": "compra_aprovada",
+        "platform_names": { "hotmart": "Hotmart", "kiwify": "Kiwify" }
+      }
     }
   },
   "spa_mode": {

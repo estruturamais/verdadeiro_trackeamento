@@ -45,6 +45,27 @@ export function parseHubla(body) {
     zip:          '',
     // IP e User-Agent vem da sessao de pagamento
     ip:           getNestedValue(body, 'event.invoice.paymentSession.ip'),
-    user_agent:   getNestedValue(body, 'event.invoice.paymentSession.userAgent')
+    user_agent:   getNestedValue(body, 'event.invoice.paymentSession.userAgent'),
+
+    // --- Extras da transacao (planilha de vendas; nao usados pelas plataformas de ads) ---
+    offer_id:       String(getNestedValue(body, 'event.products.0.offers.0.id') || ''),
+    offer_name:     getNestedValue(body, 'event.products.0.offers.0.name') || '',
+    payment_method: getNestedValue(body, 'event.invoice.paymentMethod') || '',
+    installments:   getNestedValue(body, 'event.invoice.installments') ?? '',
+    // Hubla nao traz flag de bump no payload — fica undefined (coluna vazia)
+    order_bump:     undefined,
+    // receivers[] por role ('platform' = taxa Hubla; 'seller' = liquido), em centavos
+    // (podem vir com fracao de centavo — arredondar a 2 casas)
+    value_gateway:  receiverByRole(body, 'platform'),
+    value_net:      receiverByRole(body, 'seller')
   };
+}
+
+// receivers[] da Hubla: [{ role, totalCents }] com role em seller | platform.
+// Buscar por role, nunca por indice.
+function receiverByRole(body, role) {
+  const list = getNestedValue(body, 'event.invoice.receivers');
+  if (!Array.isArray(list)) return '';
+  const found = list.find(function (r) { return r && r.role === role; });
+  return found && found.totalCents != null ? (found.totalCents / 100).toFixed(2) : '';
 }

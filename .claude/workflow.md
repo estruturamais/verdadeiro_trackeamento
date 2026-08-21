@@ -549,3 +549,16 @@ livre — ex: "quantos acessos eu tive?", "de onde vieram as visitas?", "quanto 
 meus dados" — rotear automaticamente para `.claude/skills/analistamais/SKILL.md` (apos a REGRA BLOQUEANTE de
 conta Cloudflare). Diferenciar de auditoria: **saude/esta funcionando → `audit-tracking`; numeros/performance
 → `analistamais`.** Nao exigir que o cliente saiba o nome da skill nem o comando.
+
+---
+
+### Acionamento por intencao (planilhar)
+
+Quando o cliente pedir para **planilhar dados** em linguagem livre — ex: "quero planilhar minhas vendas",
+"salvar as vendas no Google Sheets", "quero meus leads numa planilha", "manda as compras pra planilha",
+"conectar minha planilha", ou simplesmente colar um **link de planilha do Google** — carregar
+`.claude/playbooks/planilha.md` e comecar pelo **Passo 1** ("o que planilhar? A leads / B vendas / C os
+dois"), **sem presumir** que planilha = leads. Se a mudanca exigir editar o `SITE_CONFIG` e re-deployar,
+aplicar antes a REGRA BLOQUEANTE de conta Cloudflare. Diferenciar de analise: **quer os dados caindo numa
+planilha → `planilha.md`; quer perguntar/entender os numeros → `analistamais`.** Nao exigir que o cliente
+saiba o nome da skill nem o comando.

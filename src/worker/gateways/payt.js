@@ -26,6 +26,27 @@ export function parsePayt(body) {
     product_id:   String(getNestedValue(body, 'product.code') || ''),
     city:         '', state: '', country: '', zip: '',
     ip:           getNestedValue(body, 'customer.ip') || '',
-    user_agent:   ''
+    user_agent:   '',
+
+    // --- Extras da transacao (planilha de vendas; nao usados pelas plataformas de ads) ---
+    // Payt nao tem entidade "oferta" — o titulo do link de checkout faz esse papel.
+    // Metodo/parcelas: so o metodo vem no payload (transaction.payment_method).
+    offer_id:       '',
+    offer_name:     getNestedValue(body, 'link.title') || '',
+    payment_method: getNestedValue(body, 'transaction.payment_method') || '',
+    installments:   '',
+    order_bump:     undefined,
+    // commission[] por type ('platform' = taxa Payt; 'producer' = liquido), em centavos
+    value_gateway:  commissionByType(body, 'platform'),
+    value_net:      commissionByType(body, 'producer')
   };
+}
+
+// commission[] da Payt: [{ type, amount }] com type em platform | producer.
+// `amount` vem em centavos. Buscar por type, nunca por indice.
+function commissionByType(body, type) {
+  const list = getNestedValue(body, 'commission');
+  if (!Array.isArray(list)) return '';
+  const found = list.find(function (c) { return c && c.type === type; });
+  return found && found.amount != null ? (found.amount / 100).toFixed(2) : '';
 }

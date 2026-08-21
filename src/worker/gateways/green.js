@@ -34,6 +34,17 @@ export function parseGreen(body) {
     country:      '',
     zip:          zip,
     ip:           '',
-    user_agent:   ''
+    user_agent:   '',
+
+    // --- Extras da transacao (planilha de vendas; nao usados pelas plataformas de ads) ---
+    offer_id:       getNestedValue(body, 'offer.hash') || '',
+    offer_name:     getNestedValue(body, 'offer.name') || '',
+    payment_method: getNestedValue(body, 'sale.method') || '',
+    installments:   getNestedValue(body, 'sale.installments') ?? '',
+    // sale.bump_id existe no payload mas a semantica nao foi confirmada — fica undefined
+    order_bump:     undefined,
+    // fee (taxa Green) e seller_balance (liquido) ja vem em reais (fee + seller_balance = total)
+    value_gateway:  getNestedValue(body, 'sale.fee') ?? '',
+    value_net:      getNestedValue(body, 'sale.seller_balance') ?? ''
   };
 }

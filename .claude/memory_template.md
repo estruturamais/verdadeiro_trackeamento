@@ -45,6 +45,7 @@
 - [ ] TikTok Ads
 - [ ] GA4
 - [ ] Google Ads
+- [ ] Planilha (Sheets)
 
 ---
 
@@ -86,6 +87,14 @@
 - conversion_label_contact: {valor}
 - conversion_label_lead: {valor}
 - conversion_label_purchase: {valor}
+
+### Planilha (Sheets)
+
+- id_script: {valor}
+- planilhar: leads | vendas | os_dois   <!-- resposta do Passo 1 do planilha.md -->
+- aba_leads: users                       <!-- vira sheets.sheet no SITE_CONFIG -->
+- aba_vendas: transactions               <!-- vira sheets.purchase.sheet (opt-in) -->
+- versao_gas: v3 | v1_v2_migrar          <!-- teste 1b do planilha.md (resposta com campo `sheet` = v3) -->
 
 ---
 

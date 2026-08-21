@@ -37,6 +37,24 @@ export function fdvMerge(storeData, webhookData) {
     value:            webhookData.value,
     currency:         webhookData.currency || 'BRL',
     product_name:     webhookData.product_name,
-    product_id:       webhookData.product_id
+    product_id:       webhookData.product_id,
+
+    // Extras da transacao — consumidos pela planilha de vendas (sheets).
+    // As plataformas de ads ignoram; parser que nao preenche deixa vazio.
+    offer_id:         webhookData.offer_id || '',
+    offer_name:       webhookData.offer_name || '',
+    payment_method:   webhookData.payment_method || '',
+    installments:     webhookData.installments ?? '',
+    order_bump:       webhookData.order_bump,          // boolean cru (true/false/undefined)
+    value_gateway:    webhookData.value_gateway ?? '',
+    value_net:        webhookData.value_net ?? '',
+
+    // UTM last-click da venda (vem do indexador/caminho do gateway)
+    utm_source:       webhookData.utm_source || '',
+    utm_medium:       webhookData.utm_medium || '',
+    utm_campaign:     webhookData.utm_campaign || '',
+    utm_term:         webhookData.utm_term || '',
+    utm_content:      webhookData.utm_content || '',
+    utm_id:           webhookData.utm_id || ''
   };
 }

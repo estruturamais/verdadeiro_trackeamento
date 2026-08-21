@@ -30,6 +30,18 @@ export function parseEduzz(body) {
     country: getNestedValue(data, 'buyer.address.country') || '',
     zip: zip,
     ip: '',
-    user_agent: ''
+    user_agent: '',
+
+    // --- Extras da transacao (planilha de vendas; nao usados pelas plataformas de ads) ---
+    // Eduzz nao expoe id de oferta; offer.name pode vir null
+    offer_id: '',
+    offer_name: getNestedValue(data, 'offer.name') || '',
+    payment_method: getNestedValue(data, 'paymentMethod') || '',
+    installments: getNestedValue(data, 'installments') ?? '',
+    // boolean cru (orderBump.has) — quem consome decide o rotulo
+    order_bump: getNestedValue(data, 'orderBump.has'),
+    // Eduzz nao informa taxa/liquido no payload — colunas ficam vazias
+    value_gateway: '',
+    value_net: ''
   };
 }

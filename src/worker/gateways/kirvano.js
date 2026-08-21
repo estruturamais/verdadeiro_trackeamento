@@ -29,6 +29,19 @@ export function parseKirvano(body) {
     country: '',
     zip: '',
     ip: '',
-    user_agent: ''
+    user_agent: '',
+
+    // --- Extras da transacao (planilha de vendas; nao usados pelas plataformas de ads) ---
+    // products[] traz oferta e flag de bump por item; o parser segue products[0]
+    // (mesmo item usado em product_name/product_id).
+    offer_id: getNestedValue(data, 'products.0.offer_id') || '',
+    offer_name: getNestedValue(data, 'products.0.offer_name') || '',
+    payment_method: getNestedValue(data, 'payment.method') || '',
+    installments: getNestedValue(data, 'payment.installments') ?? '',
+    // boolean cru (true/false/undefined) — quem consome decide o rotulo
+    order_bump: getNestedValue(data, 'products.0.is_order_bump'),
+    // Kirvano nao informa taxa/liquido no payload — colunas ficam vazias
+    value_gateway: '',
+    value_net: ''
   };
 }

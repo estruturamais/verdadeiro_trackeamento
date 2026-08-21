@@ -48,9 +48,22 @@ Todo parser retorna exatamente este objeto. Campos sem dado disponivel: string v
   country:      string,
   zip:          string,              // 5 digitos — aplicar regex se necessario
   ip:           string,
-  user_agent:   string
+  user_agent:   string,
+
+  // --- Extras da transacao (planilha de vendas `sheets.purchase`; as plataformas de ads ignoram) ---
+  offer_id:       string,            // codigo da oferta/checkout
+  offer_name:     string,            // vazio nos gateways que so mandam o codigo
+  payment_method: string,            // cru do gateway: CREDIT_CARD, PIX, pix...
+  installments:   number | '',       // numero de parcelas
+  order_bump:     boolean | undefined, // boolean CRU (true/false/undefined) — quem consome decide o rotulo
+  value_gateway:  number | string | '', // taxa retida pelo gateway
+  value_net:      number | string | ''  // liquido do produtor (total = gateway + nosso)
 }
 ```
+
+> **Extras: campo nao localizado no payload real fica FORA** (ou `''`/`undefined`) — a coluna
+> correspondente da planilha fica vazia e nada quebra. **Nunca inferir o caminho JSON de um extra**:
+> chutar caminho produz dado silenciosamente errado com cara de certo.
 
 ---
 
@@ -114,6 +127,11 @@ Com o payload, identificar cada campo:
 | `product_name` / `product_id` | Nome e ID do produto                                                |
 | endereco     | city, state, country, zip                                                           |
 | `ip`         | Nem sempre disponivel                                                               |
+| `offer_id` / `offer_name` | Codigo/nome da oferta ou do checkout: `offer.code`, `offer_id`, `plan.code`, `checkout_link`, `link.title` |
+| `payment_method` | Forma de pagamento crua: `payment.type`, `payment_method`, `paymentMethod`, `*_enum_key`, `meio` |
+| `installments` | Numero de parcelas: `installments`, `installments_number`, `NumberOfInstallments`, `parcelas` |
+| `order_bump` | Flag de order bump: `is_order_bump`, `orderBump.has` — boolean CRU; sem flag no payload, deixar fora |
+| `value_gateway` / `value_net` | Taxa do gateway e liquido do produtor — quase sempre num array de comissoes/recebedores (`commissions[]`, `commission[]`, `receivers[]`) ou em campos `fee`/`seller_balance`/`liquido`. **Buscar pelo `source`/`type`/`role`, NUNCA por indice** |
 
 > **marca_user sem parametro dedicado:** se o gateway nao oferecer um parametro proprio de rastreamento (`sck`/`src`/`xcod`/`sf_trk`/etc.), usar um **campo de UTM padrao** como indexador — foi o caso da **Eduzz**, que usa `utm_term` (`utm.term` no payload, ver `src/worker/gateways/eduzz.js`). Regra de ouro: o campo escolhido para o `marca_user` no parser tem que ser o **mesmo** definido como `indexador` no `gateways_config` (Passo 7) — round-trip checkout↔webhook. Confirmar com a venda real que o valor injetado na URL voltou nesse campo do `webhook_raw.payload`.
 
@@ -136,6 +154,14 @@ Com o payload, identificar cada campo:
 > `source|medium|campaign|term|content`). Se o gateway sacrificar uma UTM para o `marca_user` (ex.:
 > Eduzz usa `utm_term`), zerar essa coluna apos o spread (`utm_term: ''`) — ver `eduzz.js`.
 
+> **Armadilhas de valor nos extras (mesma classe do erro `commissions[1]` da Hotmart):**
+> (a) **centavos vs reais** — se o `value` do gateway vem em centavos, taxa e liquido costumam vir
+> tambem (Kiwify, Ticto, Payt, Hubla); aplicar a mesma conversao. (b) **comissao vs total** — o
+> `value_net` e o item do produtor no array de comissoes; o `value_gateway` e o item da plataforma
+> (ou o campo `fee`). Buscar sempre pelo identificador (`source`/`type`/`role`/`affiliation_type`),
+> nunca por posicao. (c) Onde possivel, conferir o invariante `total = gateway + nosso` com o payload
+> real (nem todo gateway fecha — assinaturas da Kiwify divergem; extrair como o gateway reporta).
+
 Apresentar mapeamento proposto antes de escrever qualquer arquivo:
 
 > "Baseado no payload, vou usar estes mapeamentos:
@@ -146,6 +172,8 @@ Apresentar mapeamento proposto antes de escrever qualquer arquivo:
 > - `email`: `{path}`
 > - `order_id`: `{path}`
 > - `value`: `{path}` (o que o cliente pagou — bruto/total; {observacao de formato se houver})
+> - Extras: `payment_method`: `{path}` · `installments`: `{path}` · `offer_id/offer_name`: `{path}` ·
+>   `order_bump`: `{path ou "nao informado"}` · `value_gateway/value_net`: `{path por source/type/role}`
 > ...
 >
 > Confirma ou precisa ajustar algum campo?"
@@ -217,7 +245,18 @@ export function parse{Gateway}(body) {
     country:      getNestedValue(body, '{path}') || '',
     zip:          zip,
     ip:           getNestedValue(body, '{path}') || '',
-    user_agent:   ''
+    user_agent:   '',
+
+    // --- Extras da transacao (planilha de vendas; nao usados pelas plataformas de ads) ---
+    // Campo que o payload real nao oferece: deixar '' (ou undefined no order_bump) — coluna vazia.
+    offer_id:       getNestedValue(body, '{path}') || '',
+    offer_name:     getNestedValue(body, '{path}') || '',
+    payment_method: getNestedValue(body, '{path}') || '',
+    installments:   getNestedValue(body, '{path}') ?? '',
+    order_bump:     getNestedValue(body, '{path_do_boolean}'),   // boolean cru; sem flag -> undefined
+    // taxa/liquido: buscar no array de comissoes pelo source/type/role (helper proprio), nunca por indice
+    value_gateway:  '{helper}',
+    value_net:      '{helper}'
   };
 }
 ```

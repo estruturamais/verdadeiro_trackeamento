@@ -23,7 +23,7 @@ Se a plataforma nao foi especificada no slash command, perguntar:
 > **B** — TikTok Ads
 > **C** — Google Analytics 4 (GA4)
 > **D** — Google Ads
-> **E** — Google Sheets (salvar leads automaticamente em planilha)"
+> **E** — Google Sheets (planilhar os **leads** do site e/ou as **vendas** dos gateways)"
 
 Apos confirmar a plataforma:
 1. Carregar a skill especializada correspondente:
@@ -105,7 +105,7 @@ Delegar validacao visual para a skill especializada da plataforma:
 - TikTok Ads → Events Manager > Atividade Recente
 - GA4 → Admin > DebugView
 - Google Ads → Google Tag Assistant (ou painel com delay de ate 3h)
-- Sheets → verificar linha inserida na planilha + D1 `platform = 'sheets'` com `status_code: 200`
+- Sheets → verificar linha inserida na planilha + D1 `platform = 'sheets'` com `status_code: 200`. Os dois canais tem assinaturas distintas no D1: **leads** chegam com `channel = 'web'` (evento cru, ex. `lead`); **vendas** com `channel = 'webhook'`, `event_name = 'purchase'` e `source = {gateway}`. Validar o(s) canal(is) que o cliente ativou (Passo 1 do `planilha.md`)
 
 ---
 

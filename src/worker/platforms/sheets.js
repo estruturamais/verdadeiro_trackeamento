@@ -23,10 +23,12 @@ function fullName(userData) {
   return [userData?.first_name, userData?.last_name].filter(Boolean).join(' ');
 }
 
-// Conector unico de Google Sheets (GAS universal: append + upsert + auto-create).
+// Conector unico de Google Sheets (GAS universal: append + upsert + auto-create + roteamento de aba).
 // - append (linha nova): eventos em sheets.events (default ['lead']).
 // - upsert por user_id (`_mode=upsert&_key=user_id`): qualified_lead/disqualified_lead,
 //   completando a linha do lead (preserva contato/data/hora; grava so as colunas de qualificacao).
+// A aba de destino vai em `_sheet` (sheets.sheet aqui; sheets.purchase.sheet nas vendas),
+// entao a aba nao fica hardcoded no Apps Script.
 export async function sendSheetsLead(sheetsConfig, eventName, body, clientIp, userAgent, config, siteId, env) {
   // id_script vai interpolado na URL — whitespace no valor quebra a requisicao.
   const idScript = cleanSecret(sheetsConfig?.id_script);
@@ -111,17 +113,83 @@ export async function sendSheetsLead(sheetsConfig, eventName, body, clientIp, us
     fields.fbp = bd.fbp || '';
   }
 
-  // Monta a query string (so campos com valor; vazios nao sobrescrevem em upsert)
+  // Parametros de CONTROLE do GAS universal (nunca viram coluna).
+  // `_sheet` roteia a gravacao para a aba pedida — sem hardcode no Apps Script.
+  const control = { _sheet: sheetsConfig.sheet || '' };
+  if (upsert) {
+    control._mode = 'upsert';
+    control._key = 'user_id';
+  }
+
+  await callGas(idScript, fields, control, {
+    site_id: siteId, event_name: eventName, event_id: body.event_id || '',
+    channel: 'web', source: 'collect',
+    marca_user: body.marca_user || '',
+    source_ip: clientIp, user_agent: userAgent
+  }, env);
+}
+
+// Planilha de VENDAS — append de uma linha por compra aprovada (webhook do gateway).
+// Opt-in: so dispara com o bloco `sheets.purchase` no SITE_CONFIG. A aba de destino
+// vai no parametro de controle `_sheet`, entao a mesma implantacao do Apps Script
+// atende quantas abas forem necessarias (leads numa, vendas noutra).
+export async function sendSheetsPurchase(sheetsConfig, gateway, merged, env, siteId) {
+  const idScript = cleanSecret(sheetsConfig?.id_script);
+  if (!idScript) return;
+
+  const purchase = sheetsConfig.purchase;
+  if (!purchase || purchase.enabled === false) return;
+
+  // Colunas da aba de transacoes (cabecalhos case-sensitive na linha 1).
+  // `data` e `hora` sao preenchidas pelo proprio GAS — nao vao no payload.
+  const fields = {
+    plataforma:              purchase.platform_names?.[gateway] || gateway,
+    evento:                  purchase.evento || 'compra_aprovada',
+    comprador_nome:          merged.fullname || '',
+    comprador_email:         merged.email || '',
+    comprador_telefone:      merged.phone || '',
+    transaction_id:          merged.order_id || '',
+    produto_nome:            merged.product_name || '',
+    produto_id:              merged.product_id || '',
+    oferta_nome:             merged.offer_name || '',
+    oferta_id:               merged.offer_id || '',
+    pagamento_moeda:         merged.currency || '',
+    pagamento_metodo:        merged.payment_method || '',
+    pagamento_parcelas:      merged.installments,
+    utm_source:              merged.utm_source || '',
+    utm_medium:              merged.utm_medium || '',
+    utm_campaign:            merged.utm_campaign || '',
+    utm_term:                merged.utm_term || '',
+    utm_content:             merged.utm_content || '',
+    utm_id:                  merged.utm_id || '',
+    // boolean cru -> rotulo legivel; `undefined` (gateway nao informa) fica vazio
+    order_bump:              merged.order_bump === true ? 'SIM' : (merged.order_bump === false ? 'NAO' : ''),
+    pagamento_valor_total:   merged.value,
+    pagamento_valor_gateway: merged.value_gateway,
+    pagamento_valor_nosso:   merged.value_net
+  };
+
+  await callGas(idScript, fields, { _sheet: purchase.sheet || '' }, {
+    site_id: siteId, event_name: 'purchase', event_id: String(merged.order_id || ''),
+    channel: 'webhook', source: gateway,
+    marca_user: merged.marca_user || '',
+    source_ip: merged.ip || '', user_agent: merged.user_agent || ''
+  }, env);
+}
+
+// Monta a query string, chama o GAS e loga o resultado no D1.
+// Campos vazios nao entram na query (em upsert, nao sobrescrevem o que ja esta na linha).
+async function callGas(idScript, fields, control, logMeta, env) {
   const params = new URLSearchParams();
   for (const k in fields) {
     if (Object.prototype.hasOwnProperty.call(fields, k) && fields[k] != null && fields[k] !== '') {
       params.set(k, String(fields[k]));
     }
   }
-  if (upsert) {
-    // parametros de controle do GAS universal (nunca viram coluna)
-    params.set('_mode', 'upsert');
-    params.set('_key', 'user_id');
+  for (const k in control) {
+    if (Object.prototype.hasOwnProperty.call(control, k) && control[k]) {
+      params.set(k, String(control[k]));
+    }
   }
 
   const endpoint = `https://script.google.com/macros/s/${idScript}/exec?${params.toString()}`;
@@ -142,12 +210,10 @@ export async function sendSheetsLead(sheetsConfig, eventName, body, clientIp, us
   }
 
   await logEvent(env.DB, {
-    site_id: siteId, event_name: eventName, event_id: body.event_id || '',
-    platform: 'sheets', channel: 'web', source: 'collect',
+    ...logMeta,
+    platform: 'sheets',
     status_code: statusCode, request_ms: Date.now() - start,
     sent_payload: endpoint,
-    error_message: errorMsg, response_payload: responsePayload,
-    marca_user: body.marca_user || '',
-    source_ip: clientIp, user_agent: userAgent
+    error_message: errorMsg, response_payload: responsePayload
   });
 }
