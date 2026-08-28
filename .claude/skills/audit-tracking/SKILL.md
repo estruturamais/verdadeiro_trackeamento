@@ -56,6 +56,8 @@ todas essas causas se parecem (ausencia de linha), mas a solucao de cada uma e o
 | Lead nao cai na planilha | ID/script do Sheets nao configurado | sim |
 | Evento X "faltando" | Evento nunca foi configurado (nao pediram, ou pediram e nao foi feito) | sim |
 | Tudo zerado | Sem trafego/compra real no periodo (ou fora dos 30 dias de retencao) | sim |
+| Google Ads com `0,00` conversao | Upload aceito **sem clique correspondente** (campanha parada, anuncio reprovado) — ver 2.10 | sim |
+| Google Ads sem conversao, D1 "verde" | `channel` errado no config: instalacao antiga em `server` grava `200` para evento de navegador que nunca disparou — ver 2.10 | sim |
 
 ### 0.1 Memoria como bussola + versao no ar
 
@@ -290,6 +292,102 @@ disparou dobrado nem bloqueou bump legitimo.
 Se ha `pixel_ids_mirror` no baseline: confirmar que cada pixel tem linha em `events` (um espelho
 mudo = atribuicao perdida).
 
+### 2.10 Google Ads — conversao offline que "chega" e nao aparece
+
+Duas armadilhas distintas moram aqui, e cada uma se disfarca da outra. **Nao mexer em credencial,
+secret ou payload antes de separar as duas.**
+
+**Armadilha A — log verde, zero envio.** Ate a 1.5.0 o conector gravava `status_code = 200` com
+`web-only: dispatched via gtag in browser` **em qualquer canal**, e o default de `channel` era
+`server`. Num site com `channel` omitido ou em `server`, o navegador **nao** dispara (`web.js` exige
+`google_ads_channel === 'web'`) e o Worker registrava sucesso mesmo assim: **zero conversao no Google
+Ads com o D1 inteiro verde**. Da 1.6.0 em diante o canal `server` grava `status_code = 0` +
+`canal_server_nao_despacha_navegador`, e o default virou `web`.
+
+**Armadilha B — `EXCELLENT` com `0,00`.** Ver o bloco proprio abaixo.
+
+| Assinatura em `events` | Causa provavel | Correcao |
+|---|---|---|
+| `google_ads` com `200` e `web-only: dispatched via gtag` em **qualquer** canal | Instalacao **pre-1.6.0** — log mentiroso, nao prova nada | Conferir a versao no ar (0.1). Ate atualizar, validar o Google Ads pelo Tag Assistant, nunca pelo D1 |
+| `status_code = 0` + `canal_server_nao_despacha_navegador` | `channel: "server"` com evento de navegador. Correto e honesto: nada foi despachado | Trocar para `channel: "web"`. Os dois canais convivem — web por rotulo, webhook por id numerico |
+| `status_code = 0` + `missing_conversion_label_{evento}` | Opt-in: aquele evento nao tem rotulo no config | Preencher `conversion_label_{evento}`, ou ignorar se o evento nao deve ser conversao |
+| `status_code = 0` + `conversion_action_not_found` | `conversion_action_id_purchase` vazio. Acao de **importacao** (`UPLOAD_CLICKS`) **nao tem rotulo** — procurar por rotulo sempre falha | Pegar o id numerico no painel (`ctId=` na URL da acao) e preencher `conversion_action_id_purchase` |
+| `status_code = 0` + `missing_google_ads_oauth` / `invalid_google_ads_credential_whitespace` | Secret ausente ou com whitespace | `npm run gads:oauth` e subir por `wrangler secret bulk` (ver 2.3b) |
+| `403` + `api_nao_habilitada` | **Data Manager API desligada** no projeto do Google Cloud — o passo mais esquecido da implantacao | Cloud Console > APIs e servicos > Biblioteca > "Data Manager API" > Ativar |
+| `403` + `escopo_oauth_insuficiente` | Refresh token emitido so com `adwords` | Reemitir com `npm run gads:oauth` (pede `adwords` **+** `datamanager`). **Token antigo nunca ganha escopo novo** |
+| `400` + `conversion_upload_bloqueado` | `upload_api: "conversion_upload"` em conta nao allowlisted | Trocar para `data_manager` (ou remover o campo — e o default) |
+| `200` + `partial_failure: ...EXPIRED_CLICK` | A Google **aceitou o request e descartou a conversao** (clique fora da janela) | Nao e bug: e venda de um clique antigo demais |
+| `200` sem `error_message` | Request aceito. **So isso** — o casamento com o clique e assincrono | Provar pelas consultas abaixo, nunca pelo D1 |
+
+> **A regra que generaliza:** `200` da Data Manager significa **request aceito**, nao conversao
+> registrada. O D1 prova que **nos enviamos**; so o diagnostico da propria Google prova que **ela
+> casou**. Auditar conversao offline pelo D1 e o erro classico.
+
+**Prova definitiva — o diagnostico da propria Google** (Google Ads > Ferramentas > Editor de
+consultas, ou via API). Pedir ao cliente ou rodar com as credenciais do onboarding:
+
+```
+# a foto geral do upload
+SELECT offline_conversion_upload_client_summary.status,
+       offline_conversion_upload_client_summary.total_event_count,
+       offline_conversion_upload_client_summary.successful_event_count,
+       offline_conversion_upload_client_summary.success_rate,
+       offline_conversion_upload_client_summary.pending_event_count
+FROM offline_conversion_upload_client_summary
+
+# o mesmo POR ACAO — separa aquisicao de renovacao quando ha mais de uma acao de importacao
+SELECT offline_conversion_upload_conversion_action_summary.conversion_action_name,
+       offline_conversion_upload_conversion_action_summary.status,
+       offline_conversion_upload_conversion_action_summary.success_rate,
+       offline_conversion_upload_conversion_action_summary.pending_event_count
+FROM offline_conversion_upload_conversion_action_summary
+
+# pre-requisitos da CONTA (sem eles nada casa, por mais correto que esteja o envio)
+SELECT customer.auto_tagging_enabled,
+       customer.conversion_tracking_setting.accepted_customer_data_terms,
+       customer.conversion_tracking_setting.enhanced_conversions_for_leads_enabled
+FROM customer
+```
+
+Saudavel: `status = EXCELLENT`, `success_rate = 1`, **`pending = 0`**.
+- `auto_tagging_enabled = false` → **nao existe `gclid`** para subir. Ligar em Google Ads >
+  Configuracoes da conta > Marcacao automatica. Sem isso resta so o match por e-mail/telefone.
+- `accepted_customer_data_terms = false` → o e-mail hasheado **nao casa**. Aceitar os termos de dados
+  do cliente no painel.
+
+#### A armadilha do `EXCELLENT` com `0,00` no relatorio
+
+**Isto e estado NORMAL, nao falha de tracking.** O Google Ads so reporta conversao **atribuivel a um
+clique de anuncio**. Um upload aceito sem clique correspondente entra como **sucesso** no diagnostico
+e **nao aparece** no relatorio de conversoes. O cliente abre o painel, ve `0,00` e reporta como bug —
+e o agente vai investigar credencial, secret e payload sem necessidade.
+
+No caso real que originou esta secao, a causa era que os anuncios estavam **reprovados**
+(`HAS_ADS_DISAPPROVED`, politica `COMPROMISED_SITE`) → 0 impressao → 0 clique → `gclid` 0% no
+`user_store` → nada para atribuir. **O tracking estava perfeito.**
+
+Ordem de checagem antes de culpar o VT:
+
+1. **A janela de datas do relatorio cobre o periodo em que o VT ja estava no ar?** Conversao nao
+   retroage: upload feito hoje nao preenche relatorio de antes da instalacao.
+2. **As campanhas estao servindo?**
+   ```
+   SELECT campaign.name, campaign.primary_status, campaign.primary_status_reasons FROM campaign
+   ```
+   `primary_status_reasons` traz o motivo exato (`HAS_ADS_DISAPPROVED`, `BUDGET_CONSTRAINED`, ...).
+3. **Algum anuncio reprovado?** (a politica exata, quando o passo 2 apontar reprovacao)
+   ```
+   SELECT ad_group_ad.ad.id, ad_group_ad.policy_summary.approval_status,
+          ad_group_ad.policy_summary.policy_topic_entries FROM ad_group_ad
+   ```
+4. **Lado do VT — houve clique?**
+   ```sql
+   SELECT COUNT(*) total, SUM(gclid IS NOT NULL AND gclid <> '') com_gclid FROM user_store;
+   ```
+   `com_gclid = 0` com trafego real → **nunca houve clique de anuncio**. Fecha o diagnostico: o
+   problema esta na veiculacao, nao no tracking. (Coluna disponivel a partir da 1.6.0; em instalacao
+   anterior, aplicar `migrations/003_add_gclid_columns.sql`.)
+
 **Docs de plataforma (leitura/interpretacao apenas — nao reexecutar setup; so as do baseline):**
 Meta → `.claude/playbooks/meta_ads.md` · TikTok → `.claude/playbooks/tiktok_ads.md` · GA4 →
 `.claude/playbooks/ga4.md` · Google Ads → `.claude/playbooks/google_ads.md` · Sheets →
@@ -322,8 +420,9 @@ Interpretacao (cruzar com a Camada 2):
   grande so conclui com amostra relevante (> ~100 eventos). **Purchase e server-only** — nao esperar
   linha "Navegador" para ele.
 
-Para Google Ads / GA4 / TikTok, o equivalente (onde olhar) esta na doc de cada plataforma; pedir o
-print analogo **so** se o banco indicar duvida.
+Para GA4 / TikTok, o equivalente (onde olhar) esta na doc de cada plataforma; pedir o print analogo
+**so** se o banco indicar duvida. **Google Ads e caso a parte:** o D1 nao prova conversao offline —
+usar a **2.10** (o diagnostico da propria Google) antes de pedir qualquer print.
 
 ---
 

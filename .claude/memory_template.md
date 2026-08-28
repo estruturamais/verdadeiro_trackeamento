@@ -83,10 +83,23 @@
 ### Google Ads
 
 - conversion_id: {valor}
-- channel: web | server
+- channel: web (default — eventos de navegador) | server
+- customer_id: {10 digitos, sem hifens}
+- login_customer_id: {ID da MCC, se houver}
+- conversion_action_id_purchase: {id NUMERICO da acao de importacao — o `ctId=` da URL}
+- upload_api: data_manager (default) | conversion_upload (so conta ja allowlisted)
+- conversion_label_page_view: {valor ou vazio}
 - conversion_label_contact: {valor}
 - conversion_label_lead: {valor}
-- conversion_label_purchase: {valor}
+- conversion_label_initiate_checkout: {valor ou vazio}
+- GOOGLE_ADS_CLIENT_ID: CONFIGURADO (SECRETO) | nao usa purchase server-side
+- GOOGLE_ADS_CLIENT_SECRET: CONFIGURADO (SECRETO) | nao usa purchase server-side
+- GOOGLE_ADS_REFRESH_TOKEN: CONFIGURADO (SECRETO) | nao usa purchase server-side
+- Data Manager API habilitada no Cloud: sim | nao
+- Marcacao automatica (auto-tagging) ligada: sim | nao | nao verificado
+
+> Rotulo vazio = evento nao vira conversao (opt-in). `conversion_label_purchase` NAO se aplica ao
+> caminho server-side: acao de importacao nao tem rotulo, so id numerico.
 
 ### Planilha (Sheets)
 

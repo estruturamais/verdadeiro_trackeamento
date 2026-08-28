@@ -44,20 +44,25 @@ Campos `clientConfig` expostos ao browser (sem secrets), extraidos de `serve-web
 - `site_id`, `google_ads_channel`, `debug`, `ga4_measurement_id`
 - `meta_pixel_id`, `meta_pixel_ids_mirror` (array, omitido quando sem espelhos)
 - `tiktok_pixel_id`, `google_ads_conversion_id`
-- `google_ads_label_contact`, `google_ads_label_lead`
+- `google_ads_label_page_view`, `google_ads_label_contact`, `google_ads_label_lead`,
+  `google_ads_label_initiate_checkout`, `google_ads_label_purchase` (todos opt-in: sem o rotulo, o
+  evento nao dispara no Google Ads)
 - `triggers`, `cookies`, `geolocation`, `gateways_config`, `custom_data`, `collect_url`
 
 ### Mapeamento canonico de eventos
 
 | Evento canonico   | Meta             | TikTok           | GA4            | Google Ads |
 |-------------------|------------------|------------------|----------------|------------|
-| page_view         | PageView         | Pageview         | page_view      | — (null)   |
-| contact           | Contact          | Contact          | contact        | contact    |
-| lead              | Lead             | SubmitForm       | generate_lead  | lead       |
-| initiate_checkout | InitiateCheckout | InitiateCheckout | begin_checkout | — (null)   |
-| purchase          | Purchase         | Purchase         | purchase       | purchase   |
+| page_view         | PageView         | Pageview         | page_view      | page_view (opt-in) |
+| contact           | Contact          | Contact          | contact        | contact (opt-in)   |
+| lead              | Lead             | SubmitForm       | generate_lead  | lead (opt-in)      |
+| initiate_checkout | InitiateCheckout | InitiateCheckout | begin_checkout | initiate_checkout (opt-in) |
+| purchase          | Purchase         | Purchase         | purchase       | purchase (por id numerico) |
 
-`page_view` e `initiate_checkout` nao enviam para Google Ads.
+No Google Ads todo evento e **opt-in por rotulo**: sem `conversion_label_{evento}` no config, o gtag
+nao dispara aquele evento. O `purchase` e a excecao — vai pelo webhook, server-side, e usa o **id
+numerico** da acao de importacao (`conversion_action_id_purchase`), porque acao de importacao nao tem
+rotulo. Quem decide o que e conversao — e o que e principal — e o cliente, no painel do Google Ads.
 
 > Fonte canonica: `src/worker/shared/event-names.js`. Nomes especificos por plataforma (incluindo variacoes e campos obrigatorios de cada API) estao na skill de cada plataforma.
 
@@ -305,7 +310,12 @@ Delegar coleta para a skill especialista de cada plataforma confirmada:
 | Tipo      | Campos                                            | Destino                          |
 |-----------|---------------------------------------------------|----------------------------------|
 | Publicos  | pixel_id, measurement_id, conversion_id, labels  | Config JSON no `SITE_CONFIG`     |
-| Secretos  | access_token (Meta), api_secret (GA4)             | `npx wrangler secret bulk` (ver Step 3b) |
+| Secretos  | access_token (Meta), api_secret (GA4), credenciais OAuth do Google Ads | `npx wrangler secret bulk` (ver Step 3b) |
+
+**Google Ads passou a ter secrets** (a partir da 1.6.0): o `purchase` server-side usa a Data Manager
+API e exige `GOOGLE_ADS_CLIENT_ID`, `GOOGLE_ADS_CLIENT_SECRET` e `GOOGLE_ADS_REFRESH_TOKEN` (gerados
+por `npm run gads:oauth`). Os IDs e rotulos seguem publicos, no `SITE_CONFIG`. Se o cliente so usa o
+canal web (sem purchase no Google Ads), nenhum secret e necessario.
 
 **EXCECAO TikTok:** o `access_token` do TikTok vai no **config JSON** (`platforms.tiktok.access_token`) — NAO como wrangler secret. O codigo le `tiktokConfig.access_token` sem fallback para env. Ver `.claude/playbooks/tiktok_ads.md` para detalhes.
 
@@ -401,6 +411,13 @@ npx wrangler d1 execute tracking_db --remote --command \
 
 **Criterio de aprovacao do Step 3b:** toda linha com `platform != 'collect'` tem `status_code` 200 ou
 204 (GA4 responde 204 = sucesso). Qualquer `status_code = 0` bloqueia o avanco para o Step 4.
+
+> **Google Ads no smoke test.** O evento sintetico e um `page_view`, que no Google Ads e opt-in por
+> rotulo — se `conversion_label_page_view` nao estiver no config, a linha vem com `status_code = 0` +
+> `missing_conversion_label_page_view`, e **isso e o comportamento correto**, nao reprova o Step. O
+> que reprova e `missing_google_ads_oauth`, `escopo_oauth_insuficiente` ou `api_nao_habilitada` — e
+> o caminho server-side do Google Ads (`purchase`) so se valida com venda real, pelo diagnostico da
+> propria Google (`audit-tracking` 2.10).
 
 > **Antes de reprovar, repita o disparo.** Subir secret cria uma nova versao do Worker, e ela leva
 > alguns instantes para propagar no edge — **o teste imediato pode falhar mesmo com o secret
@@ -717,10 +734,12 @@ O **Verdadeiro Trackeamento** foi criado pelo perfil [@estruturamais](https://in
 | Meta Ads | {lista de eventos canonicos, ex: page_view, lead, purchase} | Web (pixel) + Servidor (CAPI) |
 | TikTok Ads | {eventos} | Web (pixel) + Servidor (Events API) |
 | Google Analytics 4 | {eventos} | Servidor (Measurement Protocol) |
-| Google Ads | {eventos} | Web (gtag) |
+| Google Ads | {eventos} | Web (gtag) para eventos de navegador + Servidor (Data Manager API) para a compra |
 | Google Sheets | lead e/ou compra aprovada (venda) | Servidor |
 
-Incluir apenas as plataformas confirmadas no Step 1. Canal de envio e fixo por plataforma — nao variar.
+Incluir apenas as plataformas confirmadas no Step 1. Canal de envio e fixo por plataforma — nao
+variar. **Google Ads e o unico com os dois canais ao mesmo tempo**, e nao ha duplicidade: sao acoes
+de conversao diferentes (as de navegador por rotulo, a compra por id numerico da acao de importacao).
 
 **Pre-requisitos para o tracking continuar funcionando:**
 - O script `<script src="https://{dominio}/tracking/web.js">` deve permanecer como **primeiro elemento do `<head>`** em todas as paginas. Remover ou mover o script interrompe o tracking imediatamente.

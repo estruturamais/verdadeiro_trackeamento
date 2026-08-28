@@ -19,7 +19,7 @@ zero até o tracking validado em produção.
 
 ## Versão
 
-**Versão atual: 1.5.0**
+**Versão atual: 1.6.0**
 
 Para saber qual versão uma instalação roda, pergunte ao assistente *"qual a versão do seu VT?"* — ele
 lê o número (a) deste README e do `package.json` e (b) **direto da Cloudflare**: na 1ª linha do script
@@ -27,6 +27,34 @@ servido em `https://{dominio}/tracking/web.js` (e no campo `vt_version` do confi
 (b) sobrevive mesmo que o usuário apague os arquivos locais. O histórico abaixo mapeia cada versão às
 novidades:
 
+- **1.6.0** — **Google Ads: conversão offline pela Data Manager API**. O `purchase` server-side no
+  Google Ads deixa de ser um `501 TODO` e passa a subir de verdade — pelo único caminho que a Google
+  ainda aceita: desde 2026 o `ConversionUploadService` está **bloqueado para integrações novas**
+  (`CUSTOMER_NOT_ALLOWLISTED_FOR_THIS_FEATURE`), e o substituto é a **Data Manager API**
+  (`events:ingest`), que nem usa developer-token — só OAuth. O gate do purchase deixou de exigir
+  rótulo: a ação de conversão de **importação** (`UPLOAD_CLICKS`), que é justamente a do purchase
+  server-side, **não tem rótulo nenhum**, e gatear por rótulo fazia toda venda morrer antes de
+  qualquer log — indistinguível de "não houve venda". Agora vale a regra **ação de site → rótulo,
+  ação de importação → id numérico**, e nenhum caminho do conector sai sem gravar log: o que falta
+  vira **erro acionável** no D1 (API não habilitada no Cloud, escopo `datamanager` ausente, id da
+  ação não preenchido — cada um com onde achar o que falta). O telefone passa a ser hasheado em
+  **E.164** só para o Google (o hash padrão do Meta nunca casava — perda silenciosa, sem erro), e o
+  `gclid`/`wbraid`/`gbraid` passam a ser **capturados e guardados** no `user_store`, que é o que
+  permite atribuir a venda ao clique (e responder "houve clique?" numa auditoria). O script
+  `npm run gads:oauth` emite o refresh token com os **dois** escopos (`adwords` + `datamanager`) e
+  **confere o que a Google devolveu**, falhando ali em vez de em produção — token antigo nunca ganha
+  escopo novo. `page_view` e `initiate_checkout` deixam de ser `null` no mapeamento e viram opt-in
+  por rótulo (sem rótulo, nada dispara): quem decide o que é conversão é o cliente, no painel.
+  **Mudança de comportamento:** o default de `channel` passa de `server` para `web` — o default
+  antigo era uma armadilha, porque o navegador não disparava **e** o Worker gravava `200` mesmo
+  assim (zero conversão com o D1 verde). Os dois canais agora operam **simultaneamente**: navegador
+  por rótulo, compra por id numérico. O playbook `google_ads.md` foi reescrito a partir do conector
+  real e o `audit-tracking` ganhou a seção **2.10**, com o diagnóstico da própria Google
+  (`offline_conversion_upload_*`) — a única prova de que a conversão casou, já que `200` significa
+  apenas *request aceito* — e a armadilha do **`EXCELLENT` com `0,00`**: o Google só reporta
+  conversão atribuível a **clique**, então upload aceito sem clique é estado **normal** (no caso real
+  que originou a seção, os anúncios estavam reprovados e o tracking estava perfeito). **Validado em
+  produção** (diagnóstico da Google: `EXCELLENT`, `successRate 1.0`, `pending 0`).
 - **1.5.0** — **Planilha de vendas via webhook + GAS universal v3 zero-config**. Toda compra
   aprovada recebida dos gateways pode virar uma linha na aba `transactions` da planilha padrão —
   novo conector `sendSheetsPurchase` (opt-in pelo bloco `sheets.purchase` no `SITE_CONFIG`; sem o
@@ -99,7 +127,8 @@ novidades:
 
 ## Plataformas e gateways suportados
 
-- **Plataformas de destino:** Meta Ads (CAPI), TikTok Ads, GA4, Google Ads, Google Sheets.
+- **Plataformas de destino:** Meta Ads (CAPI), TikTok Ads, GA4, Google Ads (gtag no navegador +
+  conversão offline pela Data Manager API), Google Sheets.
 - **Gateways com parser completo:** Hotmart, Kiwify, Kirvano, Lastlink, PagTrust, Hubla, Eduzz, Ticto,
   Green, Tutory, Payt, PerfectPay.
 
@@ -126,7 +155,7 @@ novidades:
 │   ├── references/             # Referências técnicas (formato de config, qualificação de lead, etc.)
 │   └── memory_template.md      # Template do tracking_memory.md (estado entre sessões)
 │
-├── scripts/                    # Build (sync-webtemplate.mjs gera o web-template.txt a partir do web.js)
+├── scripts/                    # Build (sync-webtemplate.mjs) + google-ads-oauth.mjs (refresh token do Google Ads)
 ├── migrations/                 # Migrações de schema do D1
 ├── schema.sql                  # Schema inicial do banco D1
 ├── config.example.json         # Exemplo do SITE_CONFIG (plataformas, gateways, qualificação)
