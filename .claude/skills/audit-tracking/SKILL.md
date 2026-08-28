@@ -308,7 +308,8 @@ Ads com o D1 inteiro verde**. Da 1.6.0 em diante o canal `server` grava `status_
 
 | Assinatura em `events` | Causa provavel | Correcao |
 |---|---|---|
-| `google_ads` com `200` e `web-only: dispatched via gtag` em **qualquer** canal | Instalacao **pre-1.6.0** — log mentiroso, nao prova nada | Conferir a versao no ar (0.1). Ate atualizar, validar o Google Ads pelo Tag Assistant, nunca pelo D1 |
+| `google_ads` com `200` e `web-only: dispatched via gtag` em **qualquer** canal | Instalacao **pre-1.6.0** — log mentiroso, nao prova nada | Conferir a versao no ar (0.1). Ate atualizar, validar o Google Ads pelo Tag Assistant, nunca pelo D1. Para atualizar: `.claude/playbooks/atualizar.md` |
+| Aviso `colunas de click id ausentes` no log do Worker (`wrangler tail`) | Codigo 1.6.0 deployado sem a `migrations/003` | **Nada quebrou** — o `user_store` segue gravando. Rodar a migracao habilita o `gclid`, sem novo deploy |
 | `status_code = 0` + `canal_server_nao_despacha_navegador` | `channel: "server"` com evento de navegador. Correto e honesto: nada foi despachado | Trocar para `channel: "web"`. Os dois canais convivem — web por rotulo, webhook por id numerico |
 | `status_code = 0` + `missing_conversion_label_{evento}` | Opt-in: aquele evento nao tem rotulo no config | Preencher `conversion_label_{evento}`, ou ignorar se o evento nao deve ser conversao |
 | `status_code = 0` + `conversion_action_not_found` | `conversion_action_id_purchase` vazio. Acao de **importacao** (`UPLOAD_CLICKS`) **nao tem rotulo** — procurar por rotulo sempre falha | Pegar o id numerico no painel (`ctId=` na URL da acao) e preencher `conversion_action_id_purchase` |

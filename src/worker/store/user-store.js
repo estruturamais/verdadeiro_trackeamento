@@ -1,59 +1,89 @@
-export async function upsertUserStore(db, data) {
-  const stmt = db.prepare(`
-    INSERT INTO user_store (marca_user, ip, user_agent, fbp, fbc, ttp, ttclid,
-      ga_client_id, ga_session_id, ga_session_count, ga_timestamp,
-      gclid, wbraid, gbraid,
-      page_url, email, phone, fullname, city, state, country, zip)
-    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)
+// As colunas de click id (gclid/wbraid/gbraid) chegaram na 1.6.0, pela migration
+// `migrations/003_add_gclid_columns.sql`. Uma instalacao que atualizou o codigo e
+// ainda NAO rodou a migration nao as tem — e o INSERT falharia com
+// `table user_store has no column named gclid`.
+//
+// POR QUE ISSO NAO PODE SER "basta rodar a migration": o erro do D1 vem prefixado
+// com `D1_ERROR`, que o `dbWrite` classifica como banco cheio. Ele dispararia um
+// cleanup destrutivo a cada beacon, tentaria de novo, falharia e devolveria null
+// SEM lancar. Resultado: `user_store` nunca gravado, nenhum erro visivel no D1 e o
+// log do beacon ainda em 200 — atribuicao morta com o painel verde. Esquecer a
+// migration nao pode custar isso.
+//
+// Entao o upsert se adapta: tenta o statement completo e, se o banco disser que a
+// coluna nao existe, marca a capacidade como ausente no escopo do modulo e refaz
+// sem os click ids. Um isolate paga o erro uma vez; depois da migration, um
+// isolate novo volta sozinho ao caminho completo. A migration passa a ser o que
+// HABILITA o gclid, nao o que evita o desastre.
+let _temColunasClickId = true;
+
+const COLUNAS_BASE = [
+  'marca_user', 'ip', 'user_agent', 'fbp', 'fbc', 'ttp', 'ttclid',
+  'ga_client_id', 'ga_session_id', 'ga_session_count', 'ga_timestamp'
+];
+const COLUNAS_CLICK_ID = ['gclid', 'wbraid', 'gbraid'];
+const COLUNAS_FIM = [
+  'page_url', 'email', 'phone', 'fullname', 'city', 'state', 'country', 'zip'
+];
+
+function colunasDe(comClickIds) {
+  return comClickIds
+    ? [...COLUNAS_BASE, ...COLUNAS_CLICK_ID, ...COLUNAS_FIM]
+    : [...COLUNAS_BASE, ...COLUNAS_FIM];
+}
+
+function montarSql(comClickIds) {
+  const cols = colunasDe(comClickIds);
+  const placeholders = cols.map((_, i) => `?${i + 1}`).join(', ');
+  // `marca_user` e a PK. COALESCE(NULLIF(...)) preserva o valor ja gravado quando
+  // o beacon novo vem vazio: o PRIMEIRO nao-vazio gruda.
+  const sets = cols.slice(1)
+    .map((c) => `      ${c.padEnd(16)} = COALESCE(NULLIF(excluded.${c}, ''), user_store.${c})`)
+    .join(',\n');
+
+  return `
+    INSERT INTO user_store (${cols.join(', ')})
+    VALUES (${placeholders})
     ON CONFLICT(marca_user) DO UPDATE SET
       updated_at       = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
-      ip               = COALESCE(NULLIF(excluded.ip, ''),               user_store.ip),
-      user_agent       = COALESCE(NULLIF(excluded.user_agent, ''),       user_store.user_agent),
-      fbp              = COALESCE(NULLIF(excluded.fbp, ''),              user_store.fbp),
-      fbc              = COALESCE(NULLIF(excluded.fbc, ''),              user_store.fbc),
-      ttp              = COALESCE(NULLIF(excluded.ttp, ''),              user_store.ttp),
-      ttclid           = COALESCE(NULLIF(excluded.ttclid, ''),           user_store.ttclid),
-      ga_client_id     = COALESCE(NULLIF(excluded.ga_client_id, ''),     user_store.ga_client_id),
-      ga_session_id    = COALESCE(NULLIF(excluded.ga_session_id, ''),    user_store.ga_session_id),
-      ga_session_count = COALESCE(NULLIF(excluded.ga_session_count, ''), user_store.ga_session_count),
-      ga_timestamp     = COALESCE(NULLIF(excluded.ga_timestamp, ''),     user_store.ga_timestamp),
-      gclid            = COALESCE(NULLIF(excluded.gclid, ''),            user_store.gclid),
-      wbraid           = COALESCE(NULLIF(excluded.wbraid, ''),           user_store.wbraid),
-      gbraid           = COALESCE(NULLIF(excluded.gbraid, ''),           user_store.gbraid),
-      page_url         = COALESCE(NULLIF(excluded.page_url, ''),         user_store.page_url),
-      email            = COALESCE(NULLIF(excluded.email, ''),            user_store.email),
-      phone            = COALESCE(NULLIF(excluded.phone, ''),            user_store.phone),
-      fullname         = COALESCE(NULLIF(excluded.fullname, ''),         user_store.fullname),
-      city             = COALESCE(NULLIF(excluded.city, ''),             user_store.city),
-      state            = COALESCE(NULLIF(excluded.state, ''),            user_store.state),
-      country          = COALESCE(NULLIF(excluded.country, ''),          user_store.country),
-      zip              = COALESCE(NULLIF(excluded.zip, ''),              user_store.zip)
-  `);
+${sets}
+  `;
+}
 
-  return stmt.bind(
-    data.marca_user,
-    data.ip || '',
-    data.user_agent || '',
-    data.fbp || '',
-    data.fbc || '',
-    data.ttp || '',
-    data.ttclid || '',
-    data.ga_client_id || '',
-    data.ga_session_id || '',
-    data.ga_session_count || '',
-    data.ga_timestamp || '',
-    data.gclid || '',
-    data.wbraid || '',
-    data.gbraid || '',
-    data.page_url || '',
-    data.email || '',
-    data.phone || '',
-    data.fullname || '',
-    data.city || '',
-    data.state || '',
-    data.country || '',
-    data.zip || ''
-  ).run();
+const SQL_COM_CLICK_ID = montarSql(true);
+const SQL_SEM_CLICK_ID = montarSql(false);
+
+function colunaDeClickIdAusente(err) {
+  const msg = String(err?.message || '');
+  return COLUNAS_CLICK_ID.some(
+    (c) => msg.includes(`no column named ${c}`) || msg.includes(`no such column: ${c}`)
+  );
+}
+
+function executar(db, data, comClickIds) {
+  const valores = colunasDe(comClickIds).map((c) =>
+    c === 'marca_user' ? data.marca_user : (data[c] || '')
+  );
+  return db.prepare(comClickIds ? SQL_COM_CLICK_ID : SQL_SEM_CLICK_ID)
+    .bind(...valores)
+    .run();
+}
+
+export async function upsertUserStore(db, data) {
+  if (_temColunasClickId) {
+    try {
+      return await executar(db, data, true);
+    } catch (err) {
+      if (!colunaDeClickIdAusente(err)) throw err;
+      _temColunasClickId = false;
+      console.warn(
+        '[user_store] colunas de click id ausentes — o tracking segue normal, mas o gclid nao ' +
+        'esta sendo guardado (sem ele a conversao offline do Google Ads perde a atribuicao por ' +
+        'clique). Rode: wrangler d1 execute tracking_db --file=./migrations/003_add_gclid_columns.sql --remote'
+      );
+    }
+  }
+  return executar(db, data, false);
 }
 
 export async function getUserStore(db, marcaUser) {

@@ -125,6 +125,24 @@ novidades:
 - **1.0.0** — Versão inicial: tracking server-side, parsers de gateway, plataformas de destino e
   onboarding conduzido pelo assistente.
 
+## Como atualizar uma instalação existente
+
+Quem já tem o VT rodando **não precisa reinstalar nada**. O procedimento completo — descobrir a
+versão no ar, o que muda entre ela e a atual, migrações, deploy, verificação e rollback — está em
+[`.claude/playbooks/atualizar.md`](.claude/playbooks/atualizar.md). Peça ao assistente *"quero
+atualizar meu VT"* que ele conduz.
+
+Três garantias de projeto, para a atualização nunca derrubar produção:
+
+1. **Toda migração é aditiva** (`ADD COLUMN`) — nenhuma apaga dado ou altera coluna existente.
+   Voltar o código para a versão anterior é seguro: as colunas novas apenas ficam sem uso.
+2. **Esquecer a migração não quebra o tracking.** O código detecta a coluna ausente, segue gravando
+   normalmente e escreve um aviso no log dizendo o comando exato que falta. Perde-se só o recurso
+   novo, nunca o que já funcionava.
+3. **Config novo é sempre opt-in.** Campo que você não preencher mantém o comportamento anterior.
+
+A ordem importa: **migração do banco antes do deploy do código**. O playbook cobre o porquê.
+
 ## Plataformas e gateways suportados
 
 - **Plataformas de destino:** Meta Ads (CAPI), TikTok Ads, GA4, Google Ads (gtag no navegador +

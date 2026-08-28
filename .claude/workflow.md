@@ -351,6 +351,7 @@ Apos o Step 1 (plataformas confirmadas no `tracking_memory.md`), carregar apenas
 | GA4                   | `.claude/playbooks/ga4.md`          |
 | Google Ads            | `.claude/playbooks/google_ads.md`   |
 | Planilha (Sheets)     | `.claude/playbooks/planilha.md`     |
+| Atualizar instalacao  | `.claude/playbooks/atualizar.md`    |
 
 Skills de plataformas NAO confirmadas nunca sao carregadas — nao perguntar sobre elas.
 
@@ -562,3 +563,18 @@ dois"), **sem presumir** que planilha = leads. Se a mudanca exigir editar o `SIT
 aplicar antes a REGRA BLOQUEANTE de conta Cloudflare. Diferenciar de analise: **quer os dados caindo numa
 planilha → `planilha.md`; quer perguntar/entender os numeros → `analistamais`.** Nao exigir que o cliente
 saiba o nome da skill nem o comando.
+
+---
+
+### Acionamento por intencao (atualizar o VT)
+
+Quando o cliente pedir a **versao nova** em linguagem livre — ex: "tem versao nova?", "quero
+atualizar", "atualiza meu tracking", "meu VT esta desatualizado?", "instala a atualizacao" — ou
+quando o `audit-tracking` detectar que a versao no ar esta atras da do repo, carregar
+`.claude/playbooks/atualizar.md` e seguir do **Passo 1** (descobrir a versao no ar pela Cloudflare,
+nunca pelo arquivo local).
+
+**Regra que nao se negocia:** a instalacao ja esta em producao. **Migracao de banco vem ANTES do
+deploy do codigo**, e nenhuma atualizacao termina sem o Passo 7 (confirmar que as mesmas plataformas
+que apareciam antes continuam aparecendo, com os mesmos status). Aplicar a REGRA BLOQUEANTE de conta
+Cloudflare antes de qualquer comando que escreva.
