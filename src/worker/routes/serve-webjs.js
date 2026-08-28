@@ -72,7 +72,10 @@ export async function handleServeWebJs(request, env) {
   const clientConfig = {
     site_id: config.site_id,
     vt_version: VT_VERSION,
-    google_ads_channel: config.platforms?.google_ads?.channel || 'server',
+    // Default `web`: o canal web cobre os eventos de NAVEGADOR e o purchase vai
+    // sempre pelo webhook, independente deste campo. O default antigo (`server`)
+    // era uma armadilha — o browser nao disparava e o Worker gravava 200 falso.
+    google_ads_channel: config.platforms?.google_ads?.channel || 'web',
     debug: config.debug || false,
     ga4_measurement_id: config.platforms?.ga4?.measurement_id,
     meta_pixel_id: config.platforms?.meta?.pixel_id,
@@ -80,8 +83,11 @@ export async function handleServeWebJs(request, env) {
       ?? (config.platforms?.meta?.pixel_id_purchase ? [config.platforms.meta.pixel_id_purchase] : undefined),
     tiktok_pixel_id: config.platforms?.tiktok?.pixel_id,
     google_ads_conversion_id: config.platforms?.google_ads?.conversion_id,
+    google_ads_label_page_view: config.platforms?.google_ads?.conversion_label_page_view,
     google_ads_label_contact: config.platforms?.google_ads?.conversion_label_contact,
     google_ads_label_lead: config.platforms?.google_ads?.conversion_label_lead,
+    google_ads_label_initiate_checkout: config.platforms?.google_ads?.conversion_label_initiate_checkout,
+    google_ads_label_purchase: config.platforms?.google_ads?.conversion_label_purchase,
     triggers: mergeTriggers(buildDefaultTriggers(config), config.triggers),
     cookies: config.cookies,
     gateways_config: config.gateways_config,

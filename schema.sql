@@ -17,6 +17,11 @@ CREATE TABLE IF NOT EXISTS user_store (
   ga_session_id   TEXT,
   ga_session_count TEXT,
   ga_timestamp    TEXT,
+  -- Click ids do Google (auto-tagging). Primeiro nao-vazio gruda (COALESCE/NULLIF):
+  -- e o clique que trouxe o visitante que atribui a conversao offline no Google Ads.
+  gclid           TEXT,
+  wbraid          TEXT,
+  gbraid          TEXT,
   page_url        TEXT,
   -- Dados do usuario (gravados no form submit OU de cookies)
   email           TEXT,

@@ -29,6 +29,9 @@ export function fdvMerge(storeData, webhookData) {
     ga_session_id:    store.ga_session_id || '',
     ga_session_count: store.ga_session_count || '',
     ga_timestamp:     store.ga_timestamp || '',
+    gclid:            store.gclid || '',
+    wbraid:           store.wbraid || '',
+    gbraid:           store.gbraid || '',
     page_url:         store.page_url || '',
     marca_user:       store.marca_user || webhookData.marca_user,
 

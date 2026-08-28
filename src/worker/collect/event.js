@@ -5,6 +5,7 @@ import { logEvent } from '../shared/logger.js';
 import { sendMetaCAPI } from '../platforms/meta.js';
 import { sendTikTokEvent } from '../platforms/tiktok.js';
 import { sendGoogleAdsConversion } from '../platforms/google-ads.js';
+import { EVENT_NAMES } from '../shared/event-names.js';
 import { sendGA4Event } from '../platforms/ga4.js';
 import { sendSheetsLead } from '../platforms/sheets.js';
 import { runCleanup } from '../shared/cleanup.js';
@@ -46,6 +47,10 @@ export async function handleCollectEvent(request, env, ctx) {
       ga_session_id: body.browser_data?.ga_session_id || '',
       ga_session_count: body.browser_data?.ga_session_count || '',
       ga_timestamp: body.browser_data?.ga_timestamp || '',
+      // Click ids do Google — chegam junto das UTMs no beacon (getClickIds no web.js)
+      gclid: body.utm_data?.gclid || '',
+      wbraid: body.utm_data?.wbraid || '',
+      gbraid: body.utm_data?.gbraid || '',
       page_url: body.page_url || '',
       email: body.user_data?.email || '',
       phone: body.user_data?.phone || '',
@@ -111,11 +116,16 @@ export async function handleCollectEvent(request, env, ctx) {
     );
   }
 
-  // Google Ads — server (default) ou web, configuravel via google_ads.channel
-  if (config.platforms?.google_ads && (config.platforms.google_ads.channel || 'server') === 'server') {
-    if (['contact', 'lead'].includes(eventName)) {
+  // Google Ads — eventos de NAVEGADOR. Quem envia e o gtag no browser (canal `web`);
+  // aqui so se registra o log. Chamamos sempre que houver bloco `google_ads`, em
+  // qualquer canal, porque o log honesto por canal e o que revela o gap: no canal
+  // `server` nada dispara no navegador, e antes isso gravava um `200` mentiroso.
+  // `purchase` NAO entra aqui — vai pelo webhook do gateway (sendGoogleAdsWebhook).
+  if (config.platforms?.google_ads) {
+    const gadsKey = EVENT_NAMES[eventName]?.gads;
+    if (gadsKey && gadsKey !== 'purchase') {
       promises.push(
-        sendGoogleAdsConversion(config.platforms.google_ads, eventName, hashed, body, env, siteId)
+        sendGoogleAdsConversion(config.platforms.google_ads, gadsKey, hashed, body, env, siteId)
       );
     }
   }

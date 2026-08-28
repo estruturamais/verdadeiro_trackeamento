@@ -43,6 +43,16 @@ SITE_CONFIG = '{}'
 #   GA4_API_SECRET
 #   LOG_BEARER_TOKEN
 #
+#   Google Ads — so quando houver purchase server-side. Gere os tres de uma vez com
+#   `npm run gads:oauth`: o script exige os escopos `adwords` E `datamanager` e falha
+#   se a Google devolver so um deles (token antigo nunca ganha escopo novo).
+#   GOOGLE_ADS_CLIENT_ID
+#   GOOGLE_ADS_CLIENT_SECRET
+#   GOOGLE_ADS_REFRESH_TOKEN
+#   GOOGLE_ADS_DEVELOPER_TOKEN  (opcional — so para o upload legado `conversion_upload`
+#                                e para o lookup automatico da acao de conversao.
+#                                A Data Manager API NAO usa developer-token.)
+#
 # NUNCA subir por pipe (echo "valor" | wrangler secret put NOME): no Windows/PowerShell o pipe
 # acrescenta CRLF, o secret fica com whitespace e os envios falham com status_code = 0 +
 # "Error: Network connection lost." — que parece erro de rede, mas e o valor no cofre.

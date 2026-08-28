@@ -14,11 +14,18 @@
       "access_token": "{EXCECAO: TikTok nao faz fallback para env — incluir o access_token aqui, nao como wrangler secret}"
     },
     "google_ads": {
+      "_doc": "Os DOIS canais operam juntos. `channel: web` (default) = eventos de navegador pelo gtag, OPT-IN por rotulo (sem o rotulo do evento, ele nao dispara). O `purchase` vai SEMPRE pelo webhook do gateway, server-side, e nao depende de `channel` — ele usa `conversion_action_id_purchase`, o ID NUMERICO da acao. REGRA: acao de SITE tem rotulo; acao de IMPORTACAO (UPLOAD_CLICKS) NAO tem rotulo, so id numerico (esta na URL do painel, em `ctId=`). `upload_api` default `data_manager`; use `conversion_upload` so em conta ja allowlisted no servico legado. Credenciais OAuth vao em wrangler secret (GOOGLE_ADS_CLIENT_ID/CLIENT_SECRET/REFRESH_TOKEN) — gere com `npm run gads:oauth`.",
       "conversion_id": "AW-123456789",
-      "channel": "server",
+      "channel": "web",
+      "customer_id": "1234567890",
+      "login_customer_id": "0987654321",
+      "conversion_action_id_purchase": "7654321",
+      "upload_api": "data_manager",
+      "conversion_label_page_view": "",
       "conversion_label_contact": "AbCdEf123",
       "conversion_label_lead": "GhIjKl456",
-      "conversion_label_purchase": "MnOpQr789"
+      "conversion_label_initiate_checkout": "",
+      "conversion_label_purchase": ""
     },
     "sheets": {
       "_doc": "GAS universal v3: a aba de destino vai no parametro de controle `_sheet` (nao fica hardcoded no Apps Script). `sheet` = aba dos eventos web (leads/qualificacao). `purchase` = opt-in da planilha de VENDAS, uma linha por compra aprovada vinda do webhook do gateway; omita o bloco para nao planilhar vendas. `events: []` desliga o append dos eventos web sem desligar as vendas.",

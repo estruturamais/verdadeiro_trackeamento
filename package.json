@@ -6,6 +6,7 @@
     "prebuild": "node scripts/sync-webtemplate.mjs",
     "dev": "node scripts/sync-webtemplate.mjs && wrangler dev",
     "deploy": "node scripts/sync-webtemplate.mjs && wrangler deploy",
+    "gads:oauth": "node scripts/google-ads-oauth.mjs",
     "db:create": "wrangler d1 create tracking_db",
     "db:migrate": "wrangler d1 execute tracking_db --file=./schema.sql",
     "db:migrate:local": "wrangler d1 execute tracking_db --local --file=./schema.sql"

@@ -35,6 +35,15 @@ export function cleanSecret(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+// Só dígitos. O Google Ads exige o telefone em E.164 (`+5511999998888`) ANTES do
+// sha256; o hash compartilhado do hashPII (padrão Meta) usa o valor cru e nunca
+// casa do lado do Google. A perda é silenciosa: não há erro, só match pior.
+export function digitsOnly(value) {
+  return typeof value === 'string' || typeof value === 'number'
+    ? String(value).replace(/\D/g, '')
+    : '';
+}
+
 export function splitFirstName(fullname) {
   if (!fullname) return '';
   return fullname.trim().split(/\s+/)[0];

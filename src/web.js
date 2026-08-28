@@ -232,6 +232,25 @@
     return utms;
   }
 
+  // Click ids do Google (GADS-11). Ficam FORA do getUtmData de proposito: o `sck`
+  // e posicional (buildSckString) e a propagacao de UTM para o checkout usa listas
+  // fixas — incluir os click ids ali mudaria o formato que os gateways ja parseiam.
+  // Sao mesclados so no payload do beacon; o user_store guarda o PRIMEIRO nao-vazio
+  // (COALESCE/NULLIF), que e a semantica certa: o clique que trouxe o visitante.
+  function getClickIds() {
+    var ids = {};
+    var chaves = ['gclid', 'wbraid', 'gbraid'];
+    try {
+      var params = new URL(window.location.href).searchParams;
+      for (var i = 0; i < chaves.length; i++) {
+        ids[chaves[i]] = params.get(chaves[i]) || '';
+      }
+    } catch(e) {
+      for (var j = 0; j < chaves.length; j++) ids[chaves[j]] = '';
+    }
+    return ids;
+  }
+
   function buildSckString(utms) {
     var sckOrder = [
       utms['utm_source'] || '',
@@ -1007,7 +1026,14 @@
         ga_timestamp: browserData.ga_timestamp
       },
 
-      utm_data: getUtmData(),
+      // UTMs + click ids do Google (gclid/wbraid/gbraid) no mesmo campo: o Worker
+      // grava os tres no user_store e o conector do Google Ads os usa em adIdentifiers.
+      utm_data: (function() {
+        var u = getUtmData();
+        var c = getClickIds();
+        for (var k in c) { if (c[k]) u[k] = c[k]; }
+        return u;
+      })(),
 
       custom_data: customData
     };
@@ -1059,11 +1085,16 @@
       // 3. GA4 — dispatch movido para server-side (collect-event.js → sendGA4Event)
       //    initGA4() mantido para gerar cookies _ga/_ga_* usados pelo beacon
 
-      // 4. Google Ads (web — quando channel === 'web')
-      if (__CONFIG__.google_ads_conversion_id && names.gads && __CONFIG__.google_ads_channel === 'web') {
+      // 4. Google Ads (web — quando channel === 'web').
+      //    OPT-IN POR ROTULO: so dispara se o rotulo daquele evento existir no config.
+      //    Sem o guard, um evento sem rotulo montaria `send_to: AW-XXX/undefined` — o
+      //    gtag aceita calado e a conversao some. Quem decide QUAIS eventos viram
+      //    conversao (e quais sao principais) e o cliente, no painel do Google Ads;
+      //    o VT so precisa saber enviar o que estiver configurado.
+      var gadsLabel = names.gads ? __CONFIG__['google_ads_label_' + names.gads] : '';
+      if (__CONFIG__.google_ads_conversion_id && gadsLabel && __CONFIG__.google_ads_channel === 'web') {
         gtag('event', 'conversion', {
-          send_to: __CONFIG__.google_ads_conversion_id + '/' +
-            __CONFIG__['google_ads_label_' + names.gads],
+          send_to: __CONFIG__.google_ads_conversion_id + '/' + gadsLabel,
           value: customData.value || undefined,
           currency: customData.currency || 'BRL'
         });

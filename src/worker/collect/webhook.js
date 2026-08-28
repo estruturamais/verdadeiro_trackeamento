@@ -165,8 +165,14 @@ export async function handleWebhook(request, env, gateway, ctx) {
     );
   }
 
-  // Google Ads Enhanced Conversions (purchase)
-  if (config.platforms?.google_ads?.conversion_label_purchase) {
+  // Google Ads — conversao offline (purchase) pela Data Manager API.
+  // O gate NAO exige `conversion_label_purchase`: a acao de conversao de IMPORTACAO
+  // (UPLOAD_CLICKS) — que e justamente o caminho do purchase server-side — nao tem
+  // `tag_snippets`, logo NAO tem rotulo. Gatear por rotulo fazia toda venda morrer
+  // aqui, antes de qualquer log, e a falha ficava indistinguivel de "nao houve venda".
+  // Basta existir o bloco `google_ads`: o que faltar vira erro ACIONAVEL no D1.
+  // Independe de `channel` — o canal server cobre o purchase; o web cobre o navegador.
+  if (config.platforms?.google_ads) {
     promises.push(
       sendGoogleAdsWebhook(config.platforms.google_ads, hashed, merged, env, config.site_id)
     );
