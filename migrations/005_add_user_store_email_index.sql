@@ -1,0 +1,24 @@
+-- Migration 005: indice de e-mail no user_store (FDV merge por e-mail)
+--
+-- Motivo: quando o webhook de compra NAO traz o indexador (`marca_user`) — compra
+-- organica, digitada, renovacao de assinatura que e 100% server-side — o evento
+-- saia sem `fbp`/`fbc`/`gclid`/IP/UA, ou seja, sem atribuicao. Com o indice, o
+-- `getUserStoreByEmail` recupera a sessao pela linha mais recente do mesmo e-mail.
+--
+-- Medido em producao (SaaS por assinatura, 2026-08): apenas 2 de 90 webhooks
+-- traziam o indexador, e ainda assim 21 conversoes sairam com identidade — 19
+-- recuperadas por este merge.
+--
+-- Vale para TODO projeto, nao so os de assinatura: e fallback puro, so roda quando
+-- nao houve `marca_user`. Por isso esta tambem no `schema.sql` (instalacao nova ja
+-- nasce com ele) — esta migration e para quem JA roda 1.6.x ou anterior.
+--
+-- Sem o indice o merge ainda FUNCIONA (a coluna `email` existe desde a 1.0.0), so
+-- que com full scan do user_store. Rodar a migration e otimizacao, nao pre-requisito.
+--
+-- CREATE INDEX IF NOT EXISTS e idempotente — rodar duas vezes nao e erro.
+--
+-- Como executar (D1 wrangler):
+--   wrangler d1 execute tracking_db --file=./migrations/005_add_user_store_email_index.sql --remote
+
+CREATE INDEX IF NOT EXISTS idx_user_store_email ON user_store (email);

@@ -7,6 +7,12 @@ export const EVENT_NAMES = {
   page_view:         { meta: 'PageView',          tiktok: 'Pageview',         ga4: 'page_view',      gads: 'page_view' },
   contact:           { meta: 'Contact',           tiktok: 'Contact',          ga4: 'contact',        gads: 'contact' },
   lead:              { meta: 'Lead',              tiktok: 'SubmitForm',       ga4: 'generate_lead',  gads: 'lead' },
+  // Cadastro confirmado na LP/app (evento padrao) e login (evento CUSTOM no Meta;
+  // sem `gads` porque login nao e conversao de campanha, e sim sinal de audiencia/
+  // exclusao). Sao os eventos que `triggers.lead.routes` roteia por slug num SaaS,
+  // onde cadastro e login tem o mesmo submit no DOM e so a rota os separa.
+  complete_registration: { meta: 'CompleteRegistration', tiktok: 'CompleteRegistration', ga4: 'sign_up', gads: 'complete_registration' },
+  login:             { meta: 'Login',             tiktok: '',                 ga4: 'login',          gads: '' },
   initiate_checkout: { meta: 'InitiateCheckout',  tiktok: 'InitiateCheckout', ga4: 'begin_checkout', gads: 'initiate_checkout' },
   purchase:          { meta: 'Purchase',          tiktok: 'Purchase',         ga4: 'purchase',       gads: 'purchase' }
 };

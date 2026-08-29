@@ -39,6 +39,12 @@ export async function runCleanup(db, env, opts = {}) {
     if (!force || when_full === 'halt_writes') return;
   }
 
+  // ATENCAO: a tabela `subscriptions` (SaaS) esta FORA desta lista DE PROPOSITO e
+  // NAO deve ser adicionada. Ela nao tem retencao: e o historico que distingue a
+  // aquisicao de um cliente novo da renovacao de um assinante antigo. Apagar uma
+  // linha faz o assinante correspondente voltar a ser contado como CLIENTE NOVO na
+  // proxima cobranca — inflando a aquisicao e destruindo o CAC do relatorio, sem
+  // nenhum erro visivel. A lista abaixo e uma allowlist, nao um esquecimento.
   await db.batch([
     db.prepare("DELETE FROM events WHERE timestamp < datetime('now', '-7 days')"),
     db.prepare("DELETE FROM webhook_raw WHERE timestamp < datetime('now', '-14 days')"),

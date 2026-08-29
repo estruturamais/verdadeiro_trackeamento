@@ -31,6 +31,9 @@ function buildDefaultTriggers(config) {
   return {
     initiate_checkout: { type: 'link_click', match: gwDomains.join('|') },
     contact: { type: 'link_click', match: 'wa.me|api.whatsapp' },
+    // `lead`: o cliente so precisa declarar quando quer DESLIGAR (type:'disabled') ou
+    // ROTEAR por slug (routes[] — app logado/SPA, onde login e cadastro tem o mesmo
+    // submit). O merge abaixo preserva ambos por cima deste default.
     lead: { type: 'form_submit', selectors: { elementor: true, cf7: true, generic: true } }
   };
 }

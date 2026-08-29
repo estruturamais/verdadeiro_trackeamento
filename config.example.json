@@ -1,6 +1,19 @@
 {
   "site_id": "curso-marketing-digital",
   "debug": false,
+  "_doc_subscription_tracking": "SaaS por assinatura. OMITA este bloco em projeto de compra unica — sem ele nada muda e a tabela `subscriptions` nem precisa existir. Ligado, cada cobranca aprovada e classificada em new/renewal/reactivation: o Meta recebe Subscribe/SubscriptionRenewal/SubscriptionReactivation e o Google Ads roteia renovacao para conversion_action_id_renewal. EXIGE `wrangler d1 execute tracking_db --file=./migrations/004_add_subscriptions_table.sql --remote` (sem a tabela, o Worker avisa no log e segue mandando Purchase). Aceita `true` (todo produto do painel e assinatura) ou o objeto abaixo. PROJETO MISTO (parte SaaS, parte avulso no MESMO painel): informe as duas listas de product_id — elas MANDAM sobre o sinal do payload. ID que nao estiver em nenhuma das duas e tratado como compra unica e gera uma linha de aviso no D1 (platform='subscription'). Sem as listas, decide o payload do gateway (a Ticto marca `offer.is_subscription`). So Ticto e Hotmart tem a recorrencia mapeada — para os outros, rode /new-gateway antes de ligar.",
+  "subscription_tracking": {
+    "enabled": false,
+    "product_ids": ["{id do produto SaaS no gateway}"],
+    "product_ids_avulso": ["{id do produto de compra unica}"]
+  },
+  "_doc_subscription_events": "Opcional (so com subscription_tracking ligado): nome do evento Meta por tipo de cobranca. Defaults: new=Subscribe, renewal=SubscriptionRenewal, reactivation=SubscriptionReactivation. Aceita STRING ou ARRAY — a Meta nao deduplica nomes diferentes com o mesmo event_id, entao `new: [\"Purchase\",\"Subscribe\"]` manda os dois: o Purchase continua alimentando as campanhas que ja otimizam por compra, e o Subscribe fica livre para teste. Renovacao/reativacao NUNCA devem entrar no Purchase — e isso que mantem o CAC do relatorio honesto. ATENCAO: SubscriptionRenewal e SubscriptionReactivation sao eventos PERSONALIZADOS; nao aparecem como conversao padrao no Gerenciador de Eventos, e o cliente precisa criar Conversoes Personalizadas para otimizar por eles.",
+  "subscription_events": {
+    "new": "Subscribe",
+    "renewal": "SubscriptionRenewal",
+    "reactivation": "SubscriptionReactivation"
+  },
+  "_doc_purchase_dispatch": "Opcional: 'shadow' = o webhook processa TUDO (dedup, billing_type, tabela subscriptions) e grava no `events` o que TERIA sido enviado (status_code 0, error_message shadow_mode), mas NAO envia nada as plataformas. Serve para validar a classificacao com webhooks reais de producao enquanto pixels antigos do checkout ainda nao foram desligados. Remover a chave (ou qualquer outro valor) = envio normal.",
   "platforms": {
     "ga4": {
       "measurement_id": "G-ABC123DEF4"
@@ -25,7 +38,9 @@
       "conversion_label_contact": "AbCdEf123",
       "conversion_label_lead": "GhIjKl456",
       "conversion_label_initiate_checkout": "",
-      "conversion_label_purchase": ""
+      "conversion_label_purchase": "",
+      "_doc_renewal": "SaaS: id NUMERICO de uma SEGUNDA acao de importacao (UPLOAD_CLICKS), SECUNDARIA e com contagem 'Todas'. A acao de aquisicao precisa ser contagem 'Uma' para manter o lance limpo — e com ela o Google descarta a 2a conversao do mesmo clique (a renovacao some) ou, num clique novo, conta a renovacao como AQUISICAO. Sem este id, renovacao e reativacao sao barradas com `renewal_action_not_configured` no D1 — nunca sobem na acao de aquisicao.",
+      "conversion_action_id_renewal": ""
     },
     "sheets": {
       "_doc": "GAS universal v3: a aba de destino vai no parametro de controle `_sheet` (nao fica hardcoded no Apps Script). `sheet` = aba dos eventos web (leads/qualificacao). `purchase` = opt-in da planilha de VENDAS, uma linha por compra aprovada vinda do webhook do gateway; omita o bloco para nao planilhar vendas. `events: []` desliga o append dos eventos web sem desligar as vendas.",
@@ -68,9 +83,15 @@
     }
   },
   "triggers": {
+    "_lead_doc": "OPCIONAL. Sem `routes`, todo submit vira o evento `lead` (padrao historico). `type: \"disabled\"` desliga o evento de verdade (a captura de identidade — cookies marca_* e beacon `identify` — continua, porque identidade nao e conversao). Com `routes`, o evento e escolhido pela SLUG da pagina: necessario em app logado/SPA, onde cadastro, login, busca e recuperacao de senha tem submit identico no DOM e so a rota os separa. A 1a rota que casa vence; rota sem `match` e o default; `event: \"none\"` nao dispara nada; `match` casa por SUBSTRING no pathname (pipe = OU). Eventos disponiveis: lead, complete_registration (cadastro) e login (evento CUSTOM no Meta — aceita custom_data livre). `form_selector` (casa no <form>) e `field_selector` (casa num campo DENTRO do form) prendem o evento aos formularios certos — em SPA o id do form muda, mas o conjunto de campos nao. `confirm_success` {request_match, timeout_ms} ARMA o evento no submit e so dispara quando a requisicao casada responder 2xx (erro ou timeout descartam), para nao contar tentativa recusada pelo back-end como conversao; `request_match` aceita query string, o que separa o login real do refresh silencioso de sessao no mesmo endpoint.",
     "lead": {
       "type": "form_submit",
-      "selectors": { "elementor": true, "cf7": true, "generic": true }
+      "selectors": { "elementor": true, "cf7": true, "generic": true },
+      "routes": [
+        { "match": "login", "event": "login", "custom_data": { "method": "email" }, "confirm_success": { "request_match": "auth/v1/token?grant_type=password", "timeout_ms": 20000 } },
+        { "match": "esqueci-senha|redefinir-senha", "event": "none" },
+        { "event": "complete_registration", "field_selector": "[id$=sobrenome],[name$=sobrenome]", "confirm_success": { "request_match": "auth/v1/signup", "timeout_ms": 20000 } }
+      ]
     },
     "contact": {
       "type": "link_click",

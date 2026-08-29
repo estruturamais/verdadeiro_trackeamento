@@ -1,4 +1,4 @@
-/*! Verdadeiro Trackeamento v1.6.0 | criado por @estruturamais | https://instagram.com/estruturamais */
+/*! Verdadeiro Trackeamento v1.7.0 | criado por @estruturamais | https://instagram.com/estruturamais */
 (function() {
   'use strict';
 
@@ -838,6 +838,12 @@
     page_view:          { meta: 'PageView',          tiktok: 'Pageview',          ga4: 'page_view',       gads: null },
     contact:            { meta: 'Contact',            tiktok: 'Contact',           ga4: 'contact',         gads: 'contact' },
     lead:               { meta: 'Lead',               tiktok: 'SubmitForm',        ga4: 'generate_lead',   gads: 'lead' },
+    complete_registration: { meta: 'CompleteRegistration', tiktok: 'CompleteRegistration', ga4: 'sign_up', gads: 'complete_registration' },
+    // Evento CUSTOM no Meta (meta_custom): sai por fbq('trackSingleCustom', ...) em
+    // vez de 'trackSingle', e o custom_data vai cru (nao passa pelo whitelist do
+    // buildMetaEventData) — e assim que {method:'email'} chega ao Meta. Sem `gads`:
+    // login nao e conversao de campanha, so sinal de audiencia/exclusao.
+    login:              { meta: 'Login', meta_custom: true, tiktok: '',             ga4: 'login',           gads: '' },
     initiate_checkout:  { meta: 'InitiateCheckout',   tiktok: 'InitiateCheckout',  ga4: 'begin_checkout',  gads: null },
     purchase:           { meta: 'Purchase',            tiktok: 'Purchase',          ga4: 'purchase',        gads: 'purchase' }
   };
@@ -1058,12 +1064,20 @@
     }
   }
 
-  function fireTrigger(eventName, eventData) {
+  // `extraCustom` (opcional): propriedades custom da ROTA do form_submit
+  // (triggers.lead.routes[].custom_data, ex.: {method:'email'} no login). Entram no
+  // custom_data e, portanto, tambem no beacon que vai ao Worker.
+  function fireTrigger(eventName, eventData, extraCustom) {
     try {
       var event_id = generateEventId();
       var userData = getUserData(eventData);
       var browserData = getBrowserData();
       var customData = evaluateCustomData(__CONFIG__.custom_data || {});
+      if (extraCustom) {
+        for (var ck in extraCustom) {
+          if (extraCustom.hasOwnProperty(ck)) customData[ck] = extraCustom[ck];
+        }
+      }
       var names = EVENT_NAMES[eventName];
       if (!names) return;
 
@@ -1071,9 +1085,14 @@
       if (names.meta) {
         var metaPixelIds = getMetaPixelIds();
         if (metaPixelIds.length) {
-          var metaEventData = buildMetaEventData(userData, customData);
+          // Evento custom (ex.: Login) usa trackSingleCustom e leva o custom_data cru:
+          // o whitelist do buildMetaEventData existe para os eventos PADRAO, cujos
+          // parametros a Meta valida — num custom, ele apagaria as propriedades.
+          var metaCustom = !!names.meta_custom;
+          var metaEventData = metaCustom ? customData : buildMetaEventData(userData, customData);
+          var metaFn = metaCustom ? 'trackSingleCustom' : 'trackSingle';
           for (var mp = 0; mp < metaPixelIds.length; mp++) {
-            fbq('trackSingle', metaPixelIds[mp], names.meta, metaEventData, {eventID: event_id});
+            fbq(metaFn, metaPixelIds[mp], names.meta, metaEventData, {eventID: event_id});
           }
         }
       }
@@ -1188,12 +1207,194 @@
     }
   }
 
+  // ---- Roteamento do form_submit (`triggers.lead`) ---------------------------
+  //
+  // Ate aqui o `triggers.lead` do SITE_CONFIG era DECORATIVO: o serve-webjs mandava
+  // {type:'form_submit', selectors:{...}} e o client nunca lia nada disso — initForms
+  // rodava incondicionalmente e QUALQUER form da pagina virava 'lead'. Num SaaS, onde
+  // o script roda dentro do app logado, isso significa login, busca e recuperacao de
+  // senha entrando na campanha como cadastro (medido: 210 'lead'/dia misturando tudo).
+
+  function leadTriggerConfig() {
+    return (__CONFIG__ && __CONFIG__.triggers && __CONFIG__.triggers.lead) || {};
+  }
+
+  // `"lead": {"type": "disabled"}` desliga o evento de verdade. A captura de
+  // identidade (cookies marca_* e beacon `identify`) NAO depende deste gate — o
+  // vinculo e-mail <-> marca_user/fbp/fbc segue alimentando o user_store para o FDV
+  // merge do webhook de compra.
+  function leadEnabled() {
+    return leadTriggerConfig().type !== 'disabled';
+  }
+
+  // Dois gates opcionais, ambos por CSS, aceitos no trigger inteiro OU por rota
+  // (o da rota tem precedencia):
+  //   form_selector  — casa no proprio <form>  (ex.: "#formCadastro")
+  //   field_selector — casa em algum campo DENTRO do form (ex.: "[id$=sobrenome]")
+  // O `field_selector` existe porque form de SPA raramente tem id/classe estavel: o
+  // que identifica o formulario e o conjunto de campos dele. Combinado com o sufixo
+  // do id, o gate sobrevive a troca de prefixo e a mudanca das classes de estilo.
+  function leadFormMatches(form, route) {
+    try {
+      var t = leadTriggerConfig();
+      var r = route || {};
+      var formSel = r.form_selector || t.form_selector;
+      var fieldSel = r.field_selector || t.field_selector;
+      if (formSel && !(form && form.matches && form.matches(formSel))) return false;
+      if (fieldSel && !(form && form.querySelector && form.querySelector(fieldSel))) return false;
+      return true;
+    } catch(e) { return true; }
+  }
+
+  // Guard unico do evento: o mesmo preenchimento pode chegar por caminhos diferentes
+  // quase ao mesmo tempo (submit nativo + sucesso do Elementor + push no dataLayer).
+  // Uma janela curta garante um unico evento por preenchimento, venha de onde vier.
+  var _leadFiredAt = 0;
+  var LEAD_DEDUPE_MS = 15000;
+  function fireLeadOnce(formData, source, extraCustom, eventName) {
+    if (!leadEnabled()) {
+      if (__CONFIG__.debug || getUrlParam('debug') === '1') {
+        console.log('[Tracking] form_submit desligado no config (triggers.lead.type=disabled) — origem: ' + (source || '?'));
+      }
+      return false;
+    }
+    var now = Date.now();
+    if (_leadFiredAt && (now - _leadFiredAt) < LEAD_DEDUPE_MS) {
+      if (__CONFIG__.debug || getUrlParam('debug') === '1') {
+        console.log('[Tracking] form_submit ignorado (ja disparado ha <' + (LEAD_DEDUPE_MS / 1000) + 's) — origem: ' + (source || '?'));
+      }
+      return false;
+    }
+    _leadFiredAt = now;
+    fireTrigger(eventName || 'lead', formData, extraCustom);
+    return true;
+  }
+
+  // Roteamento por SLUG da pagina — `triggers.lead.routes`.
+  //
+  // Motivo: numa SPA o mesmo componente de formulario serve cadastro e login, com
+  // submit identico no DOM. O que separa os dois e a ROTA. Sem essa separacao, o
+  // login do assinante que ja existe entra na campanha de aquisicao como conversao.
+  //
+  // Formato (a primeira rota que casa vence; rota SEM `match` e o default):
+  //   "routes": [
+  //     { "match": "login",  "event": "login", "custom_data": { "method": "email" } },
+  //     { "match": "esqueci-senha|redefinir-senha", "event": "none" },
+  //     { "event": "complete_registration" }
+  //   ]
+  //
+  // `match` casa por SUBSTRING no pathname (pipe = OU), entao serve tanto /login
+  // quanto /minha-conta/login. `event: "none"` = pagina que nao gera evento nenhum.
+  // SEM `routes` no config, o comportamento historico e preservado (evento 'lead').
+  function resolveFormRoute() {
+    var routes = leadTriggerConfig().routes;
+    if (!routes || !routes.length) return { event: 'lead' };
+    var path = '';
+    try { path = String(window.location.pathname || '').toLowerCase(); } catch(e) {}
+    for (var i = 0; i < routes.length; i++) {
+      var r = routes[i] || {};
+      if (!r.match) return r;
+      var pats = String(r.match).toLowerCase().split('|');
+      for (var p = 0; p < pats.length; p++) {
+        var pat = pats[p].trim();
+        if (pat && path.indexOf(pat) !== -1) return r;
+      }
+    }
+    return null;
+  }
+
+  // ---- Confirmacao de sucesso do submit (SPA) --------------------------------
+  //
+  // O submit e apenas a TENTATIVA. Quem decide se a conta foi criada roda depois —
+  // parte no client (schema do form), parte no BACK-END (senha fraca recusada pelo
+  // provedor de auth, e-mail ja cadastrado, CPF invalido). Disparar no submit conta
+  // tentativa RECUSADA como conversao.
+  //
+  // A saida nao e alcancar a validacao — ela nem sempre esta no browser — e sim
+  // esperar o VEREDITO: a requisicao que de fato cria a conta (ou autentica). Com
+  // `confirm_success` na rota, o evento fica ARMADO no submit (os dados sao extraidos
+  // ali, antes de o form limpar) e so dispara quando essa requisicao responde 2xx.
+  // Resposta de erro descarta; silencio ate `timeout_ms` idem. Nunca dispara no escuro.
+  //
+  //   "confirm_success": { "request_match": "auth/v1/signup", "timeout_ms": 20000 }
+  //
+  // `request_match` casa por substring na URL e ACEITA QUERY STRING — necessario para
+  // separar `token?grant_type=password` (login de verdade) do refresh silencioso de
+  // sessao, que bate no MESMO endpoint com outro grant_type.
+  var _armedSubmit = null;
+
+  function debugOn() {
+    try { return !!(__CONFIG__.debug || getUrlParam('debug') === '1'); } catch(e) { return false; }
+  }
+
+  function armSubmitConfirmation(payload, confirm) {
+    var ttl = Number(confirm.timeout_ms) || 20000;
+    _armedSubmit = {
+      payload: payload,
+      match: String(confirm.request_match || ''),
+      expires: Date.now() + ttl
+    };
+    if (debugOn()) {
+      console.log('[Tracking] ' + payload.event + ' ARMADO — aguardando "' + _armedSubmit.match +
+        '" responder 2xx (ate ' + (ttl / 1000) + 's). Nada foi enviado ainda.');
+    }
+  }
+
+  function submitConfirmationMatches(url) {
+    if (!_armedSubmit) return false;
+    if (Date.now() > _armedSubmit.expires) {
+      if (debugOn()) console.log('[Tracking] ' + _armedSubmit.payload.event + ' DESCARTADO — sem resposta dentro do timeout');
+      _armedSubmit = null;
+      return false;
+    }
+    var u = String(url || '');
+    var pats = _armedSubmit.match.split('|');
+    for (var i = 0; i < pats.length; i++) {
+      var p = pats[i].trim();
+      if (p && u.indexOf(p) !== -1) return true;
+    }
+    return false;
+  }
+
+  function resolveSubmitConfirmation(ok, status) {
+    if (!_armedSubmit) return;
+    var armed = _armedSubmit;
+    _armedSubmit = null;
+    if (!ok) {
+      if (debugOn()) console.log('[Tracking] ' + armed.payload.event + ' DESCARTADO — a acao nao foi concluida (HTTP ' + status + ')');
+      return;
+    }
+    if (debugOn()) console.log('[Tracking] ' + armed.payload.event + ' CONFIRMADO (HTTP ' + status + ') — disparando agora');
+    fireLeadOnce(armed.payload.data, (armed.payload.source || '') + ':confirmado', armed.payload.custom_data, armed.payload.event);
+  }
+
+  // Ponto UNICO por onde todo submit de formulario passa (generico, Elementor, CF7,
+  // submit_success): resolve a rota e dispara o evento dela.
+  function fireFormSubmitEvent(formData, source, form) {
+    var route = resolveFormRoute();
+    var evName = route && route.event;
+    if (!evName || evName === 'none') {
+      if (debugOn()) console.log('[Tracking] form_submit sem evento para esta rota (' + window.location.pathname + ') — origem: ' + (source || '?'));
+      return false;
+    }
+    if (form && !leadFormMatches(form, route)) {
+      if (debugOn()) console.log('[Tracking] form_submit ignorado p/ ' + evName + ' (form fora do selector da rota) — cookies salvos');
+      return false;
+    }
+    // Rota com confirmacao: arma e espera o back-end responder (ver bloco acima).
+    if (route.confirm_success && route.confirm_success.request_match) {
+      armSubmitConfirmation({ event: evName, data: formData, custom_data: route.custom_data, source: source }, route.confirm_success);
+      return false;
+    }
+    return fireLeadOnce(formData, source, route.custom_data, evName);
+  }
+
   function initForms() {
     document.addEventListener('submit_success', function(event) {
       try {
         var formData = extractFormData(event.detail);
         saveUserCookies(formData);
-        fireTrigger('lead', formData);
+        fireFormSubmitEvent(formData, 'submit_success');
       } catch(e) {}
     });
 
@@ -1202,7 +1403,7 @@
         var inputs = event.detail && event.detail.inputs ? event.detail.inputs : [];
         var formData = extractCF7Data(inputs);
         saveUserCookies(formData);
-        fireTrigger('lead', formData);
+        fireFormSubmitEvent(formData, 'wpcf7');
       } catch(e) {}
     });
 
@@ -1220,7 +1421,7 @@
 
         var formData = extractGenericFormData(form);
         saveUserCookies(formData);
-        fireTrigger('lead', formData);
+        fireFormSubmitEvent(formData, 'submit', form);
       } catch(e) {}
     }, true);
 
@@ -1240,7 +1441,7 @@
         var fd = _elementorPendingFormData || {};
         _elementorPendingFormData = null;
         saveUserCookies(fd);
-        fireTrigger('lead', fd);
+        fireFormSubmitEvent(fd, 'elementor');
       } catch(e) {}
     }
 
@@ -1300,6 +1501,14 @@
       XMLHttpRequest.prototype.send = function(data) {
         var xhr = this;
         var dataStr = typeof data === 'string' ? data : '';
+        // confirm_success: e esta requisicao que o evento armado esta esperando?
+        // 2xx confirma e dispara; qualquer outra resposta (ou erro de rede) descarta.
+        try {
+          if (submitConfirmationMatches(xhr._rrUrl)) {
+            xhr.addEventListener('load', function() { resolveSubmitConfirmation(xhr.status >= 200 && xhr.status < 300, xhr.status); });
+            xhr.addEventListener('error', function() { resolveSubmitConfirmation(false, 0); });
+          }
+        } catch(eConfXhr) {}
         if ((xhr._rrUrl || '').indexOf('admin-ajax.php') !== -1 &&
             dataStr.indexOf('elementor_pro_forms_send_form') !== -1) {
           xhr.addEventListener('load', function() {
@@ -1320,6 +1529,14 @@
       var _origFetch = window.fetch;
       window.fetch = function(url, options) {
         var result = _origFetch.apply(this, arguments);
+        // confirm_success: aceita string OU objeto Request (SPA moderna usa os dois).
+        try {
+          var confUrl = typeof url === 'string' ? url : (url && url.url ? url.url : '');
+          if (submitConfirmationMatches(confUrl)) {
+            result.then(function(resp) { resolveSubmitConfirmation(resp && resp.ok, resp && resp.status); })
+                  .catch(function() { resolveSubmitConfirmation(false, 0); });
+          }
+        } catch(eConfFetch) {}
         try {
           var urlStr = typeof url === 'string' ? url : '';
           var body = options && options.body ? options.body : '';
@@ -1339,6 +1556,48 @@
   }
 
   try { initForms(); } catch(e) {}
+
+  // ============================================================
+  // MODULE 5b — Captura progressiva de identidade
+  // ============================================================
+  // Salva os cookies marca_* conforme o visitante preenche o form e, quando um
+  // e-mail valido e digitado, envia o beacon interno `identify` — que SO grava o
+  // user_store no Worker (nenhuma plataforma recebe; ver collect/event.js).
+  //
+  // Isso garante o vinculo e-mail <-> marca_user/fbp/fbc/gclid mesmo quando o submit
+  // nativo nao ocorre (checkout proprio, SPA que envia por fetch, abandono). E o que
+  // viabiliza o FDV merge por e-mail no Purchase — e, num SaaS, na RENOVACAO, que e
+  // 100% server-side e nao passa por navegador nenhum. Num app logado o proprio login
+  // faz esse trabalho todo dia, e a linha do user_store se renova (a retencao de 90d
+  // nunca vence para assinante ativo).
+  //
+  // NAO depende do gate `triggers.lead.type` — identidade nao e conversao.
+  function initIdentityCapture() {
+    var _lastIdentifiedEmail = '';
+    document.addEventListener('change', function(e) {
+      try {
+        var el = e.target;
+        if (!el || !el.tagName) return;
+        var tag = el.tagName;
+        if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') return;
+        var form = el.form || (el.closest ? el.closest('form') : null);
+        if (!form) return;
+        var fd = extractGenericFormData(form);
+        if (!fd.email && !fd.phone && !fd.name) return;
+        saveUserCookies(fd);
+        var email = (fd.email || '').toLowerCase().trim();
+        if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email !== _lastIdentifiedEmail) {
+          _lastIdentifiedEmail = email;
+          sendTrackingBeacon('identify', generateEventId(), getUserData(fd), getBrowserData(), {});
+          if (__CONFIG__.debug || getUrlParam('debug') === '1') {
+            console.log('[Tracking] identify beacon enviado (email capturado no form)');
+          }
+        }
+      } catch(err) {}
+    }, true);
+  }
+
+  try { initIdentityCapture(); } catch(e) {}
 
   // ============================================================
   // MODULE 7 — Qualification (lead_score multi-step) — aditivo

@@ -89,3 +89,24 @@ export async function upsertUserStore(db, data) {
 export async function getUserStore(db, marcaUser) {
   return db.prepare('SELECT * FROM user_store WHERE marca_user = ?').bind(marcaUser).first();
 }
+
+// Fallback do FDV merge quando o webhook NAO traz o indexador (`marca_user`):
+// compra organica/digitada, checkout proprio, e — sempre — a renovacao de
+// assinatura, que e 100% server-side e nunca passa por um navegador. Sem isto o
+// evento sai sem fbp/fbc/gclid/IP/UA, ou seja, sem atribuicao nenhuma.
+//
+// Casa pela linha MAIS RECENTE do mesmo e-mail: num SaaS o proprio login do app
+// renova essa linha todo dia, entao ela e a sessao mais util que existe.
+// Medido em producao: 2 de 90 webhooks traziam o indexador, e ainda assim 21
+// conversoes sairam com identidade — 19 recuperadas por aqui.
+//
+// COLLATE NOCASE cobre a base gravada antes da normalizacao. O indice de apoio
+// (idx_user_store_email) vem do schema.sql / migrations/005; sem ele a query ainda
+// funciona, so que com full scan.
+export async function getUserStoreByEmail(db, email) {
+  const normalized = String(email || '').trim().toLowerCase();
+  if (!normalized) return null;
+  return db.prepare(
+    'SELECT * FROM user_store WHERE email = ? COLLATE NOCASE ORDER BY updated_at DESC LIMIT 1'
+  ).bind(normalized).first();
+}

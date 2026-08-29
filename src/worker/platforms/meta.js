@@ -4,7 +4,13 @@ import { cleanSecret } from '../shared/helpers.js';
 const META_EVENT_NAMES = {
   page_view: 'PageView', contact: 'Contact', lead: 'Lead',
   initiate_checkout: 'InitiateCheckout', purchase: 'Purchase',
-  qualified_lead: 'QualifiedLead', disqualified_lead: 'DisqualifiedLead'
+  qualified_lead: 'QualifiedLead', disqualified_lead: 'DisqualifiedLead',
+  // Cadastro confirmado (evento padrao) e login. `Login` e evento CUSTOM no Meta: a
+  // CAPI aceita o nome cru em event_name, sem flag — a dedup com o
+  // fbq('trackSingleCustom') do navegador continua sendo pelo event_id.
+  // Ver triggers.lead.routes em src/web.js (SaaS: separar cadastro de login).
+  complete_registration: 'CompleteRegistration',
+  login: 'Login'
 };
 
 function cleanUserData(userData) {
@@ -133,10 +139,17 @@ export async function sendMetaCAPI(pixelId, accessToken, eventName, eventId, has
 
 export async function sendMetaCAPIWebhook(pixelId, accessToken, eventName, hashed, merged, env, siteId) {
   const token = cleanSecret(accessToken);
+  // event_id derivado da FATURA + produto (o txnId montado no webhook.js, =
+  // order_id + product_id) — nunca da assinatura (a renovacao seria descartada pela
+  // dedup da Meta: event_id + event_name, 48h) e nunca do order_id cru (o order bump
+  // chega com o MESMO order_id em webhook proprio, e o 2o evento seria descartado).
+  const eventId = merged.event_id
+    ? String(merged.event_id)
+    : (merged.order_id ? String(merged.order_id) : '');
   if (!pixelId || !token) {
     const missing = !pixelId ? 'pixel_id' : 'access_token';
     await logEvent(env.DB, {
-      site_id: siteId, event_name: eventName, event_id: '',
+      site_id: siteId, event_name: eventName, event_id: eventId,
       platform: 'meta_ads',
       channel: 'webhook', source: `${merged.gateway || 'unknown'}`,
       status_code: 0, request_ms: 0,
@@ -151,7 +164,7 @@ export async function sendMetaCAPIWebhook(pixelId, accessToken, eventName, hashe
   // Ver o guard equivalente em sendMetaCAPI: whitespace interno = credencial corrompida.
   if (/\s/.test(token)) {
     await logEvent(env.DB, {
-      site_id: siteId, event_name: eventName, event_id: '',
+      site_id: siteId, event_name: eventName, event_id: eventId,
       platform: 'meta_ads',
       channel: 'webhook', source: `${merged.gateway || 'unknown'}`,
       status_code: 0, request_ms: 0,
@@ -163,19 +176,27 @@ export async function sendMetaCAPIWebhook(pixelId, accessToken, eventName, hashe
     return;
   }
 
+  // Eventos monetizados: Purchase (padrao) e os de assinatura (SaaS) — Subscribe na
+  // aquisicao, SubscriptionRenewal/SubscriptionReactivation (eventos CUSTOM) nas
+  // cobrancas seguintes. Todos carregam value/currency.
+  const MONETIZED_EVENTS = ['Purchase', 'Subscribe', 'SubscriptionRenewal', 'SubscriptionReactivation'];
   const customData = {};
-  if (eventName === 'Purchase') {
+  if (MONETIZED_EVENTS.includes(eventName)) {
     if (merged.value) { customData.value = parseFloat(merged.value) || 0; }
     if (merged.currency) { customData.currency = merged.currency; }
     if (merged.product_name) { customData.content_name = merged.product_name; }
     if (merged.product_id) { customData.content_ids = [String(merged.product_id)]; }
     if (merged.order_id) { customData.order_id = String(merged.order_id); }
+    // Tipo de cobranca como propriedade custom arbitraria (base para Conversoes
+    // Personalizadas e breakdowns) — NAO usar content_category para isso.
+    if (merged.billing_type) { customData.billing_type = merged.billing_type; }
   }
 
   const payload = {
     data: [{
       event_name: eventName,
       event_time: Math.floor(Date.now() / 1000),
+      ...(eventId ? { event_id: eventId } : {}),
       event_source_url: merged.page_url || '',
       action_source: 'website',
       user_data: cleanUserData({
@@ -188,6 +209,9 @@ export async function sendMetaCAPIWebhook(pixelId, accessToken, eventName, hashe
         country: hashed.country ? [hashed.country] : [],
         zp: hashed.zip ? [hashed.zip] : [],
         external_id: hashed.external_id ? [hashed.external_id] : [],
+        // subscription_id liga a aquisicao as renovacoes da MESMA assinatura.
+        // Campo documentado da CAPI, com a regra oficial "Do not hash".
+        subscription_id: merged.subscription_id || '',
         client_ip_address: merged.ip || '',
         client_user_agent: merged.user_agent || '',
         fbp: merged.fbp || '',
@@ -230,7 +254,7 @@ export async function sendMetaCAPIWebhook(pixelId, accessToken, eventName, hashe
   }
 
   await logEvent(env.DB, {
-    site_id: siteId, event_name: eventName, event_id: '',
+    site_id: siteId, event_name: eventName, event_id: eventId,
     platform: 'meta_ads',
     channel: 'webhook', source: `${merged.gateway || 'unknown'}`,
     status_code: statusCode, request_ms: Date.now() - start,

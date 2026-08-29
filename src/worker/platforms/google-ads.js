@@ -316,11 +316,23 @@ export async function sendGoogleAdsWebhook(googleAdsConfig, hashed, merged, env,
   const start = Date.now();
   const source = `${merged.gateway || 'unknown'}`;
 
+  // SaaS: renovacao/reativacao NUNCA sobem na acao de aquisicao. A acao de aquisicao
+  // precisa ser contagem "Uma" (ONE_PER_CLICK) para manter o lance limpo — e com ela
+  // o Google DESCARTA a 2a conversao do mesmo clique (a renovacao some), ou, se o
+  // cliente clicou num anuncio novo antes de renovar, conta a renovacao como
+  // AQUISICAO, inflando a campanha. Por isso as recorrentes vao para uma acao
+  // propria: `conversion_action_id_renewal` (UPLOAD_CLICKS, secundaria, "Todas").
+  const billing = merged.billing_type || '';
+  const isRecurring = billing === 'renewal' || billing === 'reactivation';
+  const renewalActionId = cfg.conversion_action_id_renewal || '';
+  const logEventName = isRecurring ? `subscription_${billing}` : 'purchase';
+
   // NENHUM caminho de saida daqui pode dar `return` sem gravar log: um purchase que
   // some sem linha no D1 e indistinguivel de "nao houve venda" — foi assim que a
   // falha original passou despercebida.
   const registrar = (statusCode, errorMsg, sentPayload, responsePayload) => logEvent(env.DB, {
-    site_id: siteId, event_name: 'purchase', event_id: '',
+    site_id: siteId, event_name: logEventName,
+    event_id: merged.event_id ? String(merged.event_id) : (merged.order_id ? String(merged.order_id) : ''),
     platform: 'google_ads', channel: 'webhook', source,
     status_code: statusCode, request_ms: Date.now() - start,
     sent_payload: sentPayload || '',
@@ -335,11 +347,26 @@ export async function sendGoogleAdsWebhook(googleAdsConfig, hashed, merged, env,
       '(ID da conta do Google Ads, so digitos, sem hifens)', '', '');
   }
 
+  // Falhar de forma LEGIVEL quando a 2a acao nao esta configurada — nunca cair na
+  // acao errada. Subir renovacao na acao de aquisicao e pior do que nao subir:
+  // corrompe o CAC da campanha em vez de deixar um buraco visivel no relatorio.
+  if (isRecurring && !renewalActionId) {
+    return registrar(0, 'renewal_action_not_configured: preencha ' +
+      '`platforms.google_ads.conversion_action_id_renewal` (acao UPLOAD_CLICKS secundaria, ' +
+      'contagem "Todas") — renovacao/reativacao NAO sobe na acao de aquisicao', '', '');
+  }
+
   const { token, error: tokenError } = await getAccessToken(env);
   if (tokenError) return registrar(0, tokenError, '', '');
 
-  const { actionId, error: actionError } = await resolveConversionAction(cfg, env, 'purchase', token);
-  if (actionError) return registrar(0, actionError, '', '');
+  // Recorrente: id numerico direto do config (a acao de renovacao e de IMPORTACAO,
+  // nao tem rotulo — nao ha o que resolver). Aquisicao: cascata normal.
+  let actionId = renewalActionId ? String(renewalActionId) : '';
+  if (!isRecurring) {
+    const resolvido = await resolveConversionAction(cfg, env, 'purchase', token);
+    if (resolvido.error) return registrar(0, resolvido.error, '', '');
+    actionId = resolvido.actionId;
+  }
 
   const userIdentifiers = await buildUserIdentifiers(hashed, merged);
   const adIdentifiers = buildAdIdentifiers(merged);

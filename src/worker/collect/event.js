@@ -11,6 +11,22 @@ import { sendSheetsLead } from '../platforms/sheets.js';
 import { runCleanup } from '../shared/cleanup.js';
 import { dbWrite } from '../shared/db-write.js';
 
+// Origem (para o CORS) e dominio raiz (para o cookie) derivados da page_url do
+// beacon. Usado tanto pela resposta normal quanto pela do `identify`.
+function originDoBeacon(pageUrl) {
+  let origin = 'https://example.com';
+  let rootDomain = '';
+  try {
+    if (pageUrl) {
+      const u = new URL(pageUrl);
+      origin = u.origin;
+      const parts = u.hostname.split('.');
+      rootDomain = parts.length >= 2 ? '.' + parts.slice(-2).join('.') : u.hostname;
+    }
+  } catch (e) { /* fallback */ }
+  return { origin, rootDomain };
+}
+
 export async function handleCollectEvent(request, env, ctx) {
   // Cleanup proativo: roda em background em ~1% dos eventos de browser
   if (Math.random() < 0.01) {
@@ -79,6 +95,25 @@ export async function handleCollectEvent(request, env, ctx) {
     utm_term:     body.utm_data?.utm_term     || '',
     utm_content:  body.utm_data?.utm_content  || ''
   });
+
+  // 1.6 Evento interno `identify`: captura progressiva de identidade (e-mail digitado
+  // num form, login do app). Ele SO faz o upsert do user_store — que ja aconteceu
+  // acima — e nao vai a NENHUMA plataforma: nao e conversao, e o vinculo
+  // e-mail <-> marca_user/fbp/fbc/gclid que viabiliza o FDV merge por e-mail no
+  // Purchase (e, num SaaS, na renovacao, que e 100% server-side e nao tem navegador).
+  // A linha `platform='collect'` do passo 1.5 fica, para a auditoria enxergar o vinculo.
+  if (eventName === 'identify') {
+    const idOrigin = originDoBeacon(body.page_url);
+    return new Response(JSON.stringify({ status: 'ok', identify: true }), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': idOrigin.origin,
+        'Access-Control-Allow-Credentials': 'true',
+        'Set-Cookie': `marca_user=${marcaUser};Path=/;Max-Age=63072000;HttpOnly;SameSite=Lax;Secure${idOrigin.rootDomain ? ';Domain=' + idOrigin.rootDomain : ''}`
+      }
+    });
+  }
 
   // 2. Preparar dados hasheados
   const hashed = await hashPII({
@@ -149,16 +184,7 @@ export async function handleCollectEvent(request, env, ctx) {
   await Promise.allSettled(promises);
 
   // Response com Set-Cookie para renovar marca_user
-  let origin = 'https://example.com';
-  let rootDomain = '';
-  try {
-    if (body.page_url) {
-      const pageUrl = new URL(body.page_url);
-      origin = pageUrl.origin;
-      const parts = pageUrl.hostname.split('.');
-      rootDomain = parts.length >= 2 ? '.' + parts.slice(-2).join('.') : pageUrl.hostname;
-    }
-  } catch (e) { /* fallback */ }
+  const { origin, rootDomain } = originDoBeacon(body.page_url);
 
   return new Response(JSON.stringify({ status: 'ok' }), {
     status: 200,

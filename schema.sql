@@ -34,6 +34,17 @@ CREATE TABLE IF NOT EXISTS user_store (
   zip             TEXT
 );
 
+-- FDV merge por e-mail: quando o webhook de compra nao traz o indexador
+-- (compra organica/digitada, renovacao de assinatura que e 100% server-side),
+-- `getUserStoreByEmail` recupera a sessao pela linha mais recente do mesmo e-mail.
+-- Sem o indice o merge ainda funciona, mas faz full scan. Ver migrations/005.
+CREATE INDEX IF NOT EXISTS idx_user_store_email ON user_store (email);
+
+-- NOTA: a tabela `subscriptions` (SaaS por assinatura) NAO esta neste schema de
+-- proposito. Ela e criada por `migrations/004_add_subscriptions_table.sql`, e SO
+-- em projeto que liga `subscription_tracking` no SITE_CONFIG — num projeto de
+-- compra unica ela nunca receberia uma linha e ficaria orfa. Ver .claude/playbooks/saas.md.
+
 -- 4.3 Tabela events
 CREATE TABLE IF NOT EXISTS events (
   id            INTEGER PRIMARY KEY,

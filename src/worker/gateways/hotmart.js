@@ -33,6 +33,16 @@ export function parseHotmart(body) {
     ip: '',
     user_agent: '',
 
+    // --- Assinatura (SaaS) — consumido quando SITE_CONFIG.subscription_tracking liga ---
+    // O codigo do assinante e ESTAVEL por assinatura (o contrato); data.purchase.transaction
+    // acima e a FATURA e muda a cada cobranca. Trocar os dois faz toda renovacao cair no
+    // dedup e nunca chegar as plataformas.
+    subscription_id:   getNestedValue(body, 'data.subscription.subscriber.code') || '',
+    // recurrence_number pode NAO vir (ausente no payload de teste do painel) — opcional:
+    // sem ele, a decisao cai na tabela `subscriptions` (linha existente = renovacao).
+    charges_paid_hint: getNestedValue(body, 'data.purchase.recurrence_number'),
+    plan:              getNestedValue(body, 'data.subscription.plan.name') || '',
+
     // --- Extras da transacao (planilha de vendas; nao usados pelas plataformas de ads) ---
     offer_id: getNestedValue(body, 'data.purchase.offer.code') || '',
     // offer.name nem sempre vem no payload — fica vazio quando ausente
