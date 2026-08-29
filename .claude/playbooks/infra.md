@@ -50,6 +50,22 @@ Aguardar confirmacao antes de continuar.
 
 ### 0.2 — Adicionar o dominio na Cloudflare
 
+> 🛑 **ANTES DE QUALQUER COISA, pergunte: o site e servido por uma plataforma SaaS?**
+> (Lovable, Vercel, Netlify, Framer, Webflow, Bubble, Softr…)
+>
+> Se for, **e proibido ligar o proxy (nuvem laranja) em qualquer host da plataforma** —
+> apex, subdominio do app ou dominio proprio do checkout. Isso **derrubou um site em
+> producao**, e a validacao feita logo depois **passou** (HTTP 200, pagina real, sem
+> Error 1000/525/526): o teste imediato e **falso negativo**, nao aprovacao — a quebra
+> vem na reemissao do certificado do custom hostname, dias depois.
+>
+> Nesse caso use **obrigatoriamente a Opcao B** abaixo, com `track.{dominio}` como o
+> **unico** host laranja. Leia `.claude/references/saas-hospedado.md` **antes** de mexer
+> em DNS. Se o proxy ja estiver ligado e houver instabilidade, **voltar para nuvem
+> cinza e a PRIMEIRA acao**, antes de qualquer investigacao.
+>
+> Recomendacoes anteriores em sentido contrario estao **revogadas**.
+
 Perguntar ao cliente qual opcao prefere:
 
 **Opcao A — Migrar o dominio inteiro (recomendado):**
@@ -303,6 +319,7 @@ Apos verificacao bem-sucedida, atualizar o `tracking_memory.md`:
 4. **Nao continuar com erro** — se 0.11 falhar, diagnosticar antes de passar para o Step 1
 5. **Nunca referenciar `site_config` D1 table** — o mecanismo de config e `SITE_CONFIG` no `[vars]` do `wrangler.toml`. Para formato correto e bugs comuns: ver `.claude/references/site-config-format.md`
 6. **Opcao npm run** — sempre que existir script equivalente no `package.json`, mencionar como alternativa
+7. 🛑 **Nunca proxiar host servido por plataforma SaaS** — apex, app ou checkout servidos por Lovable/Vercel/Netlify/Framer/Webflow ficam **CINZA**. So `track.{dominio}` (`AAAA 100::`) fica laranja, e e nele que ficam TODAS as Worker Routes. Ligar o proxy num host da plataforma ja derrubou site em producao, e **"validei e ficou 200" nao conta como prova** — quebra depois. Detalhe, topologia e roteiro de rollback em `.claude/references/saas-hospedado.md`
 
 ---
 

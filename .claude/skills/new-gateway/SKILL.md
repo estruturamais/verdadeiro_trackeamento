@@ -58,8 +58,31 @@ Todo parser retorna exatamente este objeto. Campos sem dado disponivel: string v
   order_bump:     boolean | undefined, // boolean CRU (true/false/undefined) — quem consome decide o rotulo
   value_gateway:  number | string | '', // taxa retida pelo gateway
   value_net:      number | string | ''  // liquido do produtor (total = gateway + nosso)
+
+  // --- Assinatura (SaaS) — consumidos quando `subscription_tracking` esta ligado ---
+  // Preencher SOMENTE com payload real de renovacao em maos (ver Passo 1b).
+  subscription_id:   string,              // ESTAVEL por assinatura (o CONTRATO)
+  charges_paid_hint: number | undefined,  // contador de cobrancas do gateway
+  plan:              string               // nome do plano/oferta recorrente
 }
 ```
+
+> 🛑 **`subscription_id` NAO e `order_id`.** Num gateway de assinatura existem **dois**
+> identificadores, e trocá-los tem consequência oposta:
+>
+> | Campo | O que é | Comportamento |
+> |---|---|---|
+> | `order_id` | a **FATURA** | **muda** a cada cobrança |
+> | `subscription_id` | o **CONTRATO** | **igual** em todas as cobranças |
+>
+> Usar o estável como `order_id` faz **toda renovação cair no dedup** e nunca chegar às plataformas —
+> foi exatamente o bug encontrado na Ticto, onde `order.hash` (o "Código do Pedido") é o contrato e
+> `order.transaction_hash` é a fatura. O sintoma é cruel: a primeira cobrança funciona, e as
+> seguintes somem sem erro nenhum.
+>
+> **Gate de oferta recorrente:** se o painel também vende avulso, `subscription_id` só pode ser
+> preenchido quando a oferta **é** recorrente (na Ticto, `offer.is_subscription`). Sem o gate, venda
+> avulsa vira `Subscribe` e polui a tabela `subscriptions`.
 
 > **Extras: campo nao localizado no payload real fica FORA** (ou `''`/`undefined`) — a coluna
 > correspondente da planilha fica vazia e nada quebra. **Nunca inferir o caminho JSON de um extra**:
@@ -106,6 +129,82 @@ Ao aguardar a venda real (opcao C), o restante do VT (pagina, lead, initiate_che
 Recomendar **1 ou 2**. Na **2**, nada se perde: apos validar o parser, fazer o reenvio retroativo das vendas do intervalo seguindo `.claude/playbooks/reenvio_dados.md` (esse reenvio depende do endpoint `/collect/reprocess-selective` existir no projeto — o `reenvio_dados.md` verifica e avisa se faltar). Evitar a **3** — Purchase sem dado contamina a qualidade do evento e pode exigir retrabalho se o mapeamento "no escuro" estiver errado.
 
 Gravar a escolha do cliente no `tracking_memory.md`.
+
+---
+
+## Passo 1b — Protocolo de descoberta da RECORRENCIA (so em negocio por assinatura)
+
+Pule este passo se o negocio for de compra unica.
+
+**Cobertura hoje:** só **Ticto** e **Hotmart** têm a recorrência mapeada, com payload real. Os
+outros 10 gateways (Kiwify, Kirvano, Lastlink, Eduzz, Hubla, Green, Tutory, PagTrust, Payt,
+PerfectPay) têm compra aprovada, mas **não** têm assinatura.
+
+🛑 **Nunca infira os caminhos.** `subscription.id`, `subscription_code`, `contract_id`, `recurrence`,
+`charge_number` são todos plausíveis e todos falham em silêncio: a renovação sai classificada como
+aquisição, ou some no dedup, e nenhum log acusa. **Ler a documentação do gateway também não serve** —
+costuma estar desatualizada. O método é **comparar payloads reais**.
+
+### O que pedir ao cliente (bloco pronto)
+
+> Para o sistema saber diferenciar uma **assinatura nova** de uma **renovação**, preciso de três
+> coisas do painel do seu gateway:
+>
+> **1. Ligar os eventos que provavelmente estão desligados.** Normalmente só "venda aprovada" vem
+> marcado. Marque também:
+> - **renovação / cobrança recorrente** (nomes variam: "Assinatura renovada", "Cobrança recorrente",
+>   "Recorrência aprovada")
+> - **cancelamento de assinatura**
+>
+> **2. Me mandar 3 payloads reais** (o painel costuma ter "Ver histórico"/"Logs de webhook", ou eu
+> capturo pelo próprio VT):
+> - a **1ª cobrança** de uma assinatura nova
+> - a **renovação da MESMA assinatura** (a 2ª cobrança dela)
+> - um **cancelamento**
+>
+> **3. Me dizer como o produto está configurado no painel:** ele é um produto normal com pagamento
+> recorrente ativado, ou você precisou criar um produto do tipo **"assinatura"**? O formato do
+> webhook muda conforme isso, e é a diferença entre o sistema ler ou não ler a renovação.
+
+### Como ler os payloads
+
+Compare o payload **1** (1ª cobrança) com o **2** (renovação da mesma assinatura):
+
+```
+campo que MUDOU        -> order_id           (a fatura)
+campo que ficou IGUAL  -> subscription_id    (o contrato)
+campo que INCREMENTOU  -> charges_paid_hint  (contador de cobrancas)
+```
+
+O payload **3** (cancelamento) dá `CANCEL_EVENTS`: o campo/valor que identifica o evento, mais o
+caminho do identificador da assinatura e o do e-mail.
+
+⚠️ **O caminho do identificador pode MUDAR conforme o tipo de evento dentro do mesmo gateway.**
+Confirmado em produção: na Ticto, o caminho do código do assinante na compra **não** é o do
+cancelamento. Leia o caminho no payload **3**, não reaproveite o da compra.
+
+### Onde registrar
+
+```js
+// src/worker/gateways/{gateway}.js — dentro do objeto retornado
+subscription_id:   ehAssinatura ? getNestedValue(body, '{caminho REAL}') : '',
+charges_paid_hint: getNestedValue(body, '{caminho REAL}'),
+plan:              getNestedValue(body, '{caminho REAL}') || '',
+```
+
+```js
+// src/worker/gateways/index.js
+export const CANCEL_EVENTS = {
+  {gateway}: { field: '{campo}', value: '{valor}',
+               subscription_id_path: '{caminho REAL}', email_path: '{caminho REAL}' }
+};
+```
+
+**Registre com os caminhos reais e a data do payload que os comprovou.** Nunca deixe como
+"provavelmente é" — um comentário honesto (`// nao confirmado, falta payload de renovacao`) e o
+campo **fora** do parser é melhor do que um caminho chutado que parece funcionar.
+
+Depois de mapear, siga o `.claude/playbooks/saas.md` para ligar o modo.
 
 ---
 

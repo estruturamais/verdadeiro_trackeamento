@@ -19,7 +19,7 @@ zero até o tracking validado em produção.
 
 ## Versão
 
-**Versão atual: 1.6.0**
+**Versão atual: 1.7.0**
 
 Para saber qual versão uma instalação roda, pergunte ao assistente *"qual a versão do seu VT?"* — ele
 lê o número (a) deste README e do `package.json` e (b) **direto da Cloudflare**: na 1ª linha do script
@@ -27,6 +27,41 @@ servido em `https://{dominio}/tracking/web.js` (e no campo `vt_version` do confi
 (b) sobrevive mesmo que o usuário apague os arquivos locais. O histórico abaixo mapeia cada versão às
 novidades:
 
+- **1.7.0** — **SaaS por assinatura: recorrência, classificação da cobrança e recuperação de
+  identidade**. O VT deixa de tratar toda cobrança aprovada como uma venda nova. Com
+  `subscription_tracking` ligado, cada cobrança é classificada em **aquisição**, **renovação** ou
+  **reativação** — e cada uma vai para o evento e a ação de conversão certos: a Meta recebe
+  `Subscribe` / `SubscriptionRenewal` / `SubscriptionReactivation` (com `billing_type` em
+  `custom_data` e `subscription_id` em `user_data`), e o Google Ads roteia as recorrentes para uma
+  **segunda ação de conversão**, porque a de aquisição precisa ser contagem "Uma" — e com ela a
+  renovação no mesmo clique seria descartada, ou contaria como aquisição num clique novo. Sem a 2ª
+  ação, a recorrente é **barrada com log legível**; nunca sobe na ação errada. Na aquisição,
+  `subscription_events` aceita **array** (`["Purchase","Subscribe"]`), porque a Meta não deduplica
+  nomes diferentes: quem já otimiza por compra mantém o aprendizado e ganha o evento novo para teste.
+  O contrato dos parsers ganhou `subscription_id`, `charges_paid_hint` e `plan`, com a distinção que
+  custa a recorrência inteira — **`order_id` é a FATURA (muda a cada cobrança), `subscription_id` é o
+  CONTRATO (estável)**; usar o estável como número do pedido faz **toda renovação cair no dedup e
+  nunca chegar às plataformas**, que era exatamente o caso da Ticto. Mapeados com payload real em
+  **Ticto e Hotmart** (os outros 10 gateways têm um protocolo de descoberta na `/new-gateway` —
+  nunca inferir caminhos). Cancelamento passa a ser processado (`CANCEL_EVENTS`) sem despachar nada:
+  é o insumo da reativação. **Projeto misto** (parte assinatura, parte compra única no mesmo painel)
+  é resolvido por listas de `product_id`, e um ID não classificado vira **linha de aviso acionável no
+  D1**, nunca uma decisão no escuro. Como a renovação é 100% server-side, a identidade é recuperada
+  por **merge por e-mail** no `user_store` — alimentado pelo beacon interno `identify`, que dispara
+  quando um e-mail válido é digitado (num app logado, o login faz isso todo dia). Medido em produção:
+  2 de 90 webhooks traziam o indexador, e ainda assim 21 conversões saíram com identidade — 19
+  recuperadas por e-mail. `triggers.lead` **deixa de ser decorativo**: `type: "disabled"` passa a ser
+  lido de verdade, e `routes` roteia o submit por slug com `confirm_success`, que só dispara o evento
+  quando o back-end responde 2xx (num app, login e cadastro têm o mesmo submit — antes tudo virava
+  "Lead"; medido: 210/dia misturado → `lead` 27 + `login` 167). Novos: playbook `saas.md`,
+  reference `saas-hospedado.md` com a **regra bloqueante de nunca proxiar host servido por plataforma
+  SaaS** (ligar a nuvem laranja no apex **derrubou um site em produção**, e a validação imediata
+  passou — falso verde), `npm run subs:import` para semear a base legada e a seção **2.11** na
+  auditoria, com o **teto de atribuição** que evita o falso alarme (a atribuição da renovação começa
+  baixa por cobertura, não por defeito). Migrações: **005** (índice de e-mail, para todos) e **004**
+  (tabela `subscriptions`, **só** para projeto de assinatura — em compra única ela ficaria órfã, por
+  isso está fora do `schema.sql`). **Validado em produção**: em 6 dias, 9 aquisições, 77 renovações e
+  3 reativações classificadas e roteadas corretamente, zero falha de envio.
 - **1.6.0** — **Google Ads: conversão offline pela Data Manager API**. O `purchase` server-side no
   Google Ads deixa de ser um `501 TODO` e passa a subir de verdade — pelo único caminho que a Google
   ainda aceita: desde 2026 o `ConversionUploadService` está **bloqueado para integrações novas**
@@ -170,11 +205,11 @@ A ordem importa: **migração do banco antes do deploy do código**. O playbook 
 │   ├── workflow.md             # ★ Maestro: ciclo de onboarding, roteamento e regras
 │   ├── skills/                 # Skills user-invocáveis descobertas (new-gateway/, add-platform/, audit-tracking/)
 │   ├── playbooks/              # Playbooks lidos por caminho pelo workflow (overview, infra, plataformas)
-│   ├── references/             # Referências técnicas (formato de config, qualificação de lead, etc.)
+│   ├── references/             # Referências técnicas (formato de config, qualificação de lead, site em plataforma SaaS, etc.)
 │   └── memory_template.md      # Template do tracking_memory.md (estado entre sessões)
 │
-├── scripts/                    # Build (sync-webtemplate.mjs) + google-ads-oauth.mjs (refresh token do Google Ads)
-├── migrations/                 # Migrações de schema do D1
+├── scripts/                    # Build (sync-webtemplate.mjs) + google-ads-oauth.mjs + import-subscriptions.mjs
+├── migrations/                 # Migrações de schema do D1 (004 = tabela de assinaturas, opt-in)
 ├── schema.sql                  # Schema inicial do banco D1
 ├── config.example.json         # Exemplo do SITE_CONFIG (plataformas, gateways, qualificação)
 ├── wrangler.toml.example        # Exemplo da config do Worker (copiar para wrangler.toml)

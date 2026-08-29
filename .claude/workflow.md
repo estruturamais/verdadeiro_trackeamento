@@ -352,6 +352,7 @@ Apos o Step 1 (plataformas confirmadas no `tracking_memory.md`), carregar apenas
 | Google Ads            | `.claude/playbooks/google_ads.md`   |
 | Planilha (Sheets)     | `.claude/playbooks/planilha.md`     |
 | Atualizar instalacao  | `.claude/playbooks/atualizar.md`    |
+| **SaaS / assinatura** | `.claude/playbooks/saas.md`        |
 
 Skills de plataformas NAO confirmadas nunca sao carregadas — nao perguntar sobre elas.
 
@@ -428,6 +429,7 @@ workflow.md  (este arquivo — condutor)
      |        +-- .claude/playbooks/ga4.md           (se GA4 confirmado)
      |        +-- .claude/playbooks/google_ads.md    (se Google Ads confirmado)
      |        +-- .claude/playbooks/planilha.md      (se Planilha confirmada)
+     |        +-- .claude/playbooks/saas.md           (se o negocio for por ASSINATURA)
      |        +-- .claude/skills/new-gateway/SKILL.md (se gateway sem parser completo)
      |
      +-- .claude/skills/new-gateway/SKILL.md     (slash command /new-gateway)
@@ -563,6 +565,30 @@ dois"), **sem presumir** que planilha = leads. Se a mudanca exigir editar o `SIT
 aplicar antes a REGRA BLOQUEANTE de conta Cloudflare. Diferenciar de analise: **quer os dados caindo numa
 planilha → `planilha.md`; quer perguntar/entender os numeros → `analistamais`.** Nao exigir que o cliente
 saiba o nome da skill nem o comando.
+
+---
+
+### Acionamento por intencao (SaaS / assinatura)
+
+Quando aparecer qualquer sinal de **receita recorrente** — o cliente falar em "assinatura",
+"mensalidade", "recorrencia", "plano mensal/anual", "SaaS", "meus assinantes", "churn",
+"cancelamento", "renovacao"; o site ser um **app com login**; ou o painel do gateway ter oferta
+marcada como recorrente — carregar `.claude/playbooks/saas.md` e comecar pelo **Passo 1**.
+
+**Nao presuma que assinatura = tudo e assinatura.** Projeto **misto** (parte dos produtos por
+assinatura, parte compra unica no mesmo painel) e comum, e nele o VT precisa dos **IDs de produto**
+dos dois lados para decidir cobranca a cobranca. Isso e o Passo 1.1 do playbook.
+
+**Duas coisas para dizer ao cliente cedo, nao no fim:**
+1. A estrutura de assinatura esta **validada em producao na Ticto e na Hotmart**. Nos outros 10
+   gateways a recorrencia **nao esta mapeada** — antes de ligar, e preciso rodar `/new-gateway`
+   (protocolo de descoberta) com **payloads reais** dele: 1a cobranca, renovacao da MESMA assinatura
+   e cancelamento. Nunca inferir os caminhos.
+2. Na aquisicao, **perguntar** se ele quer so o evento de assinatura (`Subscribe`) ou **tambem**
+   `Purchase` — quem ja tem campanha otimizando compra normalmente quer os dois (Passo 1.2).
+
+Se o site for servido por plataforma SaaS (Lovable/Vercel/Netlify/Framer), ler
+`.claude/references/saas-hospedado.md` **antes** de mexer em DNS — a regra do proxy la e bloqueante.
 
 ---
 

@@ -58,6 +58,9 @@ todas essas causas se parecem (ausencia de linha), mas a solucao de cada uma e o
 | Tudo zerado | Sem trafego/compra real no periodo (ou fora dos 30 dias de retencao) | sim |
 | Google Ads com `0,00` conversao | Upload aceito **sem clique correspondente** (campanha parada, anuncio reprovado) — ver 2.10 | sim |
 | Google Ads sem conversao, D1 "verde" | `channel` errado no config: instalacao antiga em `server` grava `200` para evento de navegador que nunca disparou — ver 2.10 | sim |
+| **Nenhuma invocacao do Worker** (`wrangler tail` conecta e nao mostra nada), com rotas registradas | o host e servido por **plataforma SaaS** (Lovable/Vercel/Netlify/Framer) por custom hostname — o request nao entra na zona do cliente. 🛑 **Nunca "resolver" ligando o proxy no apex**: isso ja derrubou site em producao e a validacao imediata **passa mesmo assim**. Tracking so em `track.{dominio}` — ver `.claude/references/saas-hospedado.md` | sim |
+| **Site instavel/fora do ar** logo apos alguem ter ligado a nuvem laranja | Cloudflare na frente de Cloudflare com custom hostname. **Voltar para nuvem cinza e a PRIMEIRA acao**, antes de qualquer investigacao | sim |
+| Renovacao de assinatura "sumindo" | ver **2.11** (`subscription_tracking`, tabela ausente, id da assinatura usado como `order_id`) | depende |
 
 ### 0.1 Memoria como bussola + versao no ar
 
@@ -388,6 +391,101 @@ Ordem de checagem antes de culpar o VT:
    `com_gclid = 0` com trafego real → **nunca houve clique de anuncio**. Fecha o diagnostico: o
    problema esta na veiculacao, nao no tracking. (Coluna disponivel a partir da 1.6.0; em instalacao
    anterior, aplicar `migrations/003_add_gclid_columns.sql`.)
+
+### 2.11 SaaS por assinatura — os tres tipos de cobranca
+
+**Rodar so quando o baseline tiver `subscription_tracking` ligado.** Se o config nao tem a chave, o
+projeto e de compra unica: `Purchase` para tudo, a tabela `subscriptions` nem deve existir, e
+qualquer pergunta sobre renovacao aqui e ruido.
+
+**Antes de tudo — a tabela existe?**
+
+```sql
+SELECT COUNT(*) FROM subscriptions;
+```
+
+Erro `no such table` = `migrations/004_add_subscriptions_table.sql` **nao foi aplicada**. Sintoma no
+D1: `subscription_tracking` ligado no config e **nenhum** evento `Subscribe`/`SubscriptionRenewal` em
+`events` — toda cobranca saindo como `Purchase`. O tracking nao quebrou (o Worker avisa no
+`wrangler tail` e segue mandando `Purchase`), mas **renovacao esta contando como cliente novo**.
+Correcao: rodar a migration. Nao e preciso redeployar.
+
+**a) Os tres tipos aparecem, e todos com sucesso?**
+
+```sql
+SELECT event_name, COUNT(DISTINCT event_id) AS eventos, status_code
+  FROM events
+ WHERE channel = 'webhook'
+ GROUP BY event_name, status_code
+ ORDER BY event_name;
+```
+
+Esperado num negocio maduro: **muito mais renovacao do que aquisicao** (a base recorrente e maior que
+o fluxo de novos). Se `SubscriptionRenewal` = 0 depois de um ciclo inteiro de cobranca, o problema
+nao e de envio — e de o gateway nao estar mandando o evento de renovacao (ver `gateway-webhooks.md`)
+ou de o parser estar usando o id da assinatura como `order_id`, o que faz **toda renovacao cair no
+dedup** (a 1a cobranca funciona e as seguintes somem sem erro).
+
+**b) Alguma renovacao barrada por falta da 2a acao do Google?**
+
+```sql
+SELECT COUNT(*) FROM events WHERE error_message LIKE 'renewal_action_not_configured%';
+```
+
+Qualquer valor > 0: criar a acao `UPLOAD_CLICKS` **secundaria**, contagem **"Todas"**, e preencher
+`platforms.google_ads.conversion_action_id_renewal`. Ver `google_ads.md`. O conector **nunca** cai na
+acao de aquisicao — as conversoes barradas estao perdidas, mas a campanha nao foi corrompida.
+
+**c) Algum produto sem classificacao no projeto misto?**
+
+```sql
+SELECT error_message, COUNT(*) FROM events
+ WHERE platform = 'subscription' GROUP BY error_message;
+```
+
+`product_id_nao_classificado` = o id nao esta em `product_ids` nem em `product_ids_avulso` e foi
+tratado como compra unica. `subscription_id_ausente_em_produto_saas` = o config diz que e assinatura,
+mas o parser nao devolveu `subscription_id` (oferta nao marcada como recorrente no painel, ou gateway
+sem recorrencia mapeada).
+
+**d) ⚠️ O teto de atribuicao da renovacao — a consulta que evita o falso alarme**
+
+```sql
+SELECT (SELECT COUNT(*) FROM subscriptions WHERE lower(status) NOT LIKE 'cancel%') AS ativos,
+       (SELECT COUNT(*) FROM subscriptions s WHERE lower(s.status) NOT LIKE 'cancel%'
+          AND EXISTS (SELECT 1 FROM user_store u WHERE lower(u.email)=lower(s.email) AND u.email<>''))
+       AS identificados;
+```
+
+**A atribuicao de renovacao comeca baixa por COBERTURA, nao por defeito.** A renovacao e 100%
+server-side: nao ha navegador, e a identidade so existe se aquele assinante ja passou pelo site/app
+(login, lead, `identify`). No caso real que originou esta secao, **129 de 655 ativos identificados
+(19,7%)** produziram **16% de atribuicao** nas renovacoes — ou seja, o sistema entregava
+**praticamente tudo o que a cobertura permitia**, e a curva sobe sozinha conforme a base loga.
+
+> Antes de diagnosticar "atribuicao ruim", **compare a atribuicao com o teto**. Se a atribuicao esta
+> proxima de `identificados / ativos`, nao ha defeito: ha cobertura baixa, e o caminho e aumentar a
+> cobertura (garantir que o script roda no app logado), nao mexer no conector.
+
+**e) A semeadura do legado foi feita?**
+
+```sql
+SELECT origin, COUNT(*) FROM subscriptions GROUP BY origin;
+```
+
+Negocio que ja tinha assinantes antes do VT e **nenhuma** linha `legacy_import`: a primeira cobranca
+de cada assinante antigo foi (ou sera) classificada como **AQUISICAO** — pico fantasma de "clientes
+novos" no primeiro ciclo, e a reativacao de quem cancelou antes fica invisivel para sempre. Ver o
+Passo 4 do `.claude/playbooks/saas.md`.
+
+**f) O cliente reclamou que `SubscriptionRenewal` "nao existe" no Gerenciador?**
+
+Nao e bug. `SubscriptionRenewal` e `SubscriptionReactivation` sao **eventos personalizados**: nao
+aparecem como conversao padrao no Gerenciador de Eventos. Para otimizar por eles e preciso criar uma
+**Conversao Personalizada**. Confirme que os eventos estao chegando pela consulta (a) antes de
+qualquer outra investigacao.
+
+---
 
 **Docs de plataforma (leitura/interpretacao apenas — nao reexecutar setup; so as do baseline):**
 Meta → `.claude/playbooks/meta_ads.md` · TikTok → `.claude/playbooks/tiktok_ads.md` · GA4 →

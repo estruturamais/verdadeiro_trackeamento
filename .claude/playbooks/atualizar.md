@@ -47,6 +47,7 @@ negocio ("suas vendas passam a cair na planilha", nao "novo conector `sendSheets
 
 | Para chegar em | Acao de banco | Acao de config | Quebra algo? |
 |---|---|---|---|
+| **1.7.0** | `migrations/005_add_user_store_email_index.sql` (**todos**) + `migrations/004_add_subscriptions_table.sql` (**so** projeto de assinatura) | Opcional: `subscription_tracking` (ver abaixo) | Nao — ver "Mudancas de comportamento" |
 | **1.6.0** | `migrations/003_add_gclid_columns.sql` | Opcional: bloco `google_ads` (ver abaixo) | Nao — ver "Mudanca de comportamento" |
 | **1.2.0** | `migrations/002_add_utm_columns.sql` | — | Nao |
 | **1.1.x** | `migrations/001_drop_webhook_raw_unique.sql` | — | Nao |
@@ -54,7 +55,37 @@ negocio ("suas vendas passam a cair na planilha", nao "novo conector `sendSheets
 **Pulou versoes?** Rode as migracoes **em ordem crescente**, uma de cada vez, conferindo cada uma
 antes da proxima.
 
-### Mudanca de comportamento da 1.6.0 (unica ate hoje)
+### Mudancas de comportamento da 1.7.0
+
+Tres, todas correcoes de falha silenciosa. Nenhuma exige acao do cliente, mas **todas mudam numeros
+que ele pode estar olhando** — avise antes, nao depois.
+
+**1. `events.source` deixa de gravar `unknown` no webhook.** Ate a 1.6.0, toda linha de despacho de
+webhook (Meta, TikTok, GA4, Google Ads) gravava `source = "unknown"`, porque o nome do gateway nunca
+chegava ao objeto do merge. Agora grava o gateway de verdade. **Se o cliente tem consulta, relatorio
+ou planilha filtrando por `source = "unknown"`, ela para de retornar linhas** — o filtro correto
+passa a ser o nome do gateway. Dados antigos ficam como estao.
+
+**2. O `Purchase` do webhook passa a levar `event_id`.** Antes o caminho de webhook nao mandava
+`event_id` nenhum a Meta, entao **nao existia** dedup entre navegador e servidor na compra. Agora o
+evento leva `order_id + product_id`. Efeito pratico: reenvio do mesmo pedido pelo gateway deixa de
+virar duas conversoes. Order bump continua contando separado (por isso o sufixo do produto).
+
+**3. FDV merge por e-mail.** Quando o webhook de compra **nao** traz o indexador (`marca_user`), o
+Worker agora procura a sessao pela linha mais recente do mesmo e-mail no `user_store`. So roda no
+caso em que, antes, o evento sairia **sem identidade nenhuma** — nenhum caminho que ja funcionava
+muda. O cliente vai ver a atribuicao subir em compras organicas/digitadas.
+
+**Ticto, atencao especifica:** o `order_id` passa a ser `order.transaction_hash` (o *Codigo da
+Ultima Transacao*, TPC…) em vez de `order.hash` (o *Codigo do Pedido*, TOC…/TOP…). E isso que faz a
+renovacao de assinatura existir — com o codigo do pedido, que **repete** em todas as cobrancas, toda
+renovacao caia no dedup e nunca chegava as plataformas. Consequencias: a coluna `order_id` da
+planilha de vendas e do D1 passa a mostrar o codigo da transacao (avise quem reconcilia com o painel
+da Ticto), e a chave de dedup muda — na janela do deploy, um pedido antigo **reenviado manualmente**
+pelo gateway poderia ser despachado uma segunda vez. Gateway nao reenvia sozinho pedido que ja
+recebeu `200`, entao na pratica isso so acontece se alguem reenviar a mao.
+
+### Mudanca de comportamento da 1.6.0
 
 O default de `platforms.google_ads.channel` passou de `server` para `web`.
 
@@ -106,7 +137,40 @@ Deve listar `gclid`, `wbraid`, `gbraid`.
 > Google Ads perde a atribuicao por clique, o resto do tracking segue intacto. Rode a migracao depois
 > e ela volta a funcionar sozinha, sem novo deploy.
 
+### As duas migracoes da 1.7.0
+
+**`005_add_user_store_email_index.sql` — para TODOS.** Cria o indice de e-mail no `user_store`, que
+sustenta o FDV merge por e-mail. `CREATE INDEX IF NOT EXISTS` e **idempotente**: rodar duas vezes nao
+e erro. Sem ela o merge ainda funciona, so que com full scan da tabela — e otimizacao, nao
+pre-requisito.
+
+```bash
+npx wrangler d1 execute tracking_db --file=./migrations/005_add_user_store_email_index.sql --remote
+```
+
+**`004_add_subscriptions_table.sql` — SO em projeto de assinatura.** Cria a tabela `subscriptions`.
+
+> 🛑 **Nao rode a 004 em projeto de compra unica.** A tabela nunca receberia uma linha e ficaria
+> orfa — e o cleanup diario nao a limpa, de proposito. Por isso ela **nao** esta no `schema.sql`:
+> instalacao nova de infoproduto nao a recebe.
+
+```bash
+npx wrangler d1 execute tracking_db --file=./migrations/004_add_subscriptions_table.sql --remote
+npx wrangler d1 execute tracking_db --remote --command "SELECT COUNT(*) FROM subscriptions"
+```
+
+> **Ligou `subscription_tracking` e esqueceu a 004?** O tracking **nao quebra**: o Worker detecta a
+> tabela ausente, avisa **uma vez** no log com o comando exato e segue mandando `Purchase`. Voce
+> perde a classificacao (renovacao contando como cliente novo), nunca a venda. Rode a migracao depois
+> e volta a funcionar sozinha, sem novo deploy — igual ao caso do `gclid`.
+
 ## Passo 5 — Config novo (so o que a versao pede)
+
+**A 1.7.0 nao exige config novo.** Sem `subscription_tracking`, tudo continua como antes: toda
+cobranca sai como `Purchase` e a tabela `subscriptions` nem precisa existir. **So ligue o modo de
+assinatura se o negocio for por recorrencia** — nesse caso, carregue `.claude/playbooks/saas.md` e
+siga o Passo 1 de la (inclui a pergunta obrigatoria sobre o evento de aquisicao e, em projeto misto,
+a coleta dos IDs de produto SaaS x avulso).
 
 A 1.6.0 nao exige config novo. **Se o cliente usa Google Ads e quer a conversao de compra
 server-side**, ai sim carregar `.claude/playbooks/google_ads.md` e coletar `customer_id`,

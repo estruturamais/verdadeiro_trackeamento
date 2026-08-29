@@ -293,6 +293,58 @@ rm secrets.json                          # PowerShell: Remove-Item secrets.json 
 
 ---
 
+## SaaS por assinatura: DUAS acoes de conversao, nao uma
+
+So se aplica quando `subscription_tracking` esta ligado (ver `.claude/playbooks/saas.md`).
+
+**O problema.** A acao de aquisicao precisa ser contagem **"Uma"** (`ONE_PER_CLICK`) para manter o
+lance limpo. Mas assim **a renovacao no mesmo `gclid` e descartada** — e, se o cliente clicar num
+anuncio novo antes de renovar, a renovacao conta como **AQUISICAO**, inflando a campanha. Uma acao so
+erra nos dois sentidos.
+
+**A solucao.** Duas acoes `UPLOAD_CLICKS` separadas, com roteamento no conector:
+
+| `billing_type` | Acao | Configuracao no painel |
+|---|---|---|
+| `new` | `conversion_action_id_purchase` | **primaria**, contagem **"Uma"** |
+| `renewal` · `reactivation` | `conversion_action_id_renewal` | **secundaria**, contagem **"Todas"** |
+
+```json
+"conversion_action_id_purchase": "7654321",
+"conversion_action_id_renewal":  "7654399"
+```
+
+`renewal` e `reactivation` **nunca** sobem na acao de aquisicao. Sem
+`conversion_action_id_renewal`, o conector **falha de forma legivel** e grava no D1:
+
+```
+renewal_action_not_configured: preencha `platforms.google_ads.conversion_action_id_renewal`
+(acao UPLOAD_CLICKS secundaria, contagem "Todas") — renovacao/reativacao NAO sobe na acao de aquisicao
+```
+
+O log usa `event_name = subscription_renewal` / `subscription_reactivation` (em vez de `purchase`),
+entao da para separar os tres tipos de cobranca por uma consulta so no `events`.
+
+### Como criar a 2a acao (passos no painel)
+
+1. **Metas > Conversoes > Nova acao de conversao > Importar > Importacoes manuais (API)**
+2. Nome sugerido: `[VT] Renovacao de assinatura`
+3. Categoria: **Assinatura** (`SUBSCRIBE_PAID`) ou "Outra"
+4. **Contagem: "Todas"** — cada renovacao e uma conversao real, diferente da aquisicao
+5. **Objetivo: secundaria** (nao entra no lance)
+6. Copiar o id numerico — ele aparece na tela como **"Codigo do tipo de conversao"**, e tambem no
+   `ctId=` da URL
+
+> ⚠️ **Higiene obrigatoria do Smart Bidding.** Com lance inteligente, o algoritmo persegue **todas**
+> as acoes marcadas como **primarias**. Se a renovacao ficar primaria, a campanha passa a otimizar
+> por receita recorrente que ela nao gerou, e o CAC do relatorio afunda sozinho. **Rebaixe a
+> secundarias tudo o que nao for a compra que voce quer comprar.**
+>
+> As acoes de conversao do **YouTube geradas pelo sistema** sao `MUTATE_NOT_ALLOWED` pela API — so
+> da para rebaixa-las **pela UI**.
+
+---
+
 ## Armadilhas (leia antes de abrir um chamado)
 
 **1. `EXCELLENT` no diagnostico e `0,00` no relatorio.** Estado **normal**. O Google Ads so reporta

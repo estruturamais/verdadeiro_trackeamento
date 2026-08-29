@@ -37,6 +37,60 @@ O JSON expandido:
 
 ---
 
+## Blocos de assinatura (SaaS) — todos opt-in
+
+Nenhum deles existe em projeto de compra unica. **Omitidos, o comportamento e exatamente o de
+antes**: toda cobranca aprovada sai como `Purchase` e a tabela `subscriptions` nem precisa existir.
+
+| Chave | Onde | O que faz |
+|---|---|---|
+| `subscription_tracking` | raiz | Liga a classificacao `new`/`renewal`/`reactivation`. Aceita `true` (todo produto e assinatura) ou o objeto `{ enabled, product_ids, product_ids_avulso }`. **Exige `migrations/004`** — sem a tabela o Worker avisa no log e segue mandando `Purchase`. |
+| `subscription_events` | raiz | Nome do evento Meta por tipo de cobranca. Aceita **string ou array**. Defaults: `new: "Subscribe"`, `renewal: "SubscriptionRenewal"`, `reactivation: "SubscriptionReactivation"`. |
+| `purchase_dispatch` | raiz | `"shadow"` roda o pipeline inteiro e grava no `events` o que **teria** sido enviado, sem enviar nada. |
+| `conversion_action_id_renewal` | `platforms.google_ads` | Id numerico da 2a acao de conversao (renovacao/reativacao). Sem ele, recorrente e barrada com `renewal_action_not_configured` — nunca sobe na acao de aquisicao. |
+| `triggers.lead.routes` | `triggers.lead` | Roteia o `form_submit` por slug (app logado/SPA). Ver abaixo. |
+
+```jsonc
+{
+  "subscription_tracking": {
+    "enabled": true,
+    "product_ids": ["7194235"],          // os que SAO assinatura
+    "product_ids_avulso": ["8801122"]    // os de compra unica (projeto MISTO)
+  },
+  "subscription_events": { "new": ["Purchase", "Subscribe"] },
+  "triggers": {
+    "lead": {
+      "routes": [
+        { "match": "login", "event": "login", "custom_data": { "method": "email" },
+          "confirm_success": { "request_match": "auth/v1/token?grant_type=password", "timeout_ms": 20000 } },
+        { "match": "esqueci-senha", "event": "none" },
+        { "event": "complete_registration",
+          "field_selector": "[id$=sobrenome]",
+          "confirm_success": { "request_match": "auth/v1/signup", "timeout_ms": 20000 } }
+      ]
+    }
+  }
+}
+```
+
+**Precedencia no projeto misto:** as listas MANDAM quando informadas — `product_ids_avulso` primeiro,
+depois `product_ids`. Um `product_id` que nao esteja em nenhuma das duas e tratado como **compra
+unica** e gera uma linha de aviso no D1 (`platform='subscription'`). Sem as listas, decide o sinal do
+payload do gateway.
+
+**`triggers.lead`:** ate a 1.6.0 o bloco era **decorativo** — `type` e `selectors` nao eram lidos por
+ninguem e todo form da pagina virava `lead`. A partir da 1.7.0:
+- `"type": "disabled"` desliga o evento **de verdade** (os cookies `marca_*` e o beacon `identify`
+  continuam — identidade nao e conversao);
+- `routes[]` escolhe o evento pela **slug** (`match` = substring do pathname, pipe = OU; 1a que casa
+  vence; sem `match` = default; `event: "none"` nao dispara nada);
+- `form_selector` / `field_selector` (no trigger ou na rota) prendem o evento aos forms certos;
+- `confirm_success` arma o evento no submit e so dispara no **2xx** da requisicao casada —
+  `request_match` aceita **query string**, o que separa o login real do refresh de sessao.
+- **Sem `routes`, o comportamento historico e preservado** (todo submit vira `lead`).
+
+---
+
 ## Como getConfig() le o SITE_CONFIG
 
 O Worker tem dois caminhos de leitura de config:

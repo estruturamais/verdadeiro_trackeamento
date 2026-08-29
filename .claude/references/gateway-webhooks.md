@@ -27,6 +27,49 @@ tabela do `overview.md` Step 5. Para o que o parser espera no payload, ver `APPR
 
 ---
 
+## Excecao: negocio por ASSINATURA (SaaS)
+
+A regra "so o evento de compra aprovada" vale para **compra unica**. Num negocio por assinatura, com
+`subscription_tracking` ligado, e preciso marcar **mais dois** eventos no painel — e eles normalmente
+vem **desligados**:
+
+| Evento | Por que e necessario |
+|---|---|
+| **renovacao / cobranca recorrente** | sem ele, so a 1a cobranca chega; as renovacoes nao existem para o VT |
+| **cancelamento de assinatura** | nao e evento de anuncio e nao despacha nada — e o **insumo da REATIVACAO**. Sem ele, quem cancelou e voltou e classificado como renovacao e o win-back fica invisivel |
+
+### Os dois identificadores (o erro que custa toda a recorrencia)
+
+| Campo do parser | O que e | Comportamento |
+|---|---|---|
+| `order_id` | a **FATURA** | **muda** a cada cobranca |
+| `subscription_id` | o **CONTRATO** | **igual** em todas as cobrancas |
+
+Usar o estavel como `order_id` faz **toda renovacao cair no dedup** e nunca chegar as plataformas.
+A primeira cobranca funciona e as seguintes somem sem erro nenhum — nao ha log que acuse.
+
+| Gateway | `order_id` (fatura) | `subscription_id` (contrato) | `charges_paid_hint` |
+|---|---|---|---|
+| **Ticto** | `order.transaction_hash` (TPC…) | `order.hash` (TOC…/TOP…, o "Codigo do Pedido") — **so** se `offer.is_subscription` | `subscriptions[0].successful_charges` (inclui a atual) |
+| **Hotmart** | `data.purchase.transaction` | `data.subscription.subscriber.code` | `data.purchase.recurrence_number` (pode nao vir) |
+| demais 10 | — | ❌ **nao mapeado** | ❌ |
+
+**Cancelamento** (payload BRUTO — o parser de compra nao roda nesses eventos):
+
+| Gateway | Evento | Caminho do id | Caminho do e-mail |
+|---|---|---|---|
+| Ticto | `status = subscription_canceled` | `order.hash` | `customer.email` |
+| Hotmart | `event = SUBSCRIPTION_CANCELLATION` | `data.subscriber.code` | `data.subscriber.email` |
+
+⚠️ O caminho do identificador **muda conforme o tipo de evento** dentro do mesmo gateway — na Ticto,
+o caminho do codigo do assinante na compra **nao** e o do cancelamento. Nunca reaproveite sem
+conferir no payload real.
+
+Para os 10 gateways sem mapeamento, rode o **Passo 1b** da skill `new-gateway` (protocolo de
+descoberta por comparacao de payloads). **Nao inferir caminhos.**
+
+---
+
 ## Ticto
 
 - **Evento a marcar:** `Venda Realizada`

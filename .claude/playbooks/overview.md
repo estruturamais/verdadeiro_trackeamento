@@ -95,6 +95,37 @@ Apos resposta:
 - Registrar pixels espelho (sim/nao + lista de IDs) no `tracking_memory.md`
 - Informar que as skills especializadas foram carregadas para cada plataforma confirmada
 
+### 1.1 — Modelo de receita: compra unica ou ASSINATURA?
+
+Pergunta obrigatoria em todo projeto com gateway. A resposta muda o tracking inteiro, e descobrir
+isso no Step 5 custa refazer config e migracao:
+
+> "Como voce cobra pelos seus produtos?
+>
+> **A** — Compra unica (o cliente paga uma vez e pronto)
+> **B** — Assinatura / mensalidade (cobranca recorrente)
+> **C** — Os dois: tenho produtos de assinatura E produtos de compra unica"
+
+- **A** → segue o fluxo normal. **Nao** carregar o `saas.md`, **nao** rodar a migration 004 (a tabela
+  ficaria orfa), **nao** ligar `subscription_tracking`. Nada muda.
+- **B** ou **C** → carregar `.claude/playbooks/saas.md` e seguir o **Passo 1** de la antes do Step 2.
+  Gravar `modelo_receita` no `tracking_memory.md`.
+
+Em **C** (projeto misto) e preciso coletar os **IDs de produto** dos dois grupos — sem eles o VT
+decide pelo sinal do payload, que nem todo gateway manda. O bloco pronto esta no `saas.md` (Passo 1.1).
+
+Duas coisas para dizer ao cliente **agora**, nao no fim:
+
+1. A estrutura de assinatura esta **validada em producao na Ticto e na Hotmart**. Nos outros 10
+   gateways a recorrencia **nao esta mapeada** — antes de ligar, e preciso rodar `/new-gateway`
+   (Passo 1b) com payloads **reais** dele: 1a cobranca, renovacao da MESMA assinatura e cancelamento.
+   Tambem sera preciso alinhar com ele **como o produto esta configurado no painel** (produto normal
+   com recorrencia ligada x produto do tipo "assinatura") e **quais eventos de webhook** ativar —
+   normalmente so "venda aprovada" vem marcado.
+2. Na aquisicao, **perguntar** se ele quer so o evento de assinatura (`Subscribe`) ou **tambem**
+   `Purchase` — quem ja tem campanha otimizando compra normalmente quer os dois (Passo 1.2 do
+   `saas.md`).
+
 ---
 
 ## Step 2 — Analise do site e mapeamento de eventos

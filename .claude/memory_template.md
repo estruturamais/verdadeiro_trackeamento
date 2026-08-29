@@ -27,6 +27,17 @@
 - dominio: {valor}
 - cms_detectado: {valor}
 - modelo: infoproduto | negocio_local
+- modelo_receita: compra_unica | assinatura | misto   <!-- Step 1.1. assinatura/misto => carregar playbooks/saas.md, rodar migrations/004 e ligar subscription_tracking. compra_unica => NAO criar a tabela subscriptions (ficaria orfa). -->
+- plataforma_hospedagem: {valor}     <!-- Lovable | Vercel | Netlify | Framer | Webflow | WordPress | outro. Se for plataforma SaaS: NENHUM host dela pode ficar laranja; tracking so em track.{dominio}. Ver references/saas-hospedado.md. -->
+- assinatura:                        <!-- so quando modelo_receita = assinatura | misto -->
+  - gateways_com_recorrencia: [{ticto}]   <!-- so ticto e hotmart tem a recorrencia mapeada; outros exigem /new-gateway Passo 1b com payload real -->
+  - product_ids_saas: [{id}]              <!-- projeto misto: os que SAO assinatura -->
+  - product_ids_avulso: [{id}]            <!-- projeto misto: os de compra unica -->
+  - evento_aquisicao: Subscribe | [Purchase, Subscribe]   <!-- decidido COM o cliente (saas.md Passo 1.2) -->
+  - conversion_action_id_renewal: {id}    <!-- 2a acao do Google Ads (UPLOAD_CLICKS, secundaria, "Todas") -->
+  - conversoes_personalizadas_meta: nao | sim  <!-- SubscriptionRenewal/Reactivation sao eventos CUSTOM; o cliente precisa cria-las no Gerenciador -->
+  - base_legada_semeada: nao | sim ({data})    <!-- CSV incluindo os CANCELADOS; npm run subs:import -->
+  - migration_004_aplicada: nao | sim
 - tipo_site: tradicional | spa | misto   <!-- spa/misto quando ha funil de quiz cujo botao de compra copia window.location.search p/ o checkout (Next.js/React/XQuiz/InLead). 'misto' = tradicional + quiz em slugs/subdominios especificos. Decidido pela pergunta A/B/C do Step 2. -->
 - spa_mode_locations:                     <!-- so quando ha funil de quiz: cada slug/subdominio de quiz + o gateway que ele usa (pre-fixa o indexador do marca_user). Vira spa_mode.locations no SITE_CONFIG. -->
   - match: {/quiz  ou  quiz.seusite.com}
