@@ -19,7 +19,7 @@ zero até o tracking validado em produção.
 
 ## Versão
 
-**Versão atual: 1.7.0**
+**Versão atual: 1.8.0**
 
 Para saber qual versão uma instalação roda, pergunte ao assistente *"qual a versão do seu VT?"* — ele
 lê o número (a) deste README e do `package.json` e (b) **direto da Cloudflare**: na 1ª linha do script
@@ -27,6 +27,28 @@ servido em `https://{dominio}/tracking/web.js` (e no campo `vt_version` do confi
 (b) sobrevive mesmo que o usuário apague os arquivos locais. O histórico abaixo mapeia cada versão às
 novidades:
 
+- **1.8.0** — **Meta Pixel servido pelo próprio domínio (proxy first-party)**. O `fbevents.js`, a
+  config do pixel, os plugins e o beacon `/tr` passam a ser servidos por `{dominio}/fb/*`, no mesmo
+  modelo do proxy do GA4. `connect.facebook.net` e `facebook.com/tr` estão em toda lista de bloqueio,
+  e para esse visitante o `fbq` ficava só o stub da fila — nenhum evento de navegador saía e o cookie
+  `_fbp` (que só o `fbevents.js` cria) nunca existia, então até a CAPI do VT ia sem `fbp`. Agora o
+  script carrega, o `_fbp` nasce, o evento de navegador chega deduplicado com o da CAPI pelo mesmo
+  `event_id`, e a URL da Meta some do inspecionar. O Worker reescreve dentro dos scripts os literais
+  que a Meta embute (`CDN_BASE_URL`, que é também o que o guard interno "Disallowed script URL"
+  valida, e o endpoint do `/tr`), sem tocar em `instagram.com/tr`, na Topics API nem no Gateway pago
+  da Meta. O nome `sdk.js` é de propósito: a EasyPrivacy tem regra **genérica** `/fbevents.js`, então
+  `/fb/fbevents.js` seria bloqueado igual — os caminhos foram conferidos contra EasyList,
+  EasyPrivacy, uBlock e AdGuard. **Opt-in** por `platforms.meta.pixel_proxy` (default `true` na
+  instalação nova; ausente = tudo como antes, nenhuma route nova exigida), com o modo `"script"` como
+  recuo, porque o modo completo tem um trade-off honesto: o `/tr` sai do edge da Cloudflare e a Meta
+  deixa de ver o IP e os cookies de login do Facebook no evento de **navegador** do visitante sem
+  bloqueador (a CAPI segue com IP real, `fbp`, `fbc`, `external_id` e dados hasheados) — o critério
+  de avaliação é o Event Match Quality antes e depois. Instalação antiga que ligar a flag sem a route
+  `/fb/*` **não perde o pixel**: o `web.js` detecta o `sdk.js` falhando (404, ou HTML 200 num host
+  SaaS) e carrega `connect.facebook.net` direto uma vez, com `console.warn` dizendo o que falta. A base
+  do proxy é absoluta (o host de onde o `web.js` foi servido), então funciona igual na raiz e em
+  `track.{dominio}`. Sem migração de banco. Verificado com o `fbevents.js` real (v2.9.393): nenhum
+  `https://connect.facebook.net/` sobra no script servido, e o guard interno passa.
 - **1.7.0** — **SaaS por assinatura: recorrência, classificação da cobrança e recuperação de
   identidade**. O VT deixa de tratar toda cobrança aprovada como uma venda nova. Com
   `subscription_tracking` ligado, cada cobrança é classificada em **aquisição**, **renovação** ou
@@ -197,7 +219,7 @@ A ordem importa: **migração do banco antes do deploy do código**. O playbook 
 │       ├── collect/            # Ingestão: event.js (beacon do browser) e webhook.js (gateways)
 │       ├── gateways/           # Um parser por gateway + index.js (GATEWAY_PARSERS/APPROVAL_EVENTS)
 │       ├── platforms/          # Um conector por destino (meta, tiktok, ga4, google-ads, sheets)
-│       ├── routes/             # Endpoints auxiliares (serve-webjs, debug, logs, ga4-proxy)
+│       ├── routes/             # Endpoints auxiliares (serve-webjs, debug, logs, ga4-proxy, meta-proxy)
 │       ├── shared/             # Utilitários (config, hash, helpers, cleanup, logger, db-write)
 │       └── store/              # Persistência de sessão/usuário (user-store, fdv)
 │

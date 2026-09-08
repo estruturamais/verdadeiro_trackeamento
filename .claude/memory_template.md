@@ -80,6 +80,7 @@
 - pixel_id: {valor}
 - access_token: CONFIGURADO (SECRETO)
 - pixel_ids_mirror: {lista de pixels espelho ou nao aplicavel}
+- pixel_proxy: full | script | desligado   <!-- proxy de primeiro dominio do pixel (1.8.0). full = default da instalacao nova; exige a route {dominio}/fb/* no wrangler.toml. Ver playbooks/meta_ads.md -->
 
 ### TikTok Ads
 

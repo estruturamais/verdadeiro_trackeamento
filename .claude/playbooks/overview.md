@@ -43,6 +43,9 @@ O sistema le config via `env.SITE_CONFIG` (JSON string na secao `[vars]` do `wra
 Campos `clientConfig` expostos ao browser (sem secrets), extraidos de `serve-webjs.js`:
 - `site_id`, `google_ads_channel`, `debug`, `ga4_measurement_id`
 - `meta_pixel_id`, `meta_pixel_ids_mirror` (array, omitido quando sem espelhos)
+- `meta_pixel_proxy` (`{ base, mode }` — so com `platforms.meta.pixel_proxy` ligado; `base` e a origem
+  ABSOLUTA de onde o `web.js` foi servido + `/fb`; sem a flag o campo e omitido e o pixel carrega de
+  `connect.facebook.net` como antes — ver `.claude/playbooks/meta_ads.md`)
 - `tiktok_pixel_id`, `google_ads_conversion_id`
 - `google_ads_label_page_view`, `google_ads_label_contact`, `google_ads_label_lead`,
   `google_ads_label_initiate_checkout`, `google_ads_label_purchase` (todos opt-in: sem o rotulo, o
@@ -371,6 +374,10 @@ Ler `config.example.json` para a estrutura base. Preencher com os dados do `trac
 - Meta: nao incluir `access_token` — e wrangler secret
 - GA4: nao incluir `api_secret` — e wrangler secret
 - Omitir `pixel_ids_mirror` se o cliente usar apenas um pixel Meta
+- Meta: manter `pixel_proxy: true` (default do `config.example.json` — a route `/fb/*` ja esta no
+  `wrangler.toml` da instalacao nova). O trade-off do modo completo e o modo `"script"` estao em
+  `.claude/playbooks/meta_ads.md`; avisar o cliente do custo em requests se o site passar de ~20k page
+  views/dia no plano gratis
 - Omitir plataformas nao confirmadas completamente
 - Incluir apenas os gateways detectados no Step 2 em `gateways` e `gateways_config`
 
@@ -483,6 +490,9 @@ O agente executa este step inteiro — sem pedir ao cliente para abrir browser (
 curl -s "https://{dominio}/tracking/web.js?site_id={site_id}" | head -1
 # Config injetada no script (site_id, vt_version e plataformas)
 curl -s "https://{dominio}/tracking/web.js?site_id={site_id}" | grep -o 'var __CONFIG__={[^;]*}'
+# Proxy do Meta Pixel (so com pixel_proxy ligado): JS da Meta reescrito para o dominio proprio
+curl -s "https://{dominio}/fb/sdk.js" | head -c 120
+curl -s "https://{dominio}/fb/sdk.js" | grep -c 'https://connect.facebook.net/'
 ```
 
 Interpretar resultado:
@@ -490,6 +500,7 @@ Interpretar resultado:
 - `var __CONFIG__={"site_id":"{site_id}","vt_version":"X.Y.Z","meta_pixel_id":...}` com campos corretos → config OK
 - `__CONFIG__={}` ou campo de plataforma ausente → problema de config; diagnosticar com `.claude/references/site-config-format.md` antes de continuar
 - Erro de conexao (curl falha) → Worker nao esta acessivel; executar `npx wrangler deployments list` e re-deploy se necessario
+- `/fb/sdk.js` comeca com codigo JS (`/**` da licenca da Meta) e o `grep -c` devolve `0` → proxy do pixel OK. HTML, 404 ou a pagina do site → a route `/fb/*` nao esta no `wrangler.toml` (o pixel ainda funciona pelo fallback direto, com aviso no console — corrigir antes do Step 5)
 
 ### 4.2 Verificar tabela events no D1
 

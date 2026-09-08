@@ -47,6 +47,7 @@ negocio ("suas vendas passam a cair na planilha", nao "novo conector `sendSheets
 
 | Para chegar em | Acao de banco | Acao de config | Quebra algo? |
 |---|---|---|---|
+| **1.8.0** | — | Opcional: route `{dominio}/fb/*` no `wrangler.toml` (o `git pull` nao a traz) + `platforms.meta.pixel_proxy: true` — ver abaixo | Nao — sem a flag nada muda |
 | **1.7.0** | `migrations/005_add_user_store_email_index.sql` (**todos**) + `migrations/004_add_subscriptions_table.sql` (**so** projeto de assinatura) | Opcional: `subscription_tracking` (ver abaixo) | Nao — ver "Mudancas de comportamento" |
 | **1.6.0** | `migrations/003_add_gclid_columns.sql` | Opcional: bloco `google_ads` (ver abaixo) | Nao — ver "Mudanca de comportamento" |
 | **1.2.0** | `migrations/002_add_utm_columns.sql` | — | Nao |
@@ -54,6 +55,31 @@ negocio ("suas vendas passam a cair na planilha", nao "novo conector `sendSheets
 
 **Pulou versoes?** Rode as migracoes **em ordem crescente**, uma de cada vez, conferindo cada uma
 antes da proxima.
+
+### Mudanca de comportamento da 1.8.0
+
+**Nenhuma sem acao do cliente.** A 1.8.0 traz o proxy de primeiro dominio do Meta Pixel
+(`platforms.meta.pixel_proxy`), **opt-in**: sem a chave, o `web.js` segue carregando
+`connect.facebook.net` exatamente como antes e nenhuma route nova e exigida.
+
+**Para ligar** (recomendado para quem usa Meta — o visitante com bloqueador passa a disparar o evento
+de navegador e a ganhar o cookie `_fbp`, e a URL da Meta some do inspecionar): duas edicoes no
+**mesmo** deploy — (1) acrescentar a route `{ pattern = "{dominio}/fb/*", zone_name = "{dominio}" }` no
+`wrangler.toml` (arquivo local; o `git pull` nao mexe nele — copiar a linha do `wrangler.toml.example`)
+e (2) `"pixel_proxy": true` dentro de `platforms.meta` no `SITE_CONFIG`. Route e vars sobem juntas no
+`npm run deploy` — nao ha janela. **Antes de ligar**, ler o trade-off do modo completo em
+`.claude/playbooks/meta_ads.md` (a Meta deixa de ver o IP e os cookies de login do Facebook no evento
+de navegador do visitante sem bloqueador; a CAPI segue com IP real e `fbp`) e avisar o cliente — o
+criterio de avaliacao e o Event Match Quality 7 dias antes x depois, e `"script"` e o recuo.
+
+**Se ligar a flag e esquecer a route:** o pixel **nao morre** — o `web.js` detecta o `sdk.js` falhando
+(404 do origin, ou HTML 200 num host SaaS) e carrega `connect.facebook.net` direto uma vez, gravando
+`console.warn('[Tracking] Proxy do Meta Pixel indisponivel …')` em toda pagina. O aviso e o sinal:
+adicionar a route e redeployar. Confirmar com `curl -s https://{dominio}/fb/sdk.js | head -c 120`
+(deve ser JS, nao HTML nem 404).
+
+**Custo:** ~+3 a +5 requests do Worker por page view. Cliente no plano gratis (100k req/dia) com mais
+de ~20k page views/dia deve ser avisado antes.
 
 ### Mudancas de comportamento da 1.7.0
 
@@ -166,6 +192,9 @@ npx wrangler d1 execute tracking_db --remote --command "SELECT COUNT(*) FROM sub
 
 ## Passo 5 — Config novo (so o que a versao pede)
 
+**A 1.8.0 nao exige config novo.** O proxy do Meta Pixel e opt-in — route `/fb/*` + `pixel_proxy`,
+descritos em "Mudanca de comportamento da 1.8.0" acima. Sem os dois, nada muda.
+
 **A 1.7.0 nao exige config novo.** Sem `subscription_tracking`, tudo continua como antes: toda
 cobranca sai como `Purchase` e a tabela `subscriptions` nem precisa existir. **So ligue o modo de
 assinatura se o negocio for por recorrencia** — nesse caso, carregue `.claude/playbooks/saas.md` e
@@ -197,6 +226,9 @@ curl -s https://{dominio}/tracking/web.js | head -1
 # 2. os eventos continuam chegando? (janela curta, logo apos o deploy)
 npx wrangler d1 execute tracking_db --remote --command \
   "SELECT platform, channel, status_code, COUNT(*) FROM events WHERE timestamp > datetime('now','-15 minutes') GROUP BY 1,2,3;"
+
+# 3. (so com pixel_proxy ligado) o proxy do pixel responde JS, nao HTML?
+curl -s https://{dominio}/fb/sdk.js | head -c 120
 ```
 
 Criterio: **as mesmas plataformas que apareciam antes continuam aparecendo, com os mesmos status.**
@@ -240,3 +272,4 @@ ociosa que voce quer remover.
 | Deploy OK e o `curl` ainda mostra a versao antiga | Cache de edge | Aguardar e repetir; conferir tambem `?v=` no browser |
 | Aviso `colunas de click id ausentes` no log | Deploy feito sem a migracao | Rodar a migracao (Passo 4). Nada quebrou |
 | `Some triggers failed to deploy` | Escopos do token do wrangler | `npx wrangler login` de novo e `npx wrangler triggers deploy` (ver `infra.md`) |
+| `[Tracking] Proxy do Meta Pixel indisponivel` no console do site | `pixel_proxy` ligado sem a route `/fb/*` no `wrangler.toml` | Acrescentar a route (copiar do `wrangler.toml.example`) e redeployar (Passo 6). O pixel segue funcionando pelo fallback enquanto isso |

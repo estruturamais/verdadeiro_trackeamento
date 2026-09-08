@@ -18,11 +18,12 @@ O sistema e um Cloudflare Worker com as seguintes caracteristicas (extraidas do 
 - **Compatibility date:** `2024-01-01`
 - **workers_dev:** `false` (requer dominio proprio)
 - **Banco de dados:** D1 com binding `DB`, database name `tracking_db`
-- **4 rotas obrigatorias:**
+- **5 rotas obrigatorias:**
   - `{dominio}/collect/*` — beacon de eventos e webhooks de gateways
   - `{dominio}/tracking/*` — serve o script `web.js` para o browser
   - `{dominio}/scripts/*` — proxy do gtag.js (GA4)
   - `{dominio}/g/*` — proxy do collect do GA4
+  - `{dominio}/fb/*` — proxy de primeiro dominio do Meta Pixel (fbevents.js, config, plugins e beacon `/tr`)
 
 **Rotas funcionais apos deploy:**
 - `GET /tracking/web.js` — script do browser
@@ -30,6 +31,8 @@ O sistema e um Cloudflare Worker com as seguintes caracteristicas (extraidas do 
 - `POST /collect/webhook/{gateway}` — webhooks dos gateways (hotmart, kiwify, etc.)
 - `GET /scripts/ga.js` — proxy gtag.js
 - `GET/POST /g/collect` — proxy GA4 collect
+- `GET /fb/sdk.js` — proxy do fbevents.js (Meta Pixel) com as URLs internas reescritas para o dominio proprio
+- `GET/POST /fb/tr` — proxy do beacon do Meta Pixel (so usado com `platforms.meta.pixel_proxy` ligado)
 
 **Tabelas D1 criadas pelo schema.sql:**
 1. `user_store` — identidade do visitante (marca_user como PK, dados de browser, usuario, geolocalizacao)
@@ -179,14 +182,15 @@ npm run db:create
 
 Explicar: "Vou configurar as rotas do Worker para o seu dominio."
 
-Abrir `wrangler.toml` e substituir `{YOUR_DOMAIN}` pelo dominio do cliente em todos os 4 patterns:
+Abrir `wrangler.toml` e substituir `{YOUR_DOMAIN}` pelo dominio do cliente em todos os 5 patterns:
 
 ```toml
 routes = [
   { pattern = "{dominio}/collect/*", zone_name = "{dominio}" },
   { pattern = "{dominio}/tracking/*", zone_name = "{dominio}" },
   { pattern = "{dominio}/scripts/*", zone_name = "{dominio}" },
-  { pattern = "{dominio}/g/*", zone_name = "{dominio}" }
+  { pattern = "{dominio}/g/*", zone_name = "{dominio}" },
+  { pattern = "{dominio}/fb/*", zone_name = "{dominio}" }
 ]
 ```
 
@@ -254,6 +258,14 @@ curl https://{dominio}/tracking/web.js | head -5
 ```
 
 **Resultado esperado:** A resposta deve comecar com `(function()` — isso confirma que o script do browser esta sendo servido corretamente.
+
+Conferir tambem o proxy do Meta Pixel (a route `/fb/*` e a mais nova — instalacao feita antes da 1.8.0 nao a tem):
+
+```bash
+curl -s https://{dominio}/fb/sdk.js | head -c 120
+```
+
+**Resultado esperado:** codigo JavaScript (comeca com o comentario de licenca da Meta, `/**`). Se vier HTML, 404 ou a pagina do site, a route `/fb/*` nao esta registrada — conferir o `wrangler.toml` e redeployar. Sem ela o pixel nao morre (o `web.js` cai no fallback direto e avisa no console), mas o proxy nao esta funcionando.
 
 **Se retornar erro (404, 500, timeout):**
 - Verificar se o DNS propagou (pode levar alguns minutos)
@@ -327,7 +339,7 @@ Apos verificacao bem-sucedida, atualizar o `tracking_memory.md`:
 
 - Worker `tracking-worker` deployado na Cloudflare
 - Banco D1 `tracking_db` criado com 3 tabelas: `user_store`, `events`, `webhook_raw`
-- Rotas configuradas para o dominio do cliente (4 patterns)
+- Rotas configuradas para o dominio do cliente (5 patterns)
 - Cron trigger `0 3 * * *` ativo (retencao automatica de dados, executa diariamente as 03:00 UTC)
 - `curl https://{dominio}/tracking/web.js` retorna `(function()`
 - `tracking_memory.md` atualizado com `infra_status: deployada` e Step 0 marcado como concluido

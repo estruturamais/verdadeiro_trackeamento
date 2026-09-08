@@ -61,6 +61,7 @@ todas essas causas se parecem (ausencia de linha), mas a solucao de cada uma e o
 | **Nenhuma invocacao do Worker** (`wrangler tail` conecta e nao mostra nada), com rotas registradas | o host e servido por **plataforma SaaS** (Lovable/Vercel/Netlify/Framer) por custom hostname — o request nao entra na zona do cliente. 🛑 **Nunca "resolver" ligando o proxy no apex**: isso ja derrubou site em producao e a validacao imediata **passa mesmo assim**. Tracking so em `track.{dominio}` — ver `.claude/references/saas-hospedado.md` | sim |
 | **Site instavel/fora do ar** logo apos alguem ter ligado a nuvem laranja | Cloudflare na frente de Cloudflare com custom hostname. **Voltar para nuvem cinza e a PRIMEIRA acao**, antes de qualquer investigacao | sim |
 | Renovacao de assinatura "sumindo" | ver **2.11** (`subscription_tracking`, tabela ausente, id da assinatura usado como `order_id`) | depende |
+| Console com `[Tracking] Proxy do Meta Pixel indisponivel`, ou `connect.facebook.net` no Network com `pixel_proxy` ligado | Route `/fb/*` ausente no `wrangler.toml` (o `git pull` nao a traz) — o pixel esta no fallback direto, **nao morreu** | sim — config de infra; ver `atualizar.md` (1.8.0) |
 
 ### 0.1 Memoria como bussola + versao no ar
 
@@ -202,8 +203,9 @@ se falhar tambem numa segunda tentativa espacada.
      -d '{"site_id":"{site_id}","event":"page_view","event_id":"diag","marca_user":"diag","page_url":"https://{dominio}/","browser_data":{},"user_data":{},"utm_data":{}}'
    ```
    Se a falha se repete sem browser nenhum, o problema esta no Worker/credencial.
-2. **Descartar a saida do Worker** — `curl -s "https://{dominio}/scripts/ga.js" | head -c 200`. Se o
-   Worker consegue buscar um script externo, a saida esta boa.
+2. **Descartar a saida do Worker** — `curl -s "https://{dominio}/scripts/ga.js" | head -c 200` (ou
+   `/fb/sdk.js`, que busca o fbevents.js na Meta). Se o Worker consegue buscar um script externo, a
+   saida esta boa.
 3. **Descartar a credencial — por ENVIO, nunca por leitura.** Enviar um `PageView` sintetico direto a
    Graph API, fora do Worker, com o mesmo token:
    ```bash
@@ -533,6 +535,12 @@ usar a **2.10** (o diagnostico da propria Google) antes de pedir qualquer print.
   confirmar que o **parametro certo daquele gateway** carrega o `marca_user` (`xcod` Hotmart,
   `sck` Kiwify, `marca_user` Hubla/Lastlink/Tutory, `utm_perfect` PerfectPay, etc. — ler de
   `gateways_config`).
+- **3.3 Proxy do Meta Pixel** (so com `pixel_proxy` ligado): na aba Network filtrando `fb/`, devem
+  aparecer `sdk.js`, `signals/config/…`, `signals/plugins/…` e `tr` **no dominio do cliente** — e,
+  filtrando `facebook`, nada de `connect.facebook.net` nem `facebook.com/tr` (`instagram.com/tr` e
+  `privacy_sandbox` podem aparecer e nao sao o pixel). Pedir o teste **com uBlock ligado**: e
+  exatamente o visitante que o proxy resgata. Console sem `[Tracking] Proxy do Meta Pixel
+  indisponivel`. Detalhe e validacao por `curl` em `.claude/playbooks/meta_ads.md`.
 
 ---
 

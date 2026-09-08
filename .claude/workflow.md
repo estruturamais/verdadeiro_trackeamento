@@ -141,7 +141,10 @@ Gravar `modalidade_coleta: bulk` ou `modalidade_coleta: passo_a_passo` no `track
    **d) Preencher o `wrangler.toml` com os dados obtidos:**
 
    Abrir `wrangler.toml` e substituir:
-   - `{YOUR_DOMAIN}` → dominio informado no passo 2 (em todos os 4 patterns de route e nos `zone_name`)
+   - `{YOUR_DOMAIN}` → dominio informado no passo 2 (em todos os 5 patterns de route e nos `zone_name`).
+     A route `/fb/*` (proxy do Meta Pixel) e nova na **1.8.0**: uma instalacao antiga pode nao te-la no
+     Worker em producao — ela so e exigida com `platforms.meta.pixel_proxy` ligado no `SITE_CONFIG`
+     (ver `.claude/playbooks/atualizar.md`, 1.8.0). Deixa-la no `wrangler.toml` e inofensivo.
    - `{YOUR_D1_DATABASE_ID}` → `database_id` obtido
    - `SITE_CONFIG = '{}'` → JSON completo extraido do binding (em uma unica linha, sem quebras)
 

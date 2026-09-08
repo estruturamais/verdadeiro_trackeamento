@@ -74,6 +74,94 @@ Clientes com `pixel_id_purchase` no config (formato antigo) continuam funcionand
 
 ---
 
+## Proxy de primeiro dominio do Pixel (`pixel_proxy`)
+
+Desde a **1.8.0** o `fbevents.js` pode ser servido pelo proprio dominio do cliente, no mesmo modelo do
+proxy do GA4 (`/scripts/ga.js`). Motivo: `connect.facebook.net` e `facebook.com/tr` estao em toda lista
+de bloqueio (EasyPrivacy, uBlock, Brave, Firefox estrito). Para esse visitante o `fbq` ficava so o stub
+da fila — nenhum evento de navegador saia e o cookie `_fbp` (que **so o fbevents.js cria**) nunca
+existia, entao ate a CAPI do VT ia sem `fbp`. Com o proxy, o script carrega, o `_fbp` nasce, o evento
+de navegador chega deduplicado com o da CAPI (mesmo `event_id`) e a URL da Meta some do inspecionar.
+
+Extraido de `src/worker/routes/meta-proxy.js` + `src/worker/routes/serve-webjs.js` + `src/web.js`:
+
+**Rotas (uma unica route no `wrangler.toml`: `{dominio}/fb/*`)**
+
+| Rota | Upstream | O que faz |
+|---|---|---|
+| `GET /fb/sdk.js` | `connect.facebook.net/en_US/fbevents.js` | Serve o fbevents.js com as URLs internas reescritas (cache 20 min, igual ao da Meta) |
+| `GET /fb/signals/config/{id}` | `connect.facebook.net/signals/config/{id}` | Config do pixel, que o fbevents.js carrega sozinho (mesma reescrita) |
+| `GET /fb/signals/plugins/{nome}.js` | `connect.facebook.net/signals/plugins/…` | Plugins (`identity`, `inferredEvents`…) — mesma reescrita |
+| `GET/POST /fb/tr[/]` | `www.facebook.com/tr[/]` | O beacon: query crua, body em stream (`sendBeacon` multipart), UA/Accept-Language/Referer repassados, `X-Forwarded-For` com o IP do visitante. **Cookie nunca segue** (o `marca_user` nao vai para a Meta) |
+| `/fb/log/*` | — | Telemetria interna do fbevents.js: `204` local, sem subrequest |
+
+Qualquer outro caminho em `/fb/*` responde `404` (allowlist — o Worker nao vira proxy aberto).
+
+**O que e reescrito dentro dos scripts** (literais reais do fbevents.js v2.9.393):
+- `https://connect.facebook.net/` → `https://{dominio}/fb/` — e a `CDN_BASE_URL` de onde o script monta
+  `signals/config/…` e `signals/plugins/…`, **e tambem o prefixo que o guard interno "Disallowed script
+  URL" exige** nas URLs de plugin. Sem essa reescrita o pixel quebra; por isso o `sdk.js` precisa ser
+  carregado de `{dominio}/fb/…`. A base e **absoluta**, montada do host de onde o `web.js` foi servido
+  — vale igual na raiz e em `track.{dominio}` (topologia do `saas-hospedado.md`).
+- `https://www.facebook.com/tr` (e `/tr/`) → `https://{dominio}/fb/tr` — **so no modo `full`**.
+- Ficam como estao: `www.instagram.com/tr` (atribuicao Instagram, depende do cookie do IG),
+  `www.facebook.com/privacy_sandbox/topics` (Topics API, Chrome) e `gw.conversionsapigateway.com`
+  (o Gateway pago da Meta). Podem aparecer no Network; nao sao o pixel nem o beacon.
+- O nome do arquivo e **`sdk.js` de proposito**: a EasyPrivacy tem regra generica `/fbevents.js` (sem
+  ancora de dominio) — `/fb/fbevents.js` seria bloqueado igual. `/fb/sdk.js`, `/fb/tr` e `/fb/signals/`
+  foram conferidos contra EasyList, EasyPrivacy, uBlock e AdGuard.
+
+**Config (`SITE_CONFIG` → `platforms.meta.pixel_proxy`)**
+
+| Valor | Efeito | Quando usar |
+|---|---|---|
+| ausente / `false` | Comportamento antigo: `connect.facebook.net` direto | Instalacao antiga que ainda nao adicionou a route |
+| `true` ou `"full"` | Script + config + plugins **+ `/tr`** pelo dominio proprio | **Default da instalacao nova** (`config.example.json`) |
+| `"script"` | Script + config + plugins pelo dominio proprio; `/tr` direto ao `facebook.com` | Recuo se o Event Match Quality cair (ver trade-off) |
+
+**Trade-off do modo `full` — explicar ao cliente, nao decidir por ele.** Com o `/tr` proxiado, o
+request a Meta sai do edge da Cloudflare: a Meta ve o IP do edge (mesma regiao do visitante, nao o IP
+dele) e **deixa de receber os cookies de login do Facebook** que hoje viajam no `/tr` direto em
+Chrome/Edge sem bloqueador. A CAPI do VT continua mandando IP real, `fbp`, `fbc`, `external_id` e dados
+hasheados com o **mesmo `event_id`**, e a Meta deduplica. Ganho: o visitante bloqueado passa a ter
+evento de navegador e `_fbp`, e o navegador vira um caminho independente da CAPI (se o token quebrar —
+ver `SCRT` — o pixel segue). Custo: um sinal deterministico a menos no visitante sem bloqueador.
+Criterio de avaliacao: **Event Match Quality** do pixel no Events Manager, 7 dias antes x 7 dias depois;
+se cair, trocar para `"script"`.
+
+**Custo em requests do Worker:** ~+3 a +5 por page view (sdk/config/plugins ficam em cache do
+navegador por 20 min e no cache de edge; `/tr` = 1 por evento). Plano gratis = 100k req/dia — avisar
+cliente com mais de ~20k page views/dia.
+
+**Instalacao antiga que quer ligar:** route `{dominio}/fb/*` no `wrangler.toml` **e** a flag no
+`SITE_CONFIG`, no **mesmo** deploy (route e vars sobem juntas — nao ha janela). Se a route for
+esquecida, o `web.js` detecta (`onerror`, ou `onload` sem `fbq.callMethod` — o fbevents.js real define
+`callMethod` ao executar), carrega `connect.facebook.net` direto **uma vez** e grava
+`console.warn('[Tracking] Proxy do Meta Pixel indisponivel em …')` — sempre, nao so em debug. Ver
+`.claude/playbooks/atualizar.md` (1.8.0).
+
+**Validacao**
+
+```bash
+curl -s "https://{dominio}/fb/sdk.js" | head -c 200                                  # JS, nao HTML
+curl -s "https://{dominio}/fb/sdk.js" | grep -c 'https://connect.facebook.net/'      # esperado: 0
+curl -s "https://{dominio}/fb/sdk.js" | grep -o 'CDN_BASE_URL:"[^"]*"'               # https://{dominio}/fb/
+curl -s "https://{dominio}/tracking/web.js" | grep -o '"meta_pixel_proxy":{[^}]*}'    # base + mode
+```
+
+> O unico `connect.facebook.net` que sobra no corpo e o nome da policy de Trusted Types
+> (`"connect.facebook.net/fbevents"`, sem `https://`) — nao e URL, nao gera request. Por isso o grep
+> acima procura com `https://`.
+
+No navegador (Camada 3 do `audit-tracking`): Network filtrando `fb/` mostra `sdk.js`, `signals/config`,
+`signals/plugins` e `tr` no dominio do cliente — **com uBlock ligado inclusive**, que e exatamente o
+visitante que o proxy resgata; filtrando `facebook` **nao** aparece `connect.facebook.net` nem
+`facebook.com/tr`. O Pixel Helper segue reconhecendo o pixel. No console, **nenhum**
+`[Tracking] Proxy do Meta Pixel indisponivel` — se aparecer, a route esta faltando. No Events Manager >
+Testar eventos, "Navegador" e "Servidor" continuam chegando com o mesmo `event_id`.
+
+---
+
 ## Eventos custom de qualificacao — `QualifiedLead` / `DisqualifiedLead`
 
 Quando o cliente tem um formulario de qualificacao multi-step (Elementor), o **Modulo 7** do client (`src/web.js`) emite, no sucesso do form, **um** destes eventos custom em vez do `lead` padrao:

@@ -91,6 +91,20 @@ ninguem e todo form da pagina virava `lead`. A partir da 1.7.0:
 
 ---
 
+## Proxy do Meta Pixel (`platforms.meta.pixel_proxy`) — opt-in
+
+| Valor | Efeito |
+|---|---|
+| ausente / `false` | Pixel carrega de `connect.facebook.net` (comportamento ate a 1.7.0) |
+| `true` / `"full"` | fbevents.js, config, plugins **e** o beacon `/tr` servidos por `{dominio}/fb/*` (default do `config.example.json`) |
+| `"script"` | So os scripts pelo dominio proprio; `/tr` direto ao `facebook.com` |
+
+Exige a route `{dominio}/fb/*` no `wrangler.toml` (nova na 1.8.0). O `serve-webjs.js` so expoe
+`meta_pixel_proxy` ao client quando a flag esta ligada — sem ela o `web.js` e identico ao anterior.
+Trade-off, custo e validacao em `.claude/playbooks/meta_ads.md`.
+
+---
+
 ## Como getConfig() le o SITE_CONFIG
 
 O Worker tem dois caminhos de leitura de config:

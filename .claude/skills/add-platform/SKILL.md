@@ -61,6 +61,9 @@ Seguir o mesmo procedimento do Step 3 do workflow principal:
 2. Localizar o campo `SITE_CONFIG` na secao `[vars]`
 3. Parsear o JSON existente
 4. Adicionar o bloco de configuracao da nova plataforma ao JSON (seguindo o formato da skill especializada)
+   - Meta Ads: incluir `"pixel_proxy": true` e conferir que o `wrangler.toml` tem a route
+     `{dominio}/fb/*` (instalacao anterior a 1.8.0 nao tem — copiar a linha do `wrangler.toml.example`;
+     route e flag sobem no mesmo deploy). Trade-off e modo `"script"` em `.claude/playbooks/meta_ads.md`
 5. Serializar o JSON atualizado e substituir o valor de `SITE_CONFIG` no `wrangler.toml`
 6. Mostrar o diff do que foi alterado para confirmacao visual
 
