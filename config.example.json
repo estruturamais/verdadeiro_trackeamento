@@ -19,8 +19,10 @@
       "measurement_id": "G-ABC123DEF4"
     },
     "meta": {
+      "_doc_pixel_proxy": "Proxy de primeiro dominio do Pixel. `true` (ou \"full\") = o fbevents.js, a config do pixel, os plugins E o beacon /tr sao servidos pelo proprio dominio ({dominio}/fb/*): nada de connect.facebook.net nem facebook.com/tr no navegador — o visitante com bloqueador passa a disparar o evento de navegador e a ganhar o cookie _fbp (que so o fbevents.js cria e que a CAPI reaproveita). EXIGE a route `{dominio}/fb/*` no wrangler.toml (instalacao antiga: adicione a route no MESMO deploy em que ligar a flag; sem ela o web.js cai no fallback direto e avisa no console). Trade-off do modo full: o /tr passa a sair do edge da Cloudflare — a Meta deixa de ver o IP e os cookies de login do Facebook no evento de NAVEGADOR do visitante sem bloqueador (a CAPI do VT segue mandando IP real, fbp, fbc, external_id e dados hasheados com o mesmo event_id). `\"script\"` = so os scripts pelo dominio proprio e o /tr direto ao facebook.com — recuo se o Event Match Quality do cliente cair. Omitir/false = comportamento antigo (connect.facebook.net direto). Custo: ~+3 a +5 requests do Worker por page view (scripts em cache do navegador por 20 min; /tr = 1 por evento); plano gratis = 100k req/dia.",
       "pixel_id": "111111111111111",
-      "pixel_ids_mirror": ["222222222222222"]
+      "pixel_ids_mirror": ["222222222222222"],
+      "pixel_proxy": true
     },
     "tiktok": {
       "pixel_id": "CP1234567890ABCDEF",

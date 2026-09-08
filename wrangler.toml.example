@@ -7,7 +7,11 @@ routes = [
   { pattern = "{YOUR_DOMAIN}/collect/*", zone_name = "{YOUR_DOMAIN}" },
   { pattern = "{YOUR_DOMAIN}/tracking/*", zone_name = "{YOUR_DOMAIN}" },
   { pattern = "{YOUR_DOMAIN}/scripts/*", zone_name = "{YOUR_DOMAIN}" },
-  { pattern = "{YOUR_DOMAIN}/g/*", zone_name = "{YOUR_DOMAIN}" }
+  { pattern = "{YOUR_DOMAIN}/g/*", zone_name = "{YOUR_DOMAIN}" },
+  # Proxy de primeiro dominio do Meta Pixel (fbevents.js, config, plugins e beacon /tr).
+  # Exigida quando platforms.meta.pixel_proxy estiver ligado no SITE_CONFIG; sem ela o
+  # web.js cai no fallback (connect.facebook.net direto) e avisa no console.
+  { pattern = "{YOUR_DOMAIN}/fb/*", zone_name = "{YOUR_DOMAIN}" }
 ]
 
 # Sincroniza src/web-template.txt a partir de src/web.js antes de cada deploy/dev.

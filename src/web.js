@@ -740,17 +740,47 @@
     return [__CONFIG__.meta_pixel_id].concat(__CONFIG__.meta_pixel_ids_mirror || []);
   }
 
+  // Proxy de primeiro dominio do pixel (FBPX): com `pixel_proxy` ligado no SITE_CONFIG, o
+  // fbevents.js vem de {origem do Worker}/fb/sdk.js — nome neutro de proposito, a
+  // EasyPrivacy tem regra GENERICA /fbevents.js. A base e absoluta (host de onde este
+  // web.js foi servido), entao vale igual na raiz e em track.{dominio}.
+  var META_PIXEL_DIRECT_SRC = 'https://connect.facebook.net/en_US/fbevents.js';
+  function getMetaPixelSrc() {
+    var p = __CONFIG__.meta_pixel_proxy;
+    return p && p.base ? p.base + '/sdk.js' : META_PIXEL_DIRECT_SRC;
+  }
+
+  // Fallback do proxy: o sdk.js proxiado falhou (route /fb/* ausente numa instalacao
+  // antiga, host SaaS devolvendo HTML 200) ou carregou sem virar o fbevents.js real (o
+  // real define fbq.callMethod de forma sincrona ao executar). Carrega a URL da Meta UMA
+  // vez e avisa SEMPRE, nao so em debug — config errada nao pode ser silenciosa.
+  var _metaProxyFallbackDone = false;
+  function metaProxyFallback(proxiedSrc) {
+    if (_metaProxyFallbackDone) return;
+    if (window.fbq && window.fbq.callMethod) return; // fbevents.js real executou: proxy OK
+    _metaProxyFallbackDone = true;
+    console.warn('[Tracking] Proxy do Meta Pixel indisponivel em ' + proxiedSrc +
+      ' - carregando direto de connect.facebook.net. Confira a route /fb/* no wrangler.toml (pixel_proxy esta ligado no SITE_CONFIG).');
+    var s = document.createElement('script');
+    s.async = true;
+    s.src = META_PIXEL_DIRECT_SRC;
+    var first = document.getElementsByTagName('script')[0];
+    first.parentNode.insertBefore(s, first);
+  }
+
   function initMetaPixels() {
     var pixelIds = getMetaPixelIds();
     if (!pixelIds.length) return;
 
+    var pixelSrc = getMetaPixelSrc();
     !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){
       n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};
       if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
       n.queue=[];t=b.createElement(e);t.async=!0;
       t.src=v;s=b.getElementsByTagName(e)[0];
-      s.parentNode.insertBefore(t,s)
-    }(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+      s.parentNode.insertBefore(t,s);
+      if(v!==META_PIXEL_DIRECT_SRC){t.onload=t.onerror=function(){metaProxyFallback(v)}}
+    }(window,document,'script',pixelSrc);
 
     var userData = getUserDataFromCookies();
     var advancedMatching = {
@@ -825,7 +855,7 @@
 
   if (__CONFIG__.debug || getUrlParam('debug') === '1') console.log('[Tracking] Verdadeiro Trackeamento v' + (__CONFIG__.vt_version || '?') + ' | @estruturamais | https://instagram.com/estruturamais');
 
-  try { initMetaPixels(); if (__CONFIG__.debug) console.log('[Tracking] Meta Pixel initialized:', __CONFIG__.meta_pixel_id); } catch(e) { if (__CONFIG__.debug) console.error('[Tracking] Meta Pixel init FAILED:', e); }
+  try { initMetaPixels(); if (__CONFIG__.debug) console.log('[Tracking] Meta Pixel initialized:', __CONFIG__.meta_pixel_id, '| src:', getMetaPixelSrc()); } catch(e) { if (__CONFIG__.debug) console.error('[Tracking] Meta Pixel init FAILED:', e); }
   try { initTikTokPixel(); if (__CONFIG__.debug) console.log('[Tracking] TikTok Pixel initialized:', __CONFIG__.tiktok_pixel_id || 'skipped'); } catch(e) { if (__CONFIG__.debug) console.error('[Tracking] TikTok init FAILED:', e); }
   try { initGA4(); if (__CONFIG__.debug) console.log('[Tracking] GA4 initialized:', __CONFIG__.ga4_measurement_id); } catch(e) { if (__CONFIG__.debug) console.error('[Tracking] GA4 init FAILED:', e); }
 

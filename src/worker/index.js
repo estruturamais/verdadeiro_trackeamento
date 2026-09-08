@@ -1,5 +1,6 @@
 import { handleServeGA4Script, handleGA4CollectProxy } from './routes/ga4-proxy.js';
 import { handleServeWebJs } from './routes/serve-webjs.js';
+import { handleMetaProxy } from './routes/meta-proxy.js';
 import { handleCollectEvent } from './collect/event.js';
 import { handleWebhook } from './collect/webhook.js';
 import { handleDebug } from './routes/debug.js';
@@ -39,6 +40,11 @@ export default {
       // GET/POST /g/collect → proxy GA4 collect
       if (path === '/g/collect') {
         return await handleGA4CollectProxy(request, env);
+      }
+
+      // /fb/* → proxy de primeiro dominio do Meta Pixel (sdk.js, config, plugins, tr)
+      if (path.startsWith('/fb/')) {
+        return await handleMetaProxy(request, env);
       }
 
       // GET /tracking/web.js → serve client script

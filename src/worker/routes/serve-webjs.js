@@ -1,5 +1,6 @@
 import { getConfig, detectSiteId } from '../shared/config.js';
 import { parseCookies, generateId } from '../shared/helpers.js';
+import { resolvePixelProxyMode, getWorkerOrigin } from './meta-proxy.js';
 import WEB_JS_TEMPLATE from '../../web-template.txt';
 
 // Versao lida do banner do template (carimbada no build a partir do package.json).
@@ -66,6 +67,7 @@ export async function handleServeWebJs(request, env) {
   const url = new URL(request.url);
   const siteId = url.searchParams.get('site_id') || url.searchParams.get('siteId') || detectSiteId(request, env);
   const config = await getConfig(siteId, env);
+  const pixelProxyMode = resolvePixelProxyMode(config);
 
   // Extrair ou gerar marca_user
   const cookies = parseCookies(request.headers.get('Cookie') || '');
@@ -84,6 +86,12 @@ export async function handleServeWebJs(request, env) {
     meta_pixel_id: config.platforms?.meta?.pixel_id,
     meta_pixel_ids_mirror: config.platforms?.meta?.pixel_ids_mirror
       ?? (config.platforms?.meta?.pixel_id_purchase ? [config.platforms.meta.pixel_id_purchase] : undefined),
+    // FBPX: base ABSOLUTA do proxy do pixel — o host de onde ESTE web.js foi servido (raiz
+    // ou track.{dominio}), nunca relativo (iria para o host da pagina). Omitido sem a flag
+    // platforms.meta.pixel_proxy: instalacao antiga segue carregando connect.facebook.net.
+    meta_pixel_proxy: pixelProxyMode
+      ? { base: getWorkerOrigin(request) + '/fb', mode: pixelProxyMode }
+      : undefined,
     tiktok_pixel_id: config.platforms?.tiktok?.pixel_id,
     google_ads_conversion_id: config.platforms?.google_ads?.conversion_id,
     google_ads_label_page_view: config.platforms?.google_ads?.conversion_label_page_view,
