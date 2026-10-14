@@ -83,9 +83,9 @@ export async function sendGA4Event(ga4Config, eventName, eventId, body, clientIp
 
   // SEM timestamp_micros: o beacon chega em tempo real, e o horario do recebimento e o
   // horario certo. Ate a 1.8.0 ia o `t` do cookie `_ga_*` + 60s — o ultimo hit do gtag,
-  // nao o evento. Em producao (10/2026) isso datava a maioria dos page_view ~1 min no
-  // FUTURO e o de visitante que voltava horas/dias no PASSADO (o GA4 trava em 72h):
-  // fora do Tempo real e no dia errado.
+  // nao o evento. Em producao isso datava a maioria dos page_view ~1 min no FUTURO e o
+  // de visitante que voltava horas/dias no PASSADO (o GA4 trava em 72h): fora do Tempo
+  // real e no dia errado.
   const payload = {
     ...mpRequestBase(gaClientId, clientIp, userAgent),
     events: [{ name: ga4EventName, params }]
@@ -134,14 +134,14 @@ export async function sendGA4MP(ga4Config, merged, env, siteId) {
   if (!ga4Config?.measurement_id || !apiSecret) return;
   // O Measurement Protocol exige client_id. Sem ele (webhook sem marca_user, ou o visitante
   // nunca teve o _ga gravado no user_store) o purchase NAO sai — e ate a 1.8.0 isso era um
-  // `return` mudo: nenhuma linha no D1, indistinguivel de "nao houve venda" (foi assim que
-  // uma venda real sumiu do GA4 sem rastro, 10/2026). Agora vira linha explicita, igual ao
-  // `missing_ga_client_id` do beacon, para a auditoria enxergar o buraco.
+  // `return` mudo: nenhuma linha no D1, indistinguivel de "nao houve venda" — a venda
+  // sumia do GA4 sem rastro. Agora vira linha explicita, igual ao `missing_ga_client_id`
+  // do beacon, para a auditoria enxergar o buraco.
   //
   // Com `platforms.ga4.unattributed_purchases: true` (opt-in) a venda sai mesmo assim, com
   // client_id sintetico: entra na receita do GA4 sem atribuicao ("(not set)"). Sem a flag,
-  // o comportamento e o de antes. Caso real (10/2026): com o emissor antigo desligado, venda
-  // por link de checkout antigo e venda pelo agente de vendas da Kiwify sumiram do GA4.
+  // o comportamento e o de antes. Por que existe: desligado o emissor antigo, a venda por
+  // link de checkout antigo e a venda pelo agente de vendas do gateway somem do GA4.
   let clientId = merged.ga_client_id;
   const sintetico = !clientId && ga4Config.unattributed_purchases === true && !!merged.order_id;
   if (sintetico) clientId = await syntheticClientId(siteId, merged.order_id);
@@ -180,7 +180,7 @@ export async function sendGA4MP(ga4Config, merged, env, siteId) {
   // ultimo hit da VISITA, nao a hora da compra — a receita caia no dia da visita, e
   // num boleto pago dias depois, travada em 72h atras. A sessao vai pelo session_id.
   // ip_override/user_agent: do navegador do comprador (user_store) ou, sem visita, o IP que o
-  // gateway reporta do dispositivo (na Kiwify, conferido igual ao do navegador em 10/2026).
+  // gateway reporta do dispositivo (na Kiwify, conferido igual ao do navegador).
   const payload = {
     ...mpRequestBase(clientId, merged.ip, merged.user_agent),
     events: [{

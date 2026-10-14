@@ -112,10 +112,9 @@ export async function getUserStoreByEmail(db, email) {
 }
 
 // Fallback do FDV merge por IP DO DISPOSITIVO — o que sobra quando o webhook nao traz o
-// indexador E o comprador nunca digitou o e-mail no site. Caso real que originou isto
-// (Kiwify, 05/10/2026): o comprador veio do Instagram, passou pelo site, clicou no checkout
-// 2x e comprou 8 min depois por um link SEM parametros (a Kiwify devolveu `sck` e UTMs
-// nulos). O D1 tinha fbp/fbc/ga_client_id dele, mas a venda saiu sem nenhum.
+// indexador E o comprador nunca digitou o e-mail no site. Quem abandona o checkout e volta
+// por um link SEM parametros (recuperacao de carrinho, link reaberto) chega com `sck` e UTMs
+// nulos, embora o D1 tenha o fbp/fbc/ga_client_id da visita: sem isto, a venda sai sem nenhum.
 //
 // Premissa verificada: o `Customer.ip` da Kiwify e o IP do aparelho do comprador (casou com
 // o IP que a Cloudflare viu no beacon). Ela NAO vale para todo gateway — antes de ligar em
@@ -127,8 +126,8 @@ export async function getUserStoreByEmail(db, email) {
 // cada beacon e distingue quem clicou no checkout DENTRO da janela. Sem indice novo: o
 // filtro site_id + timestamp usa o idx_events_site_time, e a janela e curta.
 //
-// Conservador de proposito — IP e compartilhado (CGNAT movel, wifi de casa; no caso real havia
-// um 2o aparelho no mesmo IP 28 min depois). Por isso: so conta beacon da janela, exige
+// Conservador de proposito — IP e compartilhado (CGNAT movel, wifi de casa: outro aparelho pode
+// navegar pelo mesmo IP minutos antes ou depois). Por isso: so conta beacon da janela, exige
 // `initiate_checkout` por padrao e, havendo mais de um candidato, fica com o clique de
 // checkout mais recente. Sem candidato = null: a venda sai como antes, sem identidade
 // inventada. Devolve tambem os numeros da decisao para o log do webhook.

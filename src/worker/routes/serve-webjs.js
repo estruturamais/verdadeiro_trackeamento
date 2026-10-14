@@ -63,13 +63,9 @@ export async function handleServeWebJs(request, env) {
   const config = await getConfig(siteId, env);
   const pixelProxyMode = resolvePixelProxyMode(config);
 
-  // Extrair ou gerar marca_user. `cookies.user` muda so o NOME do cookie no navegador
-  // (herdar o id de uma solucao anterior); o campo interno segue `marca_user`. O fallback
-  // para a chave `marca_user` deixa trocar o nome numa instalacao em andamento sem
-  // perder quem ja tem o cookie.
+  // Extrair ou gerar marca_user (o cookie HttpOnly que este handler e o collect/event.js gravam).
   const cookies = parseCookies(request.headers.get('Cookie') || '');
-  const userCookieName = config.cookies?.user || 'marca_user';
-  const marcaUser = cookies[userCookieName] || cookies.marca_user || generateId();
+  const marcaUser = cookies.marca_user || generateId();
 
   // Config segura para o client (sem tokens/secrets)
   const clientConfig = {
@@ -98,7 +94,6 @@ export async function handleServeWebJs(request, env) {
     google_ads_label_initiate_checkout: config.platforms?.google_ads?.conversion_label_initiate_checkout,
     google_ads_label_purchase: config.platforms?.google_ads?.conversion_label_purchase,
     triggers: mergeTriggers(buildDefaultTriggers(config), config.triggers),
-    cookies: config.cookies,
     // Override do Domain= do cookie de identidade: o web.js grava a copia legivel dele
     // com o mesmo Domain que o Set-Cookie do Worker (ver getCookieDomain).
     cookie_domain: config.cookie_domain,
@@ -116,9 +111,9 @@ export async function handleServeWebJs(request, env) {
     collect_url: (typeof config.collect_url === 'string' && config.collect_url.trim()) || '/collect/event'
   };
 
-  // JSON.stringify: com `cookies.user` o valor pode ter sido gravado por outro script
-  // (cookie entre aspas, barra) — interpolado cru, quebraria o web.js inteiro. Para o
-  // id do VT a saida e a mesma de antes.
+  // JSON.stringify: o valor vem de um cookie, que qualquer script do mesmo dominio pode
+  // ter gravado (aspas, barra) — interpolado cru, quebraria o web.js inteiro. Para o id
+  // do VT a saida e a mesma de uma interpolacao entre aspas.
   const script = WEB_JS_TEMPLATE
     .replace('/*__CONFIG__*/', 'var __CONFIG__=' + JSON.stringify(clientConfig) + ';')
     .replace('/*__MARCA_USER__*/', 'var __MARCA_USER__=' + JSON.stringify(marcaUser) + ';');
@@ -131,7 +126,7 @@ export async function handleServeWebJs(request, env) {
     headers: {
       'Content-Type': 'application/javascript; charset=utf-8',
       'Cache-Control': 'no-cache',
-      'Set-Cookie': `${userCookieName}=${marcaUser};Path=/;Max-Age=63072000;HttpOnly;SameSite=Lax;Secure${cookieDomain ? ';Domain=' + cookieDomain : ''}`
+      'Set-Cookie': `marca_user=${marcaUser};Path=/;Max-Age=63072000;HttpOnly;SameSite=Lax;Secure${cookieDomain ? ';Domain=' + cookieDomain : ''}`
     }
   });
 }

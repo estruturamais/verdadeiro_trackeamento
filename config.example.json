@@ -137,12 +137,6 @@
     "dq_letter": "X",
     "result_field": "form_fields[resultado]"
   },
-  "cookies": {
-    "user": "marca_user",
-    "email": "marca_email",
-    "phone": "marca_phone",
-    "name": "marca_name"
-  },
   "logging": {
     "enabled": true,
     "retention_days": 30,
