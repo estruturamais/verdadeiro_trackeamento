@@ -225,7 +225,7 @@ Com o payload, identificar cada campo:
 | `currency`   | Moeda — se ausente, inferir ("BRL" para gateways brasileiros)                      |
 | `product_name` / `product_id` | Nome e ID do produto                                                |
 | endereco     | city, state, country, zip                                                           |
-| `ip`         | Nem sempre disponivel                                                               |
+| `ip`         | Nem sempre disponivel. Mapear o que existir — mas so serve ao `fdv.ip_fallback` depois de conferido como IP do APARELHO (Passo 8, "Premissa do IP") |
 | `offer_id` / `offer_name` | Codigo/nome da oferta ou do checkout: `offer.code`, `offer_id`, `plan.code`, `checkout_link`, `link.title` |
 | `payment_method` | Forma de pagamento crua: `payment.type`, `payment_method`, `paymentMethod`, `*_enum_key`, `meio` |
 | `installments` | Numero de parcelas: `installments`, `installments_number`, `NumberOfInstallments`, `parcelas` |
@@ -461,3 +461,25 @@ npx wrangler d1 execute tracking_db --remote --command "SELECT gateway, order_id
 **Se `order_id = null`:** o parser nao extraiu o order_id — revisar o path configurado com o payload real.
 
 **Se `processed = 1` mas o Purchase chega ao Meta sem `fbp`/`fbc`/`external_id` (dados do browser):** o `marca_user` nao foi extraido ou nao chegou ao checkout. Todo comprador que passou por uma pagina com o script tem `marca_user` — a unica excecao esperada e quem foi direto ao checkout; o resto e falha na cadeia. Ver `.claude/references/marca-user.md` para o diagnostico (parser x `gateways_config` x injecao no checkout).
+
+### Premissa do IP — so se o parser le um IP
+
+O fallback do FDV merge por IP (`fdv.ip_fallback`) casa o IP do payload com os beacons do site. So e
+correto se esse IP for o do **aparelho do comprador** — e isso muda de gateway para gateway. Conferir
+com venda real, nunca pela documentacao nem pelo nome do campo.
+
+1. Pegar uma venda real **identificada pelo indexador** (o `marca_user` voltou no webhook e existe no
+   `user_store`) e ler o IP do payload dela (Passo 1, opcao C).
+2. Listar os IPs que a Cloudflare gravou nos beacons do mesmo comprador:
+   ```bash
+   npx wrangler d1 execute tracking_db --remote --command "SELECT source_ip, COUNT(*) AS n, MIN(timestamp) AS primeiro, MAX(timestamp) AS ultimo FROM events WHERE site_id = '{site_id}' AND platform = 'collect' AND marca_user = '{marca_user da venda}' GROUP BY source_ip;"
+   ```
+3. Ler o resultado — o fallback casa por **igualdade exata**, entao a conferencia tambem:
+   - IP do payload **igual** (string a string) a um desses `source_ip` → evidencia a favor.
+   - O mesmo IP do payload **repete** em vendas de compradores diferentes, ou nunca aparece em beacon
+     nenhum → provavel IP do servidor do gateway → ❌.
+   - Diferente, mas mesma cidade/operadora (IPv6 rotacionado, troca 4G → wifi) → inconclusivo; seguir
+     conferindo com as proximas vendas.
+4. **3 vendas com igualdade** (o criterio usado na Kiwify) → ✅. Registrar na tabela "IP do payload =
+   aparelho?" de `.claude/references/gateway-webhooks.md`: campo, resultado, data e numero de vendas.
+   Enquanto o gateway estiver ⬜ ali, **nao** ligar `fdv.ip_fallback` em projeto que o usa.

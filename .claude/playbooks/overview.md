@@ -409,6 +409,18 @@ Ler `config.example.json` para a estrutura base. Preencher com os dados do `trac
   `wrangler.toml` da instalacao nova). O trade-off do modo completo e o modo `"script"` estao em
   `.claude/playbooks/meta_ads.md`; avisar o cliente do custo em requests se o site passar de ~20k page
   views/dia no plano gratis
+- FDV por IP (`fdv.ip_fallback`): **oferecer so** se todo gateway do projeto com IP no parser estiver
+  ✅ na tabela "IP do payload = aparelho?" de `.claude/references/gateway-webhooks.md` (hoje: so
+  Kiwify). Gateway ⬜ ali → nao oferecer; manter o `enabled: false` do `config.example.json`. Ao
+  oferecer:
+  > "Quando uma venda chegar sem o codigo de rastreio do site (link de checkout sem parametros,
+  > recuperacao de carrinho), posso tentar reconhecer o comprador pelo IP do aparelho dele — so se
+  > aquele IP clicou no seu checkout nas 12 horas anteriores, e cada tentativa fica registrada. Sem
+  > isso, essas vendas vao para as plataformas sem os dados de quem clicou no anuncio. Quer que eu
+  > ligue?"
+
+  Sim → `"fdv": { "ip_fallback": true }`. Nao → `enabled: false`. O que o recurso faz e os limites:
+  `.claude/references/marca-user.md`, "Fallback por IP do dispositivo"
 - Omitir plataformas nao confirmadas completamente
 - Incluir apenas os gateways detectados no Step 2 em `gateways` e `gateways_config`
 

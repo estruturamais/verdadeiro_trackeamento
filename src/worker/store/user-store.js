@@ -110,3 +110,62 @@ export async function getUserStoreByEmail(db, email) {
     'SELECT * FROM user_store WHERE email = ? COLLATE NOCASE ORDER BY updated_at DESC LIMIT 1'
   ).bind(normalized).first();
 }
+
+// Fallback do FDV merge por IP DO DISPOSITIVO — o que sobra quando o webhook nao traz o
+// indexador E o comprador nunca digitou o e-mail no site. Caso real que originou isto
+// (Kiwify, 05/10/2026): o comprador veio do Instagram, passou pelo site, clicou no checkout
+// 2x e comprou 8 min depois por um link SEM parametros (a Kiwify devolveu `sck` e UTMs
+// nulos). O D1 tinha fbp/fbc/ga_client_id dele, mas a venda saiu sem nenhum.
+//
+// Premissa verificada: o `Customer.ip` da Kiwify e o IP do aparelho do comprador (casou com
+// o IP que a Cloudflare viu no beacon). Ela NAO vale para todo gateway — antes de ligar em
+// outro, conferir no payload real (tabela "IP do payload = aparelho?" em
+// .claude/references/gateway-webhooks.md).
+//
+// Por que consultar `events` e nao `user_store`: o `user_store.updated_at` sobe a cada evento
+// (inclusive os POSTERIORES a venda) e guarda UM ip por visitante; `events` tem o carimbo de
+// cada beacon e distingue quem clicou no checkout DENTRO da janela. Sem indice novo: o
+// filtro site_id + timestamp usa o idx_events_site_time, e a janela e curta.
+//
+// Conservador de proposito — IP e compartilhado (CGNAT movel, wifi de casa; no caso real havia
+// um 2o aparelho no mesmo IP 28 min depois). Por isso: so conta beacon da janela, exige
+// `initiate_checkout` por padrao e, havendo mais de um candidato, fica com o clique de
+// checkout mais recente. Sem candidato = null: a venda sai como antes, sem identidade
+// inventada. Devolve tambem os numeros da decisao para o log do webhook.
+export async function getUserStoreByIp(db, siteId, ip, { windowHours = 12, requireCheckout = true } = {}) {
+  const normalized = String(ip || '').trim();
+  if (!normalized) return null;
+  const desde = new Date(Date.now() - windowHours * 3600 * 1000).toISOString();
+
+  const { results } = await db.prepare(
+    `SELECT marca_user,
+            SUM(CASE WHEN event_name = 'initiate_checkout' THEN 1 ELSE 0 END) AS checkouts,
+            MAX(CASE WHEN event_name = 'initiate_checkout' THEN timestamp END) AS ultimo_checkout,
+            MAX(timestamp) AS ultimo_evento
+       FROM events
+      WHERE site_id = ?1 AND platform = 'collect'
+        AND source_ip = ?2 COLLATE NOCASE
+        AND marca_user <> '' AND timestamp >= ?3
+      GROUP BY marca_user`
+  ).bind(siteId, normalized, desde).all();
+
+  const candidatos = (results || []).filter((r) => !requireCheckout || r.checkouts > 0);
+  if (!candidatos.length) return null;
+
+  // Quem clicou no checkout vem primeiro; dentro do grupo, o mais recente.
+  const recencia = (r) => r.ultimo_checkout || r.ultimo_evento || '';
+  candidatos.sort((a, b) =>
+    ((b.checkouts > 0) - (a.checkouts > 0)) || recencia(b).localeCompare(recencia(a))
+  );
+  const escolhido = candidatos[0];
+
+  const store = await getUserStore(db, escolhido.marca_user);
+  if (!store) return null;
+  return {
+    store,
+    candidatos: candidatos.length,
+    ambiguo: candidatos.length > 1,
+    checkouts: escolhido.checkouts,
+    ultimo_checkout: escolhido.ultimo_checkout || ''
+  };
+}

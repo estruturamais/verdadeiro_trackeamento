@@ -37,6 +37,19 @@ O JSON expandido:
 
 ---
 
+## Bloco `fdv` — recuperacao de identidade da venda (opt-in)
+
+| Chave | Onde | O que faz |
+|---|---|---|
+| `fdv.ip_fallback` | raiz | Quando o webhook chega sem `marca_user` (e sem e-mail conhecido no `user_store`), tenta casar o **IP do comprador** com um beacon do mesmo site que clicou no checkout na janela anterior ao webhook. `true` ou `{ enabled, window_hours (default 12, teto 72), require_checkout (default true) }`. Omitido, `false` ou objeto sem `enabled: true` = desligado (comportamento antigo). Cada tentativa grava uma linha `platform='fdv'` em `events`. **So ligar** se todo gateway do projeto que manda IP estiver ✅ na tabela "IP do payload = aparelho?" de `.claude/references/gateway-webhooks.md`. Ver `.claude/references/marca-user.md`. |
+
+```jsonc
+{ "fdv": { "ip_fallback": { "enabled": true, "window_hours": 12, "require_checkout": true } } }
+// ou { "fdv": { "ip_fallback": true } }  — mesmos defaults
+```
+
+---
+
 ## Blocos de assinatura (SaaS) — todos opt-in
 
 Nenhum deles existe em projeto de compra unica. **Omitidos, o comportamento e exatamente o de
