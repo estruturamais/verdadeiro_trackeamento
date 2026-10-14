@@ -444,20 +444,62 @@ Validar via `?debug=1`: ao clicar no botao de compra, o console mostra `[Trackin
 
 ## Passo 8 — Deploy e validacao
 
+> 🛑 **Webhook de teste vira venda real se o `shadow` nao estiver no ar.** O parser — inclusive o que
+> voce acabou de escrever — nao distingue teste de compra: a simulacao do painel e a compra de teste
+> chegam como compra aprovada e saem como `Purchase` para todas as plataformas, e na Meta nao ha
+> remocao. Roteiro obrigatorio, nesta ordem: **ligar → testar → conferir → desligar → conferir que
+> desligou** (o mesmo do Step 5.4 do `overview.md`). **Instalacao ja em producao:** enquanto ligado, o
+> `shadow` segura tambem as vendas reais de **todos** os gateways — avisar o cliente e seguir
+> `.claude/playbooks/atualizar.md` ("Teste de webhook com a instalacao em producao").
+
+**1. Ligar** — no mesmo deploy do parser, `"purchase_dispatch": "shadow"` na **raiz** do `SITE_CONFIG`
+(ao lado de `site_id`, nao dentro de `platforms`):
+
 ```bash
 npx wrangler deploy
 ```
 
-Solicitar ao cliente que envie um webhook de teste (simulacao no painel do gateway ou compra de teste real). Verificar no D1:
+**2. Testar** — so agora pedir ao cliente o webhook de teste (simulacao no painel do gateway ou compra de
+teste real).
+
+**3. Conferir** no D1:
 
 ```bash
 npx wrangler d1 execute tracking_db --remote --command "SELECT gateway, order_id, processed, error FROM webhook_raw WHERE site_id = '{site_id}' ORDER BY id DESC LIMIT 3;"
+npx wrangler d1 execute tracking_db --remote --command "SELECT platform, event_name, status_code, error_message, marca_user FROM events WHERE site_id = '{site_id}' AND channel = 'webhook' ORDER BY id DESC LIMIT 10;"
 ```
 
-**Sucesso:** `processed = 1`, `order_id` preenchido, `error = null`
+**Sucesso:** `processed = 1`, `order_id` preenchido, `error = null` **e**, no `events`, uma linha por
+destino com `status_code = 0` + `shadow_mode` (o que teria saido). **Algum `200`/`204` = o `shadow` nao
+estava no ar e o teste foi despachado** — registrar como venda de teste despachada (secao 2.7 do
+`audit-tracking`) e conferir o deploy antes de repetir.
 
 **Se `processed = 0` com `order_id` preenchido:** o evento de aprovacao nao passou pelo filtro. Verificar se o valor do campo de evento no webhook de teste corresponde ao configurado em `APPROVAL_EVENTS`. Alguns gateways enviam valores diferentes em ambiente de teste vs producao.
 
 **Se `order_id = null`:** o parser nao extraiu o order_id — revisar o path configurado com o payload real.
 
 **Se `processed = 1` mas o Purchase chega ao Meta sem `fbp`/`fbc`/`external_id` (dados do browser):** o `marca_user` nao foi extraido ou nao chegou ao checkout. Todo comprador que passou por uma pagina com o script tem `marca_user` — a unica excecao esperada e quem foi direto ao checkout; o resto e falha na cadeia. Ver `.claude/references/marca-user.md` para o diagnostico (parser x `gateways_config` x injecao no checkout).
+
+> **Sob `shadow` nao ha Purchase na Meta para olhar:** o sinal equivalente e a coluna `marca_user`
+> vazia no `events` da consulta do item 3. Na **simulacao do painel** isso e esperado (ela costuma vir
+> sem os parametros de rastreamento — ver Passo 1); so a compra de teste pelo link do site prova o
+> round-trip.
+
+**4. Desligar** — remover a chave `purchase_dispatch` do `SITE_CONFIG` (remover, nao trocar o valor) e:
+
+```bash
+npx wrangler deploy
+```
+
+Depois de desligar, **nenhum teste novo**: reenviar o mesmo teste cai no dedup (o `order_id` ja esta
+`processed = 1`), mas um teste com outro `order_id` vira venda real.
+
+**5. Conferir que desligou:**
+
+```bash
+grep -n "purchase_dispatch" wrangler.toml   # nenhuma linha = saiu do config deployado
+```
+
+e, na **primeira venda real**, a consulta do `events` do item 3 com `200`/`204` por destino e nenhum
+`shadow_mode`. A saida do deploy nao prova nada (trunca o valor do `SITE_CONFIG`). Venda real com
+`shadow_mode` = o deploy nao pegou: refazer o item 4 na hora.
