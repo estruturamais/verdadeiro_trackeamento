@@ -938,7 +938,7 @@ de conversao diferentes (as de navegador por rotulo, a compra por id numerico da
 O tracking funciona automaticamente em todas as paginas com o script instalado, desde que os elementos da pagina sigam os mesmos padroes detectados no Step 2: mesmos seletores de formulario, mesmo padrao de links de checkout para o gateway, e mesmas URLs ou titulos de paginas de obrigado. Paginas com estrutura diferente precisam de mapeamento adicional.
 
 **Manutencao do banco de dados:**
-A retencao automatica esta ativa (cron diario as 03:00 UTC). Dados com mais de 30 dias sao removidos automaticamente das tabelas de eventos e webhooks. Para verificar o volume atual do banco:
+A retencao automatica esta ativa (cron diario as 03:00 UTC, modo `auto_clean` — o padrao). Sao removidos automaticamente os eventos com mais de **7 dias** (`events`), os webhooks com mais de **14 dias** (`webhook_raw`) e os dados de visitante nao atualizados ha mais de **90 dias** (`user_store`). Para guardar o historico existe o modo `keep_all`, em que a limpeza de rotina nao roda — exige plano pago da Cloudflare e e escolhido na pergunta de retencao do `workflow.md`. Para verificar o volume atual do banco:
 
 ```bash
 npx wrangler d1 execute tracking_db --remote --command "SELECT COUNT(*) as eventos FROM events; SELECT COUNT(*) as webhooks FROM webhook_raw;"
