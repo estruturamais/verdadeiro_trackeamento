@@ -13,6 +13,9 @@ Lido por caminho pelo onboarding (`overview.md`), pela skill `new-gateway` e pel
 `web.js`. Identifica o mesmo usuario entre sessoes. Todos os eventos web carregam `marca_user` no
 payload.
 
+O nome da chave no navegador e configuravel (`cookies.user`, para herdar o id de uma solucao
+anterior); payload, D1 e indexador seguem `marca_user` — ver `.claude/references/site-config-format.md`.
+
 ---
 
 ## Invariante (regra de ouro)

@@ -45,6 +45,9 @@ export async function handleCollectEvent(request, env, ctx) {
   const cfState = (cf.region || '').toLowerCase();
   const cfZip = cf.postalCode || '';
   const marcaUser = body.marca_user || '';
+  // Nome do cookie no navegador (`cookies.user`, ver serve-webjs.js); o campo do
+  // payload e do D1 segue `marca_user`.
+  const userCookieName = config.cookies?.user || 'marca_user';
   const eventName = body.event;
   const eventId = body.event_id;
 
@@ -111,7 +114,7 @@ export async function handleCollectEvent(request, env, ctx) {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': idOrigin.origin,
         'Access-Control-Allow-Credentials': 'true',
-        'Set-Cookie': `marca_user=${marcaUser};Path=/;Max-Age=63072000;HttpOnly;SameSite=Lax;Secure${idOrigin.rootDomain ? ';Domain=' + idOrigin.rootDomain : ''}`
+        'Set-Cookie': `${userCookieName}=${marcaUser};Path=/;Max-Age=63072000;HttpOnly;SameSite=Lax;Secure${idOrigin.rootDomain ? ';Domain=' + idOrigin.rootDomain : ''}`
       }
     });
   }
@@ -184,7 +187,7 @@ export async function handleCollectEvent(request, env, ctx) {
 
   await Promise.allSettled(promises);
 
-  // Response com Set-Cookie para renovar marca_user
+  // Response com Set-Cookie para renovar marca_user (sob o nome configurado)
   const { origin, rootDomain } = originDoBeacon(body.page_url, config.cookie_domain);
 
   return new Response(JSON.stringify({ status: 'ok' }), {
@@ -193,7 +196,7 @@ export async function handleCollectEvent(request, env, ctx) {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': origin,
       'Access-Control-Allow-Credentials': 'true',
-      'Set-Cookie': `marca_user=${marcaUser};Path=/;Max-Age=63072000;HttpOnly;SameSite=Lax;Secure${rootDomain ? ';Domain=' + rootDomain : ''}`
+      'Set-Cookie': `${userCookieName}=${marcaUser};Path=/;Max-Age=63072000;HttpOnly;SameSite=Lax;Secure${rootDomain ? ';Domain=' + rootDomain : ''}`
     }
   });
 }

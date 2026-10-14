@@ -279,6 +279,18 @@ URL ou titulo contendo: "obrigado", "thankyou", "confirmacao", "sucesso"
 Detectar inicializacoes preexistentes de: `fbq(`, `ttq.`, `gtag(`, `dataLayer.push`
 Se detectados: **alertar o cliente e orientar remocao ANTES de continuar.** Scripts conflitantes causam dupla contagem.
 
+### Identificador legado do visitante (`cookies.user`)
+Perguntar: **"O site ja tem um id proprio do visitante, criado pelo GTM ou por outra solucao de
+rastreamento, que precisa continuar valendo?"** O HTML so mostra o GTM (`googletagmanager.com/gtm.js`);
+a chave se confirma no navegador do cliente (DevTools > Application > Cookies e Local Storage): mesmo
+nome e mesmo valor nos dois.
+- **Nao ha** → nada a fazer (o VT usa `marca_user`).
+- **Ha** → anotar o nome EXATO da chave e configurar `"cookies": { "user": "{chave}" }` no Step 3b: o
+  VT passa a ler e gravar o id com esse nome e quem ja tinha historico herda o mesmo id. A tag antiga
+  que grava a chave sai junto da instalacao (um dono so). Limites em
+  `.claude/references/site-config-format.md`.
+- Gravar no `tracking_memory.md`: `identificador_legado: nenhum | {chave}`.
+
 ### UTMify (coexistencia)
 Procurar no HTML o padrao `cdn.utmify.com.br/scripts/utms`. Se presente: gravar `utmify_detectada: sim`
 no `tracking_memory.md` e **nao** pedir remocao — os dois convivem. Orientar ordem de instalacao (VT
