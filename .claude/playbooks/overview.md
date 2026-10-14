@@ -750,7 +750,7 @@ gateway, quando disponivel. Com o `shadow` no ar, os dois sao seguros.
 
 ```bash
 npx wrangler d1 execute tracking_db --remote --command "SELECT gateway, order_id, processed, error FROM webhook_raw WHERE site_id = '{site_id}' ORDER BY id DESC LIMIT 5;"
-npx wrangler d1 execute tracking_db --remote --command "SELECT platform, event_name, status_code, error_message FROM events WHERE site_id = '{site_id}' AND channel = 'webhook' ORDER BY id DESC LIMIT 10;"
+npx wrangler d1 execute tracking_db --remote --command "SELECT platform, event_name, status_code, error_message FROM events WHERE site_id = '{site_id}' AND channel = 'webhook' AND platform <> 'fdv' ORDER BY id DESC LIMIT 10;"
 ```
 
 **Criterios de sucesso:**
@@ -759,6 +759,7 @@ npx wrangler d1 execute tracking_db --remote --command "SELECT platform, event_n
 - `events`: uma linha por destino do baseline (cada pixel Meta, TikTok, GA4, Google Ads), **todas** com
   `status_code = 0` + `shadow_mode` — e o que teria saido. Destino faltando = nao esta no config
 - **Qualquer `200`/`204` nessa consulta = o `shadow` nao estava no ar e o teste foi despachado.**
+  (A linha `platform = 'fdv'` e o log do merge por IP, nao envio — por isso fica fora da consulta.)
   Registrar como venda de teste despachada (`audit-tracking`, secao 2.7) e conferir o deploy do 5.4.1
   antes de repetir o teste
 

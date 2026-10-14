@@ -466,12 +466,13 @@ teste real).
 
 ```bash
 npx wrangler d1 execute tracking_db --remote --command "SELECT gateway, order_id, processed, error FROM webhook_raw WHERE site_id = '{site_id}' ORDER BY id DESC LIMIT 3;"
-npx wrangler d1 execute tracking_db --remote --command "SELECT platform, event_name, status_code, error_message, marca_user FROM events WHERE site_id = '{site_id}' AND channel = 'webhook' ORDER BY id DESC LIMIT 10;"
+npx wrangler d1 execute tracking_db --remote --command "SELECT platform, event_name, status_code, error_message, marca_user FROM events WHERE site_id = '{site_id}' AND channel = 'webhook' AND platform <> 'fdv' ORDER BY id DESC LIMIT 10;"
 ```
 
 **Sucesso:** `processed = 1`, `order_id` preenchido, `error = null` **e**, no `events`, uma linha por
 destino com `status_code = 0` + `shadow_mode` (o que teria saido). **Algum `200`/`204` = o `shadow` nao
-estava no ar e o teste foi despachado** — registrar como venda de teste despachada (secao 2.7 do
+estava no ar e o teste foi despachado** (a linha `platform = 'fdv'` e o log do merge por IP, nao envio — por
+isso fica fora da consulta) — registrar como venda de teste despachada (secao 2.7 do
 `audit-tracking`) e conferir o deploy antes de repetir.
 
 **Se `processed = 0` com `order_id` preenchido:** o evento de aprovacao nao passou pelo filtro. Verificar se o valor do campo de evento no webhook de teste corresponde ao configurado em `APPROVAL_EVENTS`. Alguns gateways enviam valores diferentes em ambiente de teste vs producao.

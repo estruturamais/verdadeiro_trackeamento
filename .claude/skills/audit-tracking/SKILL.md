@@ -398,7 +398,7 @@ R$ 0,00" com duas vendas no periodo. Assinaturas reais (Kiwify, 10/2026), lidas 
 
 | No payload | Leitura |
 |---|---|
-| `TrackingParameters.sck` com formato que **nao e do VT** (VT = `{ms}-{uuid}`), ex. `1788792865427-1788792865428.438712.2`, e sem linha no `user_store` | Link de checkout **antigo/salvo** (indexador de antes do VT, recuperacao de carrinho). O `sck` nao recupera; o e-mail ainda pode (FDV por e-mail) |
+| `TrackingParameters.sck` com formato que **nao e do VT** (VT = `{ms}-{uuid}`), ex. `1788792865427-1788792865428.438712.2`, e sem linha no `user_store` | Link de checkout **antigo/salvo** (indexador de antes do VT, recuperacao de carrinho). O `sck` nao recupera; o e-mail (FDV por e-mail) ou o IP (`fdv.ip_fallback`, se ligado) ainda podem |
 | `TrackingParameters.src = "kiwify_sales_agent"` | Venda feita pelo **agente de vendas da Kiwify**, fora do site. Nao ha navegador para atribuir — caso (A) legitimo |
 
 **Correcao para a receita bater:** `platforms.ga4.unattributed_purchases: true` (opt-in) — a venda sai
@@ -443,6 +443,7 @@ SELECT * FROM (
     (SELECT GROUP_CONCAT(e.platform || ' ' || e.event_name || ' ' || e.status_code, ', ')
        FROM events e
       WHERE e.site_id = w.site_id AND e.channel = 'webhook'
+        AND e.platform IN ('meta_ads', 'tiktok_ads', 'google_analytics_4', 'google_ads', 'sheets')
         AND e.status_code BETWEEN 200 AND 299
         AND e.timestamp BETWEEN w.timestamp AND strftime('%Y-%m-%dT%H:%M:%fZ', w.timestamp, '+60 seconds')
         AND instr(COALESCE(w.order_id, ''), e.event_id) = 1) AS despachado_2xx
@@ -455,11 +456,14 @@ SELECT * FROM (
 ```
 
 - `despachado_2xx` lista o que cada destino aceitou (`meta_ads Purchase 200, meta_ads Purchase 200,
-  tiktok_ads Purchase 200` = 2 pixels + TikTok). Teste feito sob `shadow` nao aparece (`status_code 0`).
-- **Por que janela de 60 s + prefixo, e nao `event_id = order_id`:** so Meta e Google Ads gravam o envio
-  com o mesmo `order_id` do `webhook_raw`; TikTok e GA4 gravam `event_id` vazio e a planilha grava o
-  `order_id` cru (sem o `_{product_id}`). Igualdade simples perde esses destinos. Efeito colateral:
-  outra venda no mesmo minuto pode somar uma linha de TikTok/GA4 a lista — a selecao do teste nao muda.
+  tiktok_ads Purchase 200` = 2 pixels + TikTok). Teste feito sob `shadow` nao aparece (`status_code 0`) — nem a
+  linha `platform = 'fdv'` do merge por IP, que grava `200` no `fdv_ip_match` mas nao e envio a
+  destino nenhum (por isso o filtro de `platform`).
+- **Por que janela de 60 s + prefixo, e nao `event_id = order_id`:** Meta, Google Ads e (desde a 1.9.0) o
+  GA4 gravam o envio com o mesmo `order_id` do `webhook_raw`; o TikTok grava `event_id` vazio e a
+  planilha grava o `order_id` cru (sem o `_{product_id}`). Igualdade simples perde esses destinos.
+  Efeito colateral: outra venda no mesmo minuto pode somar uma linha de TikTok a lista — a selecao do
+  teste nao muda.
 - **Confirmar no payload antes de concluir** (`SELECT payload FROM webhook_raw WHERE id = {id};`): o
   marcador e candidato, nao veredito — comprador real pode ter nome parecido, ou o produto ter "teste"
   no nome. A heuristica serve a esta revisao humana, **nunca** para filtrar despacho no codigo.
