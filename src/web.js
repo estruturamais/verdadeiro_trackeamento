@@ -924,38 +924,71 @@
     return '';
   }
 
-  function findGaSessionCookie() {
+  // O nome do cookie de sessao carrega o ID da propriedade (`_ga_<ID sem "G-">`). Com
+  // mais de um GA4 no site (GTM antigo, widget de terceiro), o 1o `_ga_*` do
+  // document.cookie pode ser de OUTRA propriedade — por isso o nome exato. Devolve
+  // TODOS os valores: o mesmo nome pode existir em dois niveis de dominio (ex.: um GTM
+  // antigo gravou em outro escopo), e ai o document.cookie traz os dois.
+  function findGaSessionCookies() {
+    var ga4Id = __CONFIG__.ga4_measurement_id || '';
+    var name = ga4Id ? '_ga_' + ga4Id.replace(/^G-/, '') : '';
+    var found = [];
     var cookies = document.cookie.split(';');
     for (var i = 0; i < cookies.length; i++) {
       var c = cookies[i].trim();
-      if (c.indexOf('_ga_') === 0 && c.indexOf('=') > 0) {
-        return c.split('=')[1];
-      }
+      var eq = c.indexOf('=');
+      if (eq <= 0) continue;
+      var key = c.slice(0, eq);
+      if (name ? key === name : key.indexOf('_ga_') === 0) found.push(c.slice(eq + 1));
     }
-    return '';
+    return found;
   }
 
-  function extractGaSessionId() {
-    var cookie = findGaSessionCookie();
-    if (!cookie) return '';
-    var match = cookie.match(/s(\d+)j/);
-    return match ? match[1] : '';
+  // Le o cookie de sessao do GA4. Existem dois formatos:
+  //   GS1.1.1700000000.3.1.1700000500.0.0.0           (legado: campos por posicao)
+  //   GS2.1.s1700000000$o3$g1$t1700000500$j60$l0$h0   (atual: s=sessao, o=numero, t=ultimo hit)
+  // As regex antigas (/s(\d+)j/ e /j(\d+)t/) nao casavam com NENHUM dos dois: o
+  // session_id nunca foi extraido (0 de 189 visitantes no D1 em 10/2026), e sem ele o
+  // GA4 nao liga o evento do MP a sessao do navegador — o page_view nao aparecia no
+  // Tempo real nem nos relatorios por pagina.
+  // Com cookie duplicado, vale o de atividade mais recente (`t`): e o que o gtag acabou
+  // de atualizar. O outro e uma sessao velha que ninguem mais escreve.
+  function readGaSessionCookie() {
+    var best = { session_id: '', session_number: '', last_hit: '' };
+    var raws = findGaSessionCookies();
+    for (var i = 0; i < raws.length; i++) {
+      var cur = parseGaSessionCookie(raws[i]);
+      if (!cur.session_id) continue;
+      if (!best.session_id || Number(cur.last_hit || 0) > Number(best.last_hit || 0)) best = cur;
+    }
+    return best;
   }
 
-  function extractGaSessionCount() {
-    var cookie = findGaSessionCookie();
-    if (!cookie) return '';
-    var match = cookie.match(/j(\d+)t/);
-    return match ? match[1] : '';
-  }
+  function parseGaSessionCookie(raw) {
+    var out = { session_id: '', session_number: '', last_hit: '' };
+    try { raw = decodeURIComponent(raw); } catch(e) {}
 
-  function extractGaTimestamp() {
-    var cookie = findGaSessionCookie();
-    if (!cookie) return '';
-    var match = cookie.match(/t(\d+)/);
-    if (!match) return '';
-    var ts = parseInt(match[1], 10);
-    return String((ts + 60) * 1000000);
+    var gs2 = raw.match(/^GS2\.\d+\.(.*)$/);
+    if (gs2) {
+      var parts = gs2[1].split('$');
+      for (var i = 0; i < parts.length; i++) {
+        var key = parts[i].charAt(0);
+        var val = parts[i].slice(1);
+        if (!/^\d+$/.test(val)) continue;
+        if (key === 's') out.session_id = val;
+        else if (key === 'o') out.session_number = val;
+        else if (key === 't') out.last_hit = val;
+      }
+      return out;
+    }
+
+    var p = raw.split('.');
+    if (p[0] === 'GS1' && p.length >= 6) {
+      if (/^\d+$/.test(p[2])) out.session_id = p[2];
+      if (/^\d+$/.test(p[3])) out.session_number = p[3];
+      if (/^\d+$/.test(p[5])) out.last_hit = p[5];
+    }
+    return out;
   }
 
   function getUserData(eventData) {
@@ -994,15 +1027,18 @@
   }
 
   function getBrowserData() {
+    var gaCookie = readGaSessionCookie();
     return {
       fbp: getCookie('_fbp') || '',
       fbc: getCookie('_fbc') || (getUrlParam('fbclid') ? generateFbc() : ''),
       ttp: getCookie('_ttp') || '',
       ttclid: getCookie('ttclid') || getUrlParam('ttclid') || '',
       ga_client_id: extractGaClientId(),
-      ga_session_id: extractGaSessionId(),
-      ga_session_count: extractGaSessionCount(),
-      ga_timestamp: extractGaTimestamp()
+      ga_session_id: gaCookie.session_id,
+      ga_session_count: gaCookie.session_number,
+      // Horario do ultimo hit do gtag (informativo). NAO e o horario do evento: o
+      // Worker nao o usa mais como timestamp_micros (ver platforms/ga4.js).
+      ga_timestamp: gaCookie.last_hit ? gaCookie.last_hit + '000000' : ''
     };
   }
 
