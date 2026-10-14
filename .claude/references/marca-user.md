@@ -89,6 +89,54 @@ Investigar de tras pra frente (do dado disponivel ate a origem), localizando o e
 5. **Nenhum sinal de passagem pelo site** (sem evento web associado, sem cookie em momento algum) →
    caso (A): comprador foi direto ao checkout. Esperado.
 
+   **Cuidado antes de concluir (A):** o webhook pode vir sem `marca_user` mesmo com o comprador
+   TENDO passado pelo site — o `sck` so existe na URL que ele usou para pagar. Se ele abandonou o
+   checkout e voltou por **link sem parametros** (recuperacao de carrinho da gateway, link
+   reaberto/digitado), o gateway devolve tudo nulo. Caso real (Kiwify, 05/10/2026): `TrackingParameters`
+   inteiro `null`, e o D1 tinha a visita dele (Instagram → checkout 2x → compra 8 min depois) com
+   `fbp`/`fbc`/`ga_client_id`. **Antes de classificar como (A), cruzar o IP do webhook**:
+   ```sql
+   SELECT marca_user, COUNT(*) FROM events
+    WHERE site_id = '{site_id}' AND platform = 'collect' AND source_ip = '{ip do payload}'
+      AND event_name = 'initiate_checkout'
+      AND timestamp >= '{venda - 12h}' AND timestamp <= '{venda}' GROUP BY marca_user;
+   ```
+   Isto e o que o fallback por IP (abaixo) automatiza.
+
+---
+
+## Fallback por IP do dispositivo (opt-in: `fdv.ip_fallback`)
+
+Ultimo recurso do FDV merge, na ordem **`marca_user` (sck) → e-mail → IP**. Roda **so** quando o
+webhook NAO trouxe `marca_user`, o e-mail nao esta no `user_store` e `SITE_CONFIG.fdv.ip_fallback`
+esta ligado. Casa o IP do payload (`Customer.ip` na Kiwify) com os beacons (`events.platform='collect'`,
+`source_ip`) do mesmo `site_id` na **janela** anterior ao webhook e exige um **`initiate_checkout`** do
+mesmo IP.
+
+```jsonc
+"fdv": { "ip_fallback": { "enabled": true, "window_hours": 12, "require_checkout": true } }
+// ou simplesmente  "fdv": { "ip_fallback": true }   (defaults acima; janela com teto de 72h)
+```
+
+- **Premissa por gateway:** so vale se o gateway devolve o **IP do aparelho do comprador**, nao o
+  proprio. Conferido so na **Kiwify** (`Customer.ip`, 3 vendas reais). Tabela por gateway e como
+  conferir: "IP do payload = aparelho?" em `.claude/references/gateway-webhooks.md`. A flag e do
+  projeto, nao do gateway — com dois gateways que mandam IP, os dois precisam estar conferidos.
+- **IP e compartilhado** (CGNAT movel, wifi de casa): por isso exige checkout na janela e, havendo
+  mais de um candidato, fica com o clique de checkout mais recente. Sem candidato nao inventa nada:
+  a venda sai como antes.
+- **Sempre auditavel:** cada tentativa grava uma linha `platform='fdv'` em `events` —
+  `fdv_ip_match` (status 200, com `candidatos`/`ambiguo`/`checkouts`/`ultimo_checkout` no
+  `sent_payload`) ou `fdv_ip_no_match` (status 0, `ip_sem_visita_com_checkout_na_janela`).
+  `ambiguo=true` merece olhar. Leitura na auditoria: `audit-tracking`, secao 2.6b.
+- **Com indexador presente o fallback nao roda** — nem quando o `sck` nao existe no `user_store`
+  (link de checkout antigo, de antes do VT). Ali so o e-mail ainda recupera.
+- **Limites:** IPv6 no beacon x IPv4 no checkout (ou vice-versa) nao casam — cai no comportamento
+  antigo; boleto/Pix aprovado depois da janela tambem nao; `events` so guarda 7 dias no modo
+  `auto_clean`.
+- Sem migracao de banco (a consulta usa o `idx_events_site_time` existente). Desligado/omitido =
+  comportamento exato de antes. Roda tambem em `purchase_dispatch: "shadow"`.
+
 ---
 
 ## Onde isso vive no codigo (referencia — pode mudar de lugar)
@@ -96,4 +144,6 @@ Investigar de tras pra frente (do dado disponivel ate a origem), localizando o e
 - Set do cookie + injecao do indexador nos links de checkout: `src/web.js` (via `gateways_config`).
 - Extracao do `marca_user` no webhook: `src/worker/gateways/{gateway}.js`.
 - Merge com o browser: `src/worker/store/fdv.js` (`fdvMerge` usa `marca_user` para buscar o
-  `user_store`).
+  `user_store`; `fdvIpFallbackConfig` le `fdv.ip_fallback`).
+- Fallbacks por e-mail e por IP: `src/worker/store/user-store.js` (`getUserStoreByEmail`,
+  `getUserStoreByIp`), encadeados em `src/worker/collect/webhook.js` (passos 4 / 4b / 4c).

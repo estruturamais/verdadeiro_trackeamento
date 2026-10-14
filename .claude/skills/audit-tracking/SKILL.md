@@ -279,6 +279,34 @@ elos em `.claude/references/marca-user.md`):
 5. **Sem nenhum sinal de passagem pelo site** (sem evento web, sem cookie em momento algum) →
    **(A) esperado:** comprador foi direto ao checkout. Nunca classificar como "organico".
 
+#### 2.6b Linha `fdv` — o fallback por IP (`fdv.ip_fallback`)
+
+Com `fdv.ip_fallback` ligado no `SITE_CONFIG`, toda venda **sem indexador, sem e-mail conhecido e com
+IP no payload** deixa uma linha `platform='fdv'` (ordem do FDV merge: sck → e-mail → IP — ver
+`.claude/references/marca-user.md`, "Fallback por IP do dispositivo"):
+
+```bash
+npx wrangler d1 execute tracking_db --remote --command "SELECT timestamp, event_name, event_id, status_code, error_message, marca_user, source_ip, sent_payload FROM events WHERE site_id = '{site_id}' AND platform = 'fdv' AND timestamp >= datetime('now','-{X} days') ORDER BY id DESC LIMIT 20;"
+```
+
+- **`fdv_ip_match` (200):** identidade recuperada pelo IP; o `marca_user` da linha e o visitante
+  escolhido. Olhar `ambiguo` no `sent_payload`: `true` = mais de um visitante clicou no checkout
+  daquele IP na janela (`candidatos` diz quantos) e ficou o clique mais recente — confirmar com o
+  cliente quando a venda importar (casal no mesmo wifi, CGNAT de operadora movel).
+- **`fdv_ip_no_match` (0, `ip_sem_visita_com_checkout_na_janela`):** ninguem daquele IP clicou no
+  checkout dentro de `window_hours`. Ou e (A) legitimo (direto ao checkout; venda do agente de vendas
+  do gateway), ou o IP mudou entre o beacon e o pagamento (IPv6 x IPv4, troca 4G → wifi), ou o
+  boleto/Pix foi aprovado depois da janela. Para separar, rodar a consulta de "Cuidado antes de
+  concluir (A)" do `marca-user.md` com janela maior e sem exigir checkout.
+- **`status_code = 0` nesta linha nao e falha de envio** — nada e enviado a plataforma nenhuma. Nao
+  somar na taxa de erro da 2.3.
+- **Flag ligada e nenhuma linha `fdv`** com vendas sem `marca_user` no periodo: o e-mail recuperou
+  antes (passo 4b) ou o payload veio sem IP — gateway cujo parser nao le IP (tabela "IP do payload =
+  aparelho?" em `.claude/references/gateway-webhooks.md`). Com indexador presente, mesmo desconhecido
+  no `user_store`, o fallback nao roda.
+- **Gateway ⬜ naquela tabela com a flag ligada** → recomendar desligar ate conferir a premissa
+  (`new-gateway`, Passo 8): o risco e atribuir a venda ao visitante errado.
+
 ### 2.7 Reconciliacao de volume
 ```bash
 npx wrangler d1 execute tracking_db --remote --command "SELECT COUNT(*) AS webhooks, SUM(processed) AS processados FROM webhook_raw WHERE site_id = '{site_id}' AND timestamp >= datetime('now','-{X} days');"

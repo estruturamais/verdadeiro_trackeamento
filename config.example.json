@@ -14,6 +14,10 @@
     "reactivation": "SubscriptionReactivation"
   },
   "_doc_purchase_dispatch": "Opcional: 'shadow' = o webhook processa TUDO (dedup, billing_type, tabela subscriptions) e grava no `events` o que TERIA sido enviado (status_code 0, error_message shadow_mode), mas NAO envia nada as plataformas. Serve para validar a classificacao com webhooks reais de producao enquanto pixels antigos do checkout ainda nao foram desligados. Remover a chave (ou qualquer outro valor) = envio normal.",
+  "_doc_fdv": "Opt-in. Quando o webhook de compra chega SEM marca_user (link de checkout sem parametros, recuperacao de carrinho) e o e-mail nao esta no user_store, `ip_fallback` tenta recuperar a identidade pelo IP do comprador: casa o IP do payload com um beacon do mesmo site que clicou no checkout (initiate_checkout) nas `window_hours` antes do webhook (default 12, teto 72). Mais de um candidato = o clique de checkout mais recente (registrado como ambiguo). `require_checkout: false` aceita quem so navegou — mais arriscado com IP compartilhado. LIGAR SO se o IP do payload for o do APARELHO do comprador em todo gateway do projeto que manda IP — conferido hoje so na Kiwify (tabela em .claude/references/gateway-webhooks.md). `true` = defaults. Toda tentativa grava uma linha platform='fdv' em events (fdv_ip_match / fdv_ip_no_match). Omitido ou enabled:false = comportamento antigo.",
+  "fdv": {
+    "ip_fallback": { "enabled": false, "window_hours": 12, "require_checkout": true }
+  },
   "platforms": {
     "ga4": {
       "measurement_id": "G-ABC123DEF4"

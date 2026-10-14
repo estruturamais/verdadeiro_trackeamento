@@ -70,6 +70,33 @@ descoberta por comparacao de payloads). **Nao inferir caminhos.**
 
 ---
 
+## IP do payload = aparelho? (premissa do `fdv.ip_fallback`)
+
+O fallback do FDV merge por IP (`[[marca-user]]`, secao "Fallback por IP do dispositivo") so e
+correto se o IP que o gateway manda no webhook for o do **aparelho do comprador** — nao o do servidor
+do gateway, de um antifraude ou de um proxy. Ligado num gateway que manda o proprio IP, casaria o
+comprador com quem quer que tenha clicado no checkout a partir daquele IP: na pratica ninguem, mas o
+risco e de **atribuicao errada**, nao de falta.
+
+| Gateway | Campo que o parser le | IP = aparelho? | Evidencia |
+|---|---|---|---|
+| **Kiwify** | `Customer.ip` | ✅ | 3 vendas reais (10/2026): IP igual ao que a Cloudflare gravou nos beacons do comprador (mesmo aparelho; o mesmo que a Meta recebeu como `client_ip_address`); IPv6 completo identico ao `user_store.ip` do comprador identificado pelo `sck`; IPv4 igual ao de uma visita do mesmo iPhone 5 dias antes |
+| Hubla | `event.invoice.paymentSession.ip` | ⬜ a conferir | — |
+| Lastlink | `Data.DeviceInfo.ip` | ⬜ a conferir | — |
+| Payt | `customer.ip` | ⬜ a conferir | — |
+| PerfectPay | `customer.ip` | ⬜ a conferir | — |
+| Tutory | `ip` dentro de `metadados.dados_visitante` (string JSON) | ⬜ a conferir | — |
+| Hotmart, Kirvano, Eduzz, Green, Ticto, PagTrust | — (o parser nao le IP) | n/a | o fallback nunca roda nesses: ligar a flag nao muda nada |
+
+- **So ligar `fdv.ip_fallback`** num projeto em que **todo** gateway com IP no parser esteja ✅. A flag
+  e do projeto, nao do gateway.
+- **Como conferir:** skill `new-gateway`, Passo 8 ("Premissa do IP"). Registrar aqui o campo, o
+  resultado e a data, com o numero de vendas comparadas. **Nunca** marcar ✅ pela documentacao do
+  gateway, pelo nome do campo ou por inferencia — so por comparacao com `events.source_ip` em venda
+  real.
+
+---
+
 ## Ticto
 
 - **Evento a marcar:** `Venda Realizada`
