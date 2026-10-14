@@ -874,27 +874,54 @@
     }
   }
 
-  function initGA4() {
-    if (!__CONFIG__.ga4_measurement_id) return;
+  // Carrega o gtag.js e CONFIGURA cada destino que o config declarar.
+  //
+  // Antes esta funcao so tratava o GA4: `gtag` era definido dentro dela e ela retornava
+  // seco sem `ga4_measurement_id`, e o unico `gtag('config', ...)` era o do G-. O
+  // destino do Google Ads (AW-) NUNCA era configurado — e o gtag.js so despacha
+  // `send_to` de um destino configurado. Resultado: os eventos de navegador do Google
+  // Ads (lead/contact/initiate_checkout, todos opt-in por rotulo) eram montados em
+  // fireTrigger e descartados em silencio. Sem GA4 no config era pior ainda: `gtag`
+  // sequer existia e a chamada lancava ReferenceError.
+  function initGtag() {
+    var ga4Id = __CONFIG__.ga4_measurement_id;
+    // O purchase do Google Ads vai server-side (Data Manager API) e nao depende disto.
+    var adsId = (__CONFIG__.google_ads_channel === 'web') ? __CONFIG__.google_ads_conversion_id : '';
+    if (!ga4Id && !adsId) return;
 
+    // O proxy /scripts/ga.js repassa o `id` para o googletagmanager; qualquer um dos
+    // dois serve para trazer o runtime, e os destinos vem dos `config` abaixo.
     var script = document.createElement('script');
     script.async = true;
-    script.src = '/scripts/ga.js?id=' + __CONFIG__.ga4_measurement_id;
+    script.src = '/scripts/ga.js?id=' + (ga4Id || adsId);
     document.head.appendChild(script);
 
     window.dataLayer = window.dataLayer || [];
     function gtag(){dataLayer.push(arguments);}
     window.gtag = gtag;
     gtag('js', new Date());
-    var ga4Config = {
-      send_page_view: false,
-      server_container_url: (typeof window !== 'undefined' ? window.location.origin : '')
-    };
-    if (__CONFIG__.debug || getUrlParam('debug') === '1') {
-      ga4Config.debug_mode = true;
+
+    var debugOn = __CONFIG__.debug || getUrlParam('debug') === '1';
+
+    if (ga4Id) {
+      var ga4Config = {
+        send_page_view: false,
+        server_container_url: (typeof window !== 'undefined' ? window.location.origin : '')
+      };
+      if (debugOn) ga4Config.debug_mode = true;
+      gtag('config', ga4Id, ga4Config);
     }
-    gtag('config', __CONFIG__.ga4_measurement_id, ga4Config);
+
+    // Google Ads: sem este config, todo `send_to: AW-.../rotulo` e ignorado.
+    // NAO leva server_container_url — o destino AW- tem transporte proprio.
+    if (adsId) {
+      gtag('config', adsId);
+      if (debugOn) console.log('[Tracking] Google Ads (web) configurado: ' + adsId);
+    }
   }
+
+  // Alias historico — o nome antigo segue valido para quem chamava initGA4().
+  function initGA4() { return initGtag(); }
 
   if (__CONFIG__.debug || getUrlParam('debug') === '1') console.log('[Tracking] Verdadeiro Trackeamento v' + (__CONFIG__.vt_version || '?') + ' | @estruturamais | https://instagram.com/estruturamais');
 
@@ -1139,7 +1166,16 @@
   // `extraCustom` (opcional): propriedades custom da ROTA do form_submit
   // (triggers.lead.routes[].custom_data, ex.: {method:'email'} no login). Entram no
   // custom_data e, portanto, tambem no beacon que vai ao Worker.
+  //
+  // Cada destino de navegador (passos 1, 2 e 4) roda no SEU proprio try. Antes os
+  // passos 1-5 dividiam um try so: qualquer excecao de SDK de terceiro abortava o
+  // resto — sem GA4 no config, o `gtag` do passo 4 lancava ReferenceError e o
+  // beacon do passo 5 nunca saia, e o evento sumia de TODAS as plataformas
+  // server-side. O beacon fica fora de qualquer try compartilhado com SDK.
   function fireTrigger(eventName, eventData, extraCustom) {
+    var debugOn = __CONFIG__.debug || getUrlParam('debug') === '1';
+
+    // Preparacao — sem ela nao ha o que enviar a ninguem.
     try {
       var event_id = generateEventId();
       var userData = getUserData(eventData);
@@ -1152,8 +1188,13 @@
       }
       var names = EVENT_NAMES[eventName];
       if (!names) return;
+    } catch(e) {
+      if (__CONFIG__.debug) console.error('[Tracking] Error in fireTrigger:', e);
+      return;
+    }
 
-      // 1. Meta Pixel(s) — primario + espelhos (mesmo eventID para dedup browser↔CAPI por pixel)
+    // 1. Meta Pixel(s) — primario + espelhos (mesmo eventID para dedup browser↔CAPI por pixel)
+    try {
       if (names.meta) {
         var metaPixelIds = getMetaPixelIds();
         if (metaPixelIds.length) {
@@ -1168,42 +1209,59 @@
           }
         }
       }
+    } catch(e) {
+      if (debugOn) console.error('[Tracking] Meta Pixel ' + eventName + ' FAILED:', e);
+    }
 
-      // 2. TikTok
+    // 2. TikTok
+    try {
       if (__CONFIG__.tiktok_pixel_id && names.tiktok && typeof ttq !== 'undefined') {
         ttq.track(names.tiktok, buildTikTokEventData(customData), {event_id: event_id});
       }
+    } catch(e) {
+      if (debugOn) console.error('[Tracking] TikTok ' + eventName + ' FAILED:', e);
+    }
 
-      // 3. GA4 — dispatch movido para server-side (collect-event.js → sendGA4Event)
-      //    initGA4() mantido para gerar cookies _ga/_ga_* usados pelo beacon
+    // 3. GA4 — dispatch movido para server-side (collect-event.js → sendGA4Event)
+    //    initGA4() mantido para gerar cookies _ga/_ga_* usados pelo beacon
 
-      // 4. Google Ads (web — quando channel === 'web').
-      //    OPT-IN POR ROTULO: so dispara se o rotulo daquele evento existir no config.
-      //    Sem o guard, um evento sem rotulo montaria `send_to: AW-XXX/undefined` — o
-      //    gtag aceita calado e a conversao some. Quem decide QUAIS eventos viram
-      //    conversao (e quais sao principais) e o cliente, no painel do Google Ads;
-      //    o VT so precisa saber enviar o que estiver configurado.
+    // 4. Google Ads (web — quando channel === 'web').
+    //    OPT-IN POR ROTULO: so dispara se o rotulo daquele evento existir no config.
+    //    Sem o guard, um evento sem rotulo montaria `send_to: AW-XXX/undefined` — o
+    //    gtag aceita calado e a conversao some. Quem decide QUAIS eventos viram
+    //    conversao (e quais sao principais) e o cliente, no painel do Google Ads;
+    //    o VT so precisa saber enviar o que estiver configurado.
+    //    O `gtag` vem do initGtag(); se ele nao existir (init falhou), pula sem lancar.
+    try {
       var gadsLabel = names.gads ? __CONFIG__['google_ads_label_' + names.gads] : '';
       if (__CONFIG__.google_ads_conversion_id && gadsLabel && __CONFIG__.google_ads_channel === 'web') {
-        gtag('event', 'conversion', {
-          send_to: __CONFIG__.google_ads_conversion_id + '/' + gadsLabel,
-          value: customData.value || undefined,
-          currency: customData.currency || 'BRL'
-        });
-      }
-
-      // 5. sendBeacon ao Worker
-      sendTrackingBeacon(eventName, event_id, userData, browserData, customData);
-
-      // Debug mode
-      if (__CONFIG__.debug || getUrlParam('debug') === '1') {
-        console.log('[Tracking] ' + eventName + ' fired - event_id: ' + event_id);
-        console.log('[Tracking]   userData:', userData);
-        console.log('[Tracking]   browserData:', browserData);
-        console.log('[Tracking]   customData:', customData);
+        if (typeof window.gtag === 'function') {
+          window.gtag('event', 'conversion', {
+            send_to: __CONFIG__.google_ads_conversion_id + '/' + gadsLabel,
+            value: customData.value || undefined,
+            currency: customData.currency || 'BRL'
+          });
+        } else if (debugOn) {
+          console.warn('[Tracking] Google Ads ' + eventName + ' nao enviado: gtag indisponivel');
+        }
       }
     } catch(e) {
-      if (__CONFIG__.debug) console.error('[Tracking] Error in fireTrigger:', e);
+      if (debugOn) console.error('[Tracking] Google Ads ' + eventName + ' FAILED:', e);
+    }
+
+    // 5. sendBeacon ao Worker — alimenta TODAS as plataformas server-side.
+    try {
+      sendTrackingBeacon(eventName, event_id, userData, browserData, customData);
+    } catch(e) {
+      if (__CONFIG__.debug) console.error('[Tracking] Error in fireTrigger beacon:', e);
+    }
+
+    // Debug mode
+    if (debugOn) {
+      console.log('[Tracking] ' + eventName + ' fired - event_id: ' + event_id);
+      console.log('[Tracking]   userData:', userData);
+      console.log('[Tracking]   browserData:', browserData);
+      console.log('[Tracking]   customData:', customData);
     }
   }
 
