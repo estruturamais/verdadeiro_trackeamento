@@ -91,6 +91,32 @@ ninguem e todo form da pagina virava `lead`. A partir da 1.7.0:
 
 ---
 
+## Chave de identidade no navegador (`cookies.user`) — opt-in
+
+Muda **so o nome** sob o qual o navegador guarda o id do visitante: o cookie que o Worker grava
+(HttpOnly), a copia legivel do `web.js`, o `localStorage` e o `sessionStorage`. O campo `marca_user`
+do payload, as colunas do D1 e o indexador dos gateways (`sck`, `xcod`…) **nao mudam**. Ausente ou
+`"marca_user"` (o valor do `config.example.json`) = comportamento de sempre.
+
+```json
+{ "cookies": { "user": "id_legado" } }
+```
+
+- **Caso de uso:** herdar a base de um id que o site ja tinha — GTM ou solucao anterior que guardava
+  o visitante em outra chave (cookie e/ou `localStorage`). Com o mesmo nome, o VT adota o mesmo id e
+  quem ja tinha historico segue com ele. A pergunta e feita no Step 2 do onboarding.
+- **Fallback:** a chave `marca_user` continua lida depois da configurada (Worker e `web.js`) — trocar
+  o nome numa instalacao em andamento nao zera quem ja tem id. Visitante com as duas chaves fica com
+  o valor da configurada.
+- **Um dono so:** o Worker regrava o cookie como HttpOnly. A tag antiga que grava a chave sai junto
+  da instalacao — se continuar, ela deixa de enxergar o cookie e os dois brigam pelo mesmo nome.
+- O valor herdado vai como esta para o indexador do checkout: conferir no 5.5 do onboarding que ele
+  volta no webhook.
+- Do bloco `cookies`, **so `user` e lido**; `email`, `phone` e `name` do `config.example.json` ainda
+  nao tem efeito.
+
+---
+
 ## Proxy do Meta Pixel (`platforms.meta.pixel_proxy`) — opt-in
 
 | Valor | Efeito |
