@@ -261,10 +261,53 @@ Uma plataforma que sumiu da lista, ou que trocou `200` por `0`, e regressao — 
 Se o site tem pouco trafego e a janela vier vazia, use o **smoke test sintetico** do Step 3b.5 do
 `overview.md` em vez de esperar.
 
+**Nao** pedir webhook de teste do gateway para conferir a atualizacao sem o `shadow` — o teste vira
+venda real nas plataformas. Ver "Teste de webhook com a instalacao em producao", abaixo.
+
 ## Passo 8 — Registrar
 
 Atualizar no `tracking_memory.md`: versao, data da atualizacao e quais migracoes foram aplicadas.
 Sem isso, a proxima sessao nao sabe de onde partir.
+
+---
+
+## Teste de webhook com a instalacao em producao
+
+Vale para gateway novo ou reconfigurado (`new-gateway`) numa instalacao que ja vende, e para qualquer
+"manda um teste do gateway pra ver se continua funcionando" depois de uma atualizacao. **Nunca** pedir
+esse teste sem o `shadow`: o webhook de teste chega como compra aprovada e sai como `Purchase` real
+para todas as plataformas — na Meta nao ha como apagar.
+
+O roteiro e o do Step 5.4 do `overview.md` — **ligar → testar → conferir → desligar → conferir que
+desligou**, com `"purchase_dispatch": "shadow"` na raiz do `SITE_CONFIG`. O que muda em producao e o
+custo da janela:
+
+- O `shadow` vale para o site inteiro: enquanto ligado, **toda venda real, de todos os gateways,** e
+  gravada no D1 mas **nao vai** as plataformas nem a planilha.
+- Essas vendas **nao voltam sozinhas**: o pedido fica `processed = 1`, entao o reenvio do gateway cai
+  no dedup, e o reenvio retroativo depende do endpoint `/collect/reprocess-selective`, que nao vem no
+  repo (o `reenvio_dados.md` confere antes).
+
+Por isso:
+
+1. **Avisar antes, em linguagem de negocio:** "por alguns minutos, as vendas que cairem ficam
+   registradas no nosso banco, mas nao chegam a Meta/Google/TikTok — e o tempo de um teste".
+2. **Janela de minutos, no horario de menos venda:** ligar, pedir o teste na hora, conferir, desligar —
+   tudo na mesma sessao, com o cliente pronto para disparar o teste.
+3. **Registrar** `shadow_ligado_em` e `shadow_desligado_em` no `tracking_memory.md`.
+4. **Depois de desligar e conferir, listar o que ficou retido** (o proprio teste + as vendas reais da
+   janela):
+
+   ```bash
+   npx wrangler d1 execute tracking_db --remote --command "SELECT w.id, w.timestamp, w.gateway, w.order_id, w.value FROM webhook_raw w WHERE w.site_id = '{site_id}' AND EXISTS (SELECT 1 FROM events e WHERE e.site_id = w.site_id AND e.event_id = w.order_id AND e.error_message LIKE 'shadow_mode%') ORDER BY w.id;"
+   ```
+
+   Tirando o teste, cada linha e uma venda real que ficou fora das plataformas — informar ao cliente
+   quantas e o valor.
+
+Se o cliente nao aceita janela nenhuma, a alternativa e nao testar e validar pela primeira venda real
+(`new-gateway`, Passo 1, opcao C) — o custo passa a ser essa venda sair por um parser ainda nao
+conferido.
 
 ---
 

@@ -689,6 +689,10 @@ Delegar para a skill especialista de cada plataforma confirmada:
 > Ticto = evento "Venda Realizada", v2, JSON, "Enviar Order Bump | Combo junto com a oferta
 > principal"). Evento/versao/formato errado = compra nao parseada = venda perdida.
 
+> 🛑 **Ligar o `shadow` ANTES de passar a URL ao cliente (5.4.1).** O webhook de teste do gateway
+> chega como compra aprovada e, sem o `shadow`, sai como `Purchase` real para todas as plataformas — na
+> Meta nao ha como apagar. O cliente pode disparar o teste no mesmo minuto em que salva a URL.
+
 Instruir o cliente a configurar a URL de webhook no painel do gateway detectado:
 
 | Gateway    | Onde configurar              | URL do webhook                                     |
@@ -707,15 +711,56 @@ Instruir o cliente a configurar a URL de webhook no painel do gateway detectado:
 
 ### 5.4 Validacao de webhooks (apenas infoproduto)
 
-Apos o cliente configurar a URL de webhook no painel do gateway e realizar uma compra de teste (ou usar a simulacao de webhook do gateway, quando disponivel), verificar no D1:
+O parser **nao distingue teste de venda**: a simulacao do painel e a compra de teste chegam como compra
+aprovada, e o Worker despacha `Purchase` para todas as plataformas. Caso real: o teste da Kiwify
+(`johndoe@example.com`, "Example product", R$ 42,50) virou `Purchase` nos 2 pixels da Meta e no TikTok
+no dia da instalacao — venda fantasma no aprendizado das campanhas, sem remocao possivel na Meta. Por
+isso o teste roda **sempre** sob `purchase_dispatch: "shadow"`, nesta ordem: **ligar → testar →
+conferir → desligar → conferir que desligou**.
+
+**5.4.1 — Ligar o `shadow` (antes de passar a URL do webhook)**
+
+Na **raiz** do `SITE_CONFIG` no `wrangler.toml` — ao lado de `site_id`, nao dentro de `platforms`:
+
+```jsonc
+"purchase_dispatch": "shadow"
+```
+
+```bash
+npx wrangler deploy
+```
+
+Com a chave, o webhook roda o pipeline inteiro (grava o `webhook_raw`, aprova, parseia, deduplica) e
+cada envio que **teria** acontecido vira uma linha no `events` com `status_code = 0` e `error_message`
+comecando com `shadow_mode` — nada sai para Meta, TikTok, GA4 nem Google Ads, e a planilha de vendas
+nao recebe linha. O `shadow` so pausa o despacho do **webhook**: os eventos do navegador (`page_view`,
+`lead`, `initiate_checkout`) seguem normais. Gravar `shadow_ligado_em: {data e hora}` no
+`tracking_memory.md`.
+
+> **Janela curta.** O `shadow` vale para o site inteiro: uma venda **real** que cair enquanto ele esta
+> ligado tambem fica retida, e nao volta sozinha (o pedido fica `processed = 1` e o reenvio do gateway
+> cai no dedup). Ligar, testar e desligar na mesma sessao.
+
+**5.4.2 — Testar**
+
+So agora passar a URL (tabela acima) e pedir o teste: compra de teste ou simulacao de webhook do
+gateway, quando disponivel. Com o `shadow` no ar, os dois sao seguros.
+
+**5.4.3 — Conferir**
 
 ```bash
 npx wrangler d1 execute tracking_db --remote --command "SELECT gateway, order_id, processed, error FROM webhook_raw WHERE site_id = '{site_id}' ORDER BY id DESC LIMIT 5;"
+npx wrangler d1 execute tracking_db --remote --command "SELECT platform, event_name, status_code, error_message FROM events WHERE site_id = '{site_id}' AND channel = 'webhook' ORDER BY id DESC LIMIT 10;"
 ```
 
 **Criterios de sucesso:**
-- `processed = 1` e `error = null`: webhook recebido, validado e eventos disparados para as plataformas
-- `order_id` preenchido: parser do gateway extraiu o identificador da compra corretamente
+- `webhook_raw`: `processed = 1` e `error = null` — webhook recebido, aprovado e parseado; `order_id`
+  preenchido — o parser extraiu o identificador da compra
+- `events`: uma linha por destino do baseline (cada pixel Meta, TikTok, GA4, Google Ads), **todas** com
+  `status_code = 0` + `shadow_mode` — e o que teria saido. Destino faltando = nao esta no config
+- **Qualquer `200`/`204` nessa consulta = o `shadow` nao estava no ar e o teste foi despachado.**
+  Registrar como venda de teste despachada (`audit-tracking`, secao 2.7) e conferir o deploy do 5.4.1
+  antes de repetir o teste
 
 **Diagnostico por resultado:**
 
@@ -730,6 +775,36 @@ Se `processed = 0` com `order_id` preenchido e o evento era uma compra real apro
 ```bash
 npx wrangler d1 execute tracking_db --remote --command "SELECT event_name, platform, status_code, error_message FROM events WHERE site_id = '{site_id}' ORDER BY id DESC LIMIT 10;"
 ```
+
+**5.4.4 — Desligar (antes do go-live)**
+
+**So depois do ultimo teste de compra do Step 5** — o 5.5.2 usa a mesma compra de teste (a linha
+`meta_ads` dela existe sob `shadow`, com o `marca_user`): fazer o 5.5 e voltar aqui. **Remover** a chave
+`purchase_dispatch` do `SITE_CONFIG` (remover, nao trocar o valor) e:
+
+```bash
+npx wrangler deploy
+```
+
+Gravar `shadow_desligado_em: {data e hora}` no `tracking_memory.md`. **Depois de desligar, nenhum teste
+novo:** reenviar o **mesmo** teste nao despacha (o `order_id` dele ja esta `processed = 1` e cai no
+dedup), mas um teste com outro `order_id` vira venda real. Nunca chegar ao Step 6 com a chave no config.
+
+**5.4.5 — Conferir que desligou**
+
+```bash
+# 1. imediato: a chave saiu do config que foi deployado? (nenhuma linha = saiu)
+grep -n "purchase_dispatch" wrangler.toml
+
+# 2. prova no ar, na primeira venda real depois do deploy: 200/204 por destino e nenhum shadow_mode
+npx wrangler d1 execute tracking_db --remote --command "SELECT platform, event_name, status_code, error_message, timestamp FROM events WHERE site_id = '{site_id}' AND channel = 'webhook' ORDER BY id DESC LIMIT 10;"
+```
+
+A saida do `wrangler deploy` **nao** serve de prova: ela trunca o valor do `SITE_CONFIG`. Venda real com
+`shadow_mode` depois do `shadow_desligado_em` = o deploy nao pegou — refazer o 5.4.4 na hora (cada venda
+nessa condicao fica fora das plataformas). Sem venda real ate a entrega, registrar a checagem 2 como
+pendente no `tracking_memory.md` (`shadow_conferido_na_venda_real: pendente`); o `audit-tracking` (2.7)
+pega o `shadow` esquecido.
 
 ### 5.5 Validacao E2E do caminho do `marca_user`
 
