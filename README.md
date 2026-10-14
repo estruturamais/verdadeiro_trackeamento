@@ -60,7 +60,10 @@ novidades:
   rastreio (link de checkout sem parâmetros, recuperação de carrinho) recupera `fbp`/`fbc`/`client_id`
   pelo IP do aparelho que clicou no checkout nas 12 h anteriores; conservador, toda tentativa grava uma
   linha `platform='fdv'`, e só deve ser ligado com o IP do payload conferido como sendo o do aparelho
-  (hoje, Kiwify). **Docs:** o teste de webhook do gateway passa a ser feito **sempre sob `shadow`**
+  (hoje, Kiwify). **Kirvano:** toda compra ia com **valor zero** para Meta, GA4, TikTok e Google Ads —
+  o webhook real manda `total_price` como `"R$ 169,80"` e o parser esperava `"BRL 97.00"`: sobrava
+  `"$ 169,80"` (lido como 0) e a moeda `R$`, que não é código ISO. Agora sai `169.80` em `BRL`.
+  **Docs:** o teste de webhook do gateway passa a ser feito **sempre sob `shadow`**
   (o teste da Kiwify tinha virado `Purchase` real na Meta e no TikTok no dia da instalação), e a
   auditoria acha venda de teste já despachada; o `google_ads.md` cobre o OAuth do lado do operador
   (app "Em teste" = refresh token de 7 dias; quem autoriza é dono do token; o código não se repassa;

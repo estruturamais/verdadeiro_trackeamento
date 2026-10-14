@@ -60,8 +60,8 @@ antes da proxima.
 ### Mudancas de comportamento da 1.9.0
 
 **Sem migracao de banco** e **sem config obrigatorio** (salvo a excecao do `collect_url`, abaixo).
-Tudo o que e novo e opt-in: sem as chaves, nada que funcionava deixa de funcionar. Mas tres correcoes
-de falha silenciosa **mudam numeros** sem acao do cliente — avise antes, nao depois.
+Tudo o que e novo e opt-in: sem as chaves, nada que funcionava deixa de funcionar. Mas quatro
+correcoes de falha silenciosa **mudam numeros** sem acao do cliente — avise antes, nao depois.
 
 **1. Dominio de sufixo composto (`.com.br`, `.adv.br`, `.co.uk`…).** O cookie do `marca_user` saia
 com `Domain=.com.br`, que o navegador **rejeita** — a identidade nao persistia entre paginas e o
@@ -84,7 +84,14 @@ falha de um SDK nunca mais derruba o beacon. Avise o cliente:
   a conversao de navegador se valida **no navegador** (`.claude/playbooks/google_ads.md`, Step 4).
 - A carga de pagina passa a mandar os hits de pagina do Google Ads, como o snippet padrao do Google.
 
-**3. GA4** — secao propria logo abaixo.
+**3. Kirvano: o valor da compra deixa de ir zerado.** O webhook real manda `total_price` como
+`"R$ 169,80"` e o parser lia `"$ 169,80"` — todo conector convertia para **0** — com a moeda `R$`, que
+nao e codigo ISO. Agora sai `169.80` em `BRL`. Para quem vende pela Kirvano: **receita e ROAS das
+compras passam a aparecer** na Meta, no GA4, no TikTok e no Google Ads (antes era venda com valor zero,
+nao venda faltando). Na planilha de vendas, `pagamento_valor_total` passa de `$ 169,80` para `169.80`,
+o mesmo formato dos outros gateways. Venda antiga nao e corrigida retroativamente.
+
+**4. GA4** — secao propria logo abaixo.
 
 **Opt-ins novos** (detalhe e quando ligar em `.claude/references/site-config-format.md`):
 
