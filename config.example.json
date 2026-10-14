@@ -139,7 +139,6 @@
   },
   "logging": {
     "enabled": true,
-    "retention_days": 30,
     "log_bearer_token": "{token-secreto-opcional}"
   },
   "retention": {

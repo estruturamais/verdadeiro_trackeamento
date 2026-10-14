@@ -47,7 +47,7 @@ negocio ("suas vendas passam a cair na planilha", nao "novo conector `sendSheets
 
 | Para chegar em | Acao de banco | Acao de config | Quebra algo? |
 |---|---|---|---|
-| **1.9.1** | — (nenhuma migracao) | — (nenhuma). O bloco `cookies` do `SITE_CONFIG` passa a ser ignorado e pode sair | So para quem configurou o `cookies.user` da 1.9.0: os visitantes que so tinham o id na chave antiga ganham id novo — ver "Mudancas de comportamento da 1.9.1" |
+| **1.9.1** | — (nenhuma migracao) | — (nenhuma). O bloco `cookies` do `SITE_CONFIG` passa a ser ignorado e o `logging.retention_days` nunca foi lido: os dois podem sair | So para quem configurou o `cookies.user` da 1.9.0: os visitantes que so tinham o id na chave antiga ganham id novo — ver "Mudancas de comportamento da 1.9.1" |
 | **1.9.0** | — (nenhuma migracao) | Opcional, tudo opt-in: `platforms.ga4.unattributed_purchases`, `fdv.ip_fallback`, `collect_url` — ver abaixo (o `cookies.user` que a 1.9.0 trazia saiu na 1.9.1). **Excecao:** quem tinha `collect_url` absoluto como patch local no `serve-webjs.js` poe a chave no `SITE_CONFIG` no **mesmo** deploy | Nao — sem as chaves nada some; ver "Mudancas de comportamento da 1.9.0" |
 | **1.8.0** | — | Opcional: route `{dominio}/fb/*` no `wrangler.toml` (o `git pull` nao a traz) + `platforms.meta.pixel_proxy: true` — ver abaixo | Nao — sem a flag nada muda |
 | **1.7.0** | `migrations/005_add_user_store_email_index.sql` (**todos**) + `migrations/004_add_subscriptions_table.sql` (**so** projeto de assinatura) | Opcional: `subscription_tracking` (ver abaixo) | Nao — ver "Mudancas de comportamento" |
@@ -79,6 +79,10 @@ antes). Efeito: a cobertura de `fbp` no `PageView` da CAPI sobe (consulta da 2.4
 `audit-tracking`). Com o pixel bloqueado ou lento, o `page_view` sai no teto — ate 3 s depois da
 carga, como ja acontecia com o gtag bloqueado. Cliques e demais eventos nao esperam nada. Sem Meta no
 config, nada muda.
+
+**Config sem efeito, so limpeza:** o `logging.retention_days` saiu do `config.example.json` — nenhum
+codigo le a chave (a retencao real e a do `retention.mode`, 7/14/90 dias no `auto_clean`). Se estiver
+no `SITE_CONFIG`, pode sair; deixar tambem nao muda nada.
 
 ### Mudancas de comportamento da 1.9.0
 

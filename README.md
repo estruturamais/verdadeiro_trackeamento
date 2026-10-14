@@ -49,8 +49,8 @@ novidades:
   `DESTINATION_ACCOUNT_NOT_ENABLED_ENHANCED_CONVERSIONS_FOR_LEADS`. **Correção:** o comando
   documentado do OAuth do Google Ads (`npm run gads:oauth --client-id=...`) não entregava as
   credenciais ao script — o npm 11 fica com as flags e o script parava pedindo o Client ID; o certo é
-  `npm run gads:oauth -- --client-id=... --client-secret=...`. **Sem migração de banco e sem config
-  novo.**
+  `npm run gads:oauth -- --client-id=... --client-secret=...`. O `logging.retention_days` saiu do
+  `config.example.json`: nenhum código o lia. **Sem migração de banco e sem config novo.**
 - **1.9.0** — **GA4 com dado de verdade, Google Ads pelo navegador, identidade em `.com.br` e FDV
   merge por IP**. Release de correções de falha silenciosa, achadas e validadas em produção em
   clientes reais (Kiwify, `.com.br`). **GA4:** o `page_view` do Measurement Protocol chegava **sem
