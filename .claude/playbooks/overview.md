@@ -50,7 +50,9 @@ Campos `clientConfig` expostos ao browser (sem secrets), extraidos de `serve-web
 - `google_ads_label_page_view`, `google_ads_label_contact`, `google_ads_label_lead`,
   `google_ads_label_initiate_checkout`, `google_ads_label_purchase` (todos opt-in: sem o rotulo, o
   evento nao dispara no Google Ads)
-- `triggers`, `cookies`, `geolocation`, `gateways_config`, `custom_data`, `collect_url`
+- `triggers`, `cookies`, `cookie_domain`, `geolocation`, `gateways_config`, `custom_data`
+- `collect_url` — o `collect_url` do SITE_CONFIG quando definido, senao `/collect/event` relativo ao
+  host da pagina (ver Step 2 > "Pagina e Worker no mesmo host?")
 
 ### Mapeamento canonico de eventos
 
@@ -146,6 +148,23 @@ Duas coisas para dizer ao cliente **agora**, nao no fim:
 - **HTML estatico:** ausencia de sinais de CMS
 - **Next.js:** presenca de `__NEXT_DATA__` ou `/_next/`
 - **React (CRA):** presenca de `react` no bundle sem `__NEXT_DATA__`
+
+### Pagina e Worker no mesmo host? (`collect_url`) — page builders
+
+O beacon do `web.js` vai, por default, para `/collect/event` **relativo**: o host da PAGINA. So
+funciona quando a pagina roda no host que tem as Worker Routes (`infra.md` 0.8). Quando nao roda, o
+`collect_url` **absoluto** e obrigatorio no SITE_CONFIG (Step 3b):
+
+- **Page builder** (GreatPages, HotmartPages, Wix, InLead…) ou **site em plataforma SaaS**
+  (`.claude/references/saas-hospedado.md`): a pagina e servida pelo builder e o tracking fica em
+  `track.{dominio}` → `"collect_url": "https://track.{dominio}/collect/event"`.
+- **Regra decidivel:** host do `<script src>` do Step 5 diferente do host da pagina = `collect_url`
+  absoluto obrigatorio, apontando para o host do script.
+- Sem ele a coleta web morre **sem erro**: o script carrega, o console mostra o `page_view` e o
+  `events` fica vazio. Gravar no `tracking_memory.md`: `collect_url: relativo | {url absoluta}`.
+- **Host alternativo da plataforma** (`{projeto}.pages.dev`, `*.vercel.app`, `*.netlify.app`): o
+  mesmo site respondendo num segundo host, onde todo beacon relativo morre em `405` → redirecionar
+  para o dominio (`infra.md` 0.11b) e registrar na memoria.
 
 ### Formularios
 - **Elementor Form:** `form.elementor-form`
@@ -541,6 +560,10 @@ Se a tabela `events` estiver vazia: normal nesta etapa — o script ainda nao es
 
 Deve ser o **primeiro elemento do `<head>`**, antes de qualquer outro script.
 
+`{dominio}` aqui e o host das Worker Routes. Se ele for **diferente do host da pagina** (page builder,
+tracking em `track.{dominio}`), o SITE_CONFIG precisa do `collect_url` absoluto antes da instalacao
+(Step 2 > "Pagina e Worker no mesmo host?") — conferido no 5.1.
+
 ### Instrucoes por CMS (baseado no `cms_detectado` no Step 2)
 
 | CMS                         | Instrucao                                                                    |
@@ -554,6 +577,30 @@ Deve ser o **primeiro elemento do `<head>`**, antes de qualquer outro script.
 | HTML estatico               | Primeira linha dentro de `<head>` em todos os HTMLs                          |
 | Next.js                     | `_document.js`, strategy `beforeInteractive`                                 |
 | React (CRA)                 | `public/index.html`, primeira linha do `<head>`                              |
+
+### 5.1 — O beacon chega ao Worker? (page builder e host alternativo)
+
+O console do `?debug=1` (5.2) mostra o `page_view` **mesmo quando o beacon se perde**: o log e do
+navegador, nao do Worker. Conferir o destino antes:
+
+1. **Destino configurado** (autonomo):
+   ```bash
+   curl -s "https://{dominio}/tracking/web.js?site_id={site_id}" | grep -o '"collect_url":"[^"]*"'
+   ```
+   `"/collect/event"` com a pagina num host que nao e o das routes → falta o `collect_url` absoluto
+   (Step 2) → corrigir o SITE_CONFIG e redeployar antes de seguir.
+2. **No navegador do cliente** (F12 > Network, filtro `collect/event`): o `POST` do `page_view` vai
+   para o host das routes e responde `200` com `{"status":"ok"}`. Com `collect_url` absoluto vem
+   antes um `OPTIONS` (preflight, `204`) — normal. `405`/`404`, ou o `POST` indo para o host do
+   builder → mesma causa do item 1.
+3. **Host alternativo da plataforma** (so se houver — `infra.md` 0.11b):
+   ```bash
+   curl -s -o /dev/null -w "%{http_code} -> %{redirect_url}\n" "https://{host-alternativo}/"
+   curl -s -o /dev/null -w "%{http_code}\n" -X POST "https://{host-alternativo}/collect/event"
+   ```
+   Esperado: `301 -> https://{dominio}/` no primeiro. `200` no primeiro e `405` (ou qualquer resposta
+   que nao seja a do Worker) no segundo = o site responde num host onde todo beacon morre → aplicar o
+   redirect do `infra.md` 0.11b antes de seguir.
 
 ### 5.2 Confirmar no browser (apos instalacao)
 
