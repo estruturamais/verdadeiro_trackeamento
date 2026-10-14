@@ -105,7 +105,11 @@ export async function handleServeWebJs(request, env) {
     spa_mode: config.spa_mode,
     // escape hatch da reescrita de URL (modais/routers/PWA).
     disable_url_rewrite: config.disable_url_rewrite,
-    collect_url: '/collect/event'
+    // Relativo por default: vai ao host da PAGINA. Quando a pagina nao roda no host das
+    // Worker Routes (page builder, site em plataforma com o tracking em track.{dominio}),
+    // o beacon relativo cai no builder e a coleta web morre sem erro — por isso o
+    // `collect_url` absoluto do SITE_CONFIG vence.
+    collect_url: (typeof config.collect_url === 'string' && config.collect_url.trim()) || '/collect/event'
   };
 
   const script = WEB_JS_TEMPLATE
