@@ -78,27 +78,41 @@
     return timestamp + '-' + uuid;
   }
 
+  // NOME sob o qual o navegador guarda a identidade (cookie + localStorage +
+  // sessionStorage): `cookies.user` do SITE_CONFIG, para herdar a base de um id que o
+  // site ja tinha (GTM/solucao anterior). O campo do payload, as colunas do D1 e o
+  // indexador dos gateways seguem `marca_user`. A chave `marca_user` continua lida
+  // depois da configurada: trocar o nome numa instalacao em andamento nao zera quem
+  // ja tem id. Espelho do `userCookieName` de serve-webjs.js e collect/event.js.
+  var USER_KEY = (__CONFIG__.cookies && __CONFIG__.cookies.user) || 'marca_user';
+  var USER_KEYS = USER_KEY === 'marca_user' ? ['marca_user'] : [USER_KEY, 'marca_user'];
+
   // Identidade que ESTE navegador ja tem: cookie legivel pelo JS -> localStorage ->
-  // sessionStorage. Cada leitura isolada: storage bloqueado (iframe sandbox, modo
-  // restrito) lanca, e nao pode derrubar as outras fontes.
+  // sessionStorage, da chave configurada e depois da `marca_user`. Cada leitura
+  // isolada: storage bloqueado (iframe sandbox, modo restrito) lanca, e nao pode
+  // derrubar as outras fontes.
   function readMarcaUserLocal() {
-    try {
-      var m = document.cookie.match(/(?:^|;\s*)marca_user=([^;]+)/);
-      if (m && m[1]) return m[1];
-    } catch(e) {}
-    try { var l = localStorage.getItem('marca_user'); if (l) return l; } catch(e) {}
-    try { var s = sessionStorage.getItem('marca_user'); if (s) return s; } catch(e) {}
+    for (var i = 0; i < USER_KEYS.length; i++) {
+      var key = USER_KEYS[i];
+      try {
+        var re = new RegExp('(?:^|;\\s*)' + key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '=([^;]+)');
+        var m = document.cookie.match(re);
+        if (m && m[1]) return m[1];
+      } catch(e) {}
+      try { var l = localStorage.getItem(key); if (l) return l; } catch(e) {}
+      try { var s = sessionStorage.getItem(key); if (s) return s; } catch(e) {}
+    }
     return '';
   }
 
-  // Grava nas tres fontes. O cookie do Worker e HttpOnly (invisivel ao JS) e o
-  // getAamaisId() le daqui.
+  // Grava nas tres fontes, so com a chave configurada. O cookie do Worker e HttpOnly
+  // (invisivel ao JS) e o getAamaisId() le daqui.
   function persistMarcaUser(id) {
-    try { localStorage.setItem('marca_user', id); } catch(e) {}
-    try { sessionStorage.setItem('marca_user', id); } catch(e) {}
+    try { localStorage.setItem(USER_KEY, id); } catch(e) {}
+    try { sessionStorage.setItem(USER_KEY, id); } catch(e) {}
     try {
       var cd = getCookieDomain(window.location.hostname);
-      document.cookie = 'marca_user=' + id + ';path=/;max-age=63072000;SameSite=Lax' + (cd ? ';domain=' + cd : '');
+      document.cookie = USER_KEY + '=' + id + ';path=/;max-age=63072000;SameSite=Lax' + (cd ? ';domain=' + cd : '');
     } catch(e) {}
   }
 
@@ -301,11 +315,7 @@
   }
 
   function getAamaisId() {
-    var cookieMatch = document.cookie.match(/marca_user=([^;]+)/);
-    if (cookieMatch && cookieMatch[1]) return cookieMatch[1];
-    var localVal = localStorage.getItem('marca_user');
-    if (localVal) return localVal;
-    return sessionStorage.getItem('marca_user') || '';
+    return readMarcaUserLocal();
   }
 
   function detectGateway(targetUrl) {
