@@ -1,4 +1,4 @@
-/*! Verdadeiro Trackeamento v1.8.0 | criado por @estruturamais | https://instagram.com/estruturamais */
+/*! Verdadeiro Trackeamento v1.9.0 | criado por @estruturamais | https://instagram.com/estruturamais */
 (function() {
   'use strict';
 
@@ -16,6 +16,54 @@
   // MODULE 1 — Identification (SPEC 2.1)
   // ============================================================
 
+  // Dominio registravel (eTLD+1) — espelho de getRegistrableDomain/getCookieDomain em
+  // src/worker/shared/helpers.js (manter as listas iguais). Os 2 ultimos rotulos do host
+  // davam `com.br` em `www.exemplo.com.br`: o cookie `domain=.com.br` e rejeitado pelo
+  // navegador e `pay.kiwify.com.br` passava por link INTERNO (sem indexador no checkout).
+  // Declarado ANTES do primeiro uso no carregamento: uma tabela `var` mais abaixo no
+  // arquivo ainda estaria undefined quando este modulo grava o cookie.
+  var SECOND_LEVEL_LABELS = {
+    com: 1, net: 1, org: 1, gov: 1, edu: 1, mil: 1, co: 1, ac: 1, or: 1, ne: 1, go: 1, gob: 1, nom: 1,
+    info: 1, biz: 1, gr: 1, adv: 1, art: 1, eco: 1, ind: 1, inf: 1, rec: 1, srv: 1, tur: 1, tv: 1,
+    vet: 1, med: 1, eng: 1, esp: 1, jor: 1, pro: 1, psi: 1, id: 1, me: 1, ltd: 1, plc: 1, sch: 1, 'in': 1
+  };
+  var PLATFORM_SUFFIXES = {
+    'pages.dev': 1, 'workers.dev': 1, 'vercel.app': 1, 'netlify.app': 1, 'github.io': 1,
+    'web.app': 1, 'firebaseapp.com': 1, 'herokuapp.com': 1
+  };
+
+  // Sem ponto (`exemplo.com.br`); '' para IP, `localhost` ou o proprio sufixo publico.
+  function getRegistrableDomain(hostname) {
+    var host = String(hostname || '').trim().toLowerCase();
+    if (!host || host.charAt(0) === '[') return '';
+    host = host.replace(/:\d+$/, '').replace(/\.$/, '');
+    if (!host || host.indexOf(':') !== -1 || /^[\d.]+$/.test(host)) return '';
+    var parts = host.split('.');
+    var n = parts.length;
+    if (n < 2) return '';
+    for (var i = 0; i < n; i++) if (!parts[i]) return '';
+    var take = (PLATFORM_SUFFIXES.hasOwnProperty(parts[n - 2] + '.' + parts[n - 1]) ||
+      (parts[n - 1].length === 2 && SECOND_LEVEL_LABELS.hasOwnProperty(parts[n - 2]))) ? 3 : 2;
+    return n < take ? '' : parts.slice(-take).join('.');
+  }
+
+  // Domain= do cookie com o ponto, ou '' para omitir o atributo (host-only, aceito).
+  // `cookie_domain` do SITE_CONFIG vence, se o host estiver dentro dele.
+  function getCookieDomain(hostname) {
+    var host = String(hostname || '').trim().toLowerCase().replace(/\.$/, '');
+    var cfg = String(__CONFIG__.cookie_domain || '').trim().toLowerCase().replace(/^\.+/, '');
+    if (cfg && getRegistrableDomain(cfg) &&
+        (host === cfg || host.slice(-(cfg.length + 1)) === '.' + cfg)) return '.' + cfg;
+    var root = getRegistrableDomain(host);
+    return root ? '.' + root : '';
+  }
+
+  // Chave de "mesmo site" para o isExternal: o dominio registravel, ou o host inteiro
+  // quando nao ha um (localhost, IP).
+  function siteKey(hostname) {
+    return getRegistrableDomain(hostname) || String(hostname || '').toLowerCase();
+  }
+
   function generateEventId() {
     var timestamp = Date.now();
     var uuid;
@@ -31,50 +79,53 @@
     return timestamp + '-' + uuid;
   }
 
-  function getOrCreateMarcaUser() {
-    var cookieMatch = document.cookie.match(/marca_user=([^;]+)/);
-    if (cookieMatch && cookieMatch[1]) return cookieMatch[1];
+  // NOME sob o qual o navegador guarda a identidade (cookie + localStorage +
+  // sessionStorage): `cookies.user` do SITE_CONFIG, para herdar a base de um id que o
+  // site ja tinha (GTM/solucao anterior). O campo do payload, as colunas do D1 e o
+  // indexador dos gateways seguem `marca_user`. A chave `marca_user` continua lida
+  // depois da configurada: trocar o nome numa instalacao em andamento nao zera quem
+  // ja tem id. Espelho do `userCookieName` de serve-webjs.js e collect/event.js.
+  var USER_KEY = (__CONFIG__.cookies && __CONFIG__.cookies.user) || 'marca_user';
+  var USER_KEYS = USER_KEY === 'marca_user' ? ['marca_user'] : [USER_KEY, 'marca_user'];
 
-    var localVal = localStorage.getItem('marca_user');
-    if (localVal) return localVal;
+  // Identidade que ESTE navegador ja tem: cookie legivel pelo JS -> localStorage ->
+  // sessionStorage, da chave configurada e depois da `marca_user`. Cada leitura
+  // isolada: storage bloqueado (iframe sandbox, modo restrito) lanca, e nao pode
+  // derrubar as outras fontes.
+  function readMarcaUserLocal() {
+    for (var i = 0; i < USER_KEYS.length; i++) {
+      var key = USER_KEYS[i];
+      try {
+        var re = new RegExp('(?:^|;\\s*)' + key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '=([^;]+)');
+        var m = document.cookie.match(re);
+        if (m && m[1]) return m[1];
+      } catch(e) {}
+      try { var l = localStorage.getItem(key); if (l) return l; } catch(e) {}
+      try { var s = sessionStorage.getItem(key); if (s) return s; } catch(e) {}
+    }
+    return '';
+  }
 
-    var sessionVal = sessionStorage.getItem('marca_user');
-    if (sessionVal) return sessionVal;
-
-    var newId = generateEventId();
-
-    try { localStorage.setItem('marca_user', newId); } catch(e) {}
-    try { sessionStorage.setItem('marca_user', newId); } catch(e) {}
+  // Grava nas tres fontes, so com a chave configurada. O cookie do Worker e HttpOnly
+  // (invisivel ao JS) e o getAamaisId() le daqui.
+  function persistMarcaUser(id) {
+    try { localStorage.setItem(USER_KEY, id); } catch(e) {}
+    try { sessionStorage.setItem(USER_KEY, id); } catch(e) {}
     try {
-      var rd = (function() {
-        var p = window.location.hostname.split('.');
-        return p.length >= 2 ? '.' + p.slice(-2).join('.') : window.location.hostname;
-      })();
-      document.cookie = 'marca_user=' + newId + ';path=/;max-age=63072000;SameSite=Lax;domain=' + rd;
+      var cd = getCookieDomain(window.location.hostname);
+      document.cookie = USER_KEY + '=' + id + ';path=/;max-age=63072000;SameSite=Lax' + (cd ? ';domain=' + cd : '');
     } catch(e) {}
-
-    return newId;
   }
 
-  try {
-    var __MARCA_USER__ = (typeof __MARCA_USER__ !== 'undefined' && __MARCA_USER__)
-      ? __MARCA_USER__
-      : getOrCreateMarcaUser();
-  } catch(e) {
-    var __MARCA_USER__ = getOrCreateMarcaUser();
-  }
-
-  // Persist marca_user in localStorage/sessionStorage so getAamaisId() can read it
-  // (the Worker sets HttpOnly cookie which JS cannot read)
-  try { localStorage.setItem('marca_user', __MARCA_USER__); } catch(e) {}
-  try { sessionStorage.setItem('marca_user', __MARCA_USER__); } catch(e) {}
-  try {
-    var rootDomain = (function() {
-      var parts = window.location.hostname.split('.');
-      return parts.length >= 2 ? '.' + parts.slice(-2).join('.') : window.location.hostname;
-    })();
-    document.cookie = 'marca_user=' + __MARCA_USER__ + ';path=/;max-age=63072000;SameSite=Lax;domain=' + rootDomain;
-  } catch(e) {}
+  // Precedencia: a identidade LOCAL vence a cunhada pelo servidor. O Worker injeta
+  // `var __MARCA_USER__="..."` no topo do script e, por hoisting de `var`, o antigo
+  // `typeof __MARCA_USER__ !== 'undefined'` era sempre verdadeiro: o storage nunca era
+  // consultado e ainda era regravado com o valor do servidor — que e um id NOVO toda vez
+  // que o cookie nao volta ao Worker (cookie rejeitado, Worker em outro site). O valor do
+  // servidor fica de fallback para o navegador sem nada local; por ultimo, gera um id.
+  var __MARCA_USER_SRV__ = (typeof __MARCA_USER__ !== 'undefined' && __MARCA_USER__) ? __MARCA_USER__ : '';
+  var __MARCA_USER__ = readMarcaUserLocal() || __MARCA_USER_SRV__ || generateEventId();
+  persistMarcaUser(__MARCA_USER__);
 
   // ============================================================
   // MODULE 2 — Transfer (SPEC 2.2)
@@ -265,11 +316,7 @@
   }
 
   function getAamaisId() {
-    var cookieMatch = document.cookie.match(/marca_user=([^;]+)/);
-    if (cookieMatch && cookieMatch[1]) return cookieMatch[1];
-    var localVal = localStorage.getItem('marca_user');
-    if (localVal) return localVal;
-    return sessionStorage.getItem('marca_user') || '';
+    return readMarcaUserLocal();
   }
 
   function detectGateway(targetUrl) {
@@ -302,11 +349,6 @@
     return null;
   }
 
-  function getRootDomain(hostname) {
-    var parts = hostname.split('.');
-    return parts.length >= 2 ? parts.slice(-2).join('.') : hostname;
-  }
-
   function addParamsToUrl(url) {
     var newUrl;
     try {
@@ -317,7 +359,8 @@
 
     var existingParams = new URLSearchParams(newUrl.search);
     var pageUtms = getUtmData();
-    var isExternal = getRootDomain(newUrl.hostname) !== getRootDomain(window.location.hostname);
+    // Por dominio registravel (siteKey): `pay.kiwify.com.br` e externo a `lp.exemplo.com.br`.
+    var isExternal = siteKey(newUrl.hostname) !== siteKey(window.location.hostname);
 
     // User data from cookies (inline — avoids naming conflict with Module 4 getUserData)
     var email = getCookie('marca_email') || '';
@@ -832,27 +875,89 @@
     }
   }
 
-  function initGA4() {
-    if (!__CONFIG__.ga4_measurement_id) return;
+  // Ponto de sincronia com o gtag para a identidade do GA4 (client_id / session_id)
+  // que vai no beacon para o Measurement Protocol. Antes de o gtag.js (async)
+  // processar o config, os cookies nao servem: no 1o page_view o `_ga` ainda nao
+  // existe, e numa sessao nova o `_ga_<ID>` ainda guarda a sessao ANTERIOR. Quando as
+  // callbacks do `gtag('get', ...)` voltam, o gtag ja gravou os cookies — e eles viram
+  // a fonte (ver getBrowserData). Os valores do `get` ficam so de reserva.
+  // Sem GA4 no config nao ha o que esperar: nasce resolvido.
+  // Declarado ANTES da chamada de initGA4(): `var` sobe sem o valor, e o initGtag
+  // encontraria `gaIds` undefined.
+  var gaIds = { client_id: '', session_id: '', resolved: !__CONFIG__.ga4_measurement_id };
+  var gaIdsWaiters = [];
 
+  function onGaIdsResolved(cb) {
+    if (gaIds.resolved) cb(); else gaIdsWaiters.push(cb);
+  }
+
+  function resolveGaIds() {
+    if (gaIds.resolved) return;
+    gaIds.resolved = true;
+    var waiters = gaIdsWaiters;
+    gaIdsWaiters = [];
+    for (var i = 0; i < waiters.length; i++) { try { waiters[i](); } catch(e) {} }
+  }
+
+  // Carrega o gtag.js e CONFIGURA cada destino que o config declarar.
+  //
+  // Antes esta funcao so tratava o GA4: `gtag` era definido dentro dela e ela retornava
+  // seco sem `ga4_measurement_id`, e o unico `gtag('config', ...)` era o do G-. O
+  // destino do Google Ads (AW-) NUNCA era configurado — e o gtag.js so despacha
+  // `send_to` de um destino configurado. Resultado: os eventos de navegador do Google
+  // Ads (lead/contact/initiate_checkout, todos opt-in por rotulo) eram montados em
+  // fireTrigger e descartados em silencio. Sem GA4 no config era pior ainda: `gtag`
+  // sequer existia e a chamada lancava ReferenceError.
+  function initGtag() {
+    var ga4Id = __CONFIG__.ga4_measurement_id;
+    // O purchase do Google Ads vai server-side (Data Manager API) e nao depende disto.
+    var adsId = (__CONFIG__.google_ads_channel === 'web') ? __CONFIG__.google_ads_conversion_id : '';
+    if (!ga4Id && !adsId) return;
+
+    // O proxy /scripts/ga.js repassa o `id` para o googletagmanager; qualquer um dos
+    // dois serve para trazer o runtime, e os destinos vem dos `config` abaixo.
     var script = document.createElement('script');
     script.async = true;
-    script.src = '/scripts/ga.js?id=' + __CONFIG__.ga4_measurement_id;
+    script.src = '/scripts/ga.js?id=' + (ga4Id || adsId);
     document.head.appendChild(script);
 
     window.dataLayer = window.dataLayer || [];
     function gtag(){dataLayer.push(arguments);}
     window.gtag = gtag;
     gtag('js', new Date());
-    var ga4Config = {
-      send_page_view: false,
-      server_container_url: (typeof window !== 'undefined' ? window.location.origin : '')
-    };
-    if (__CONFIG__.debug || getUrlParam('debug') === '1') {
-      ga4Config.debug_mode = true;
+
+    var debugOn = __CONFIG__.debug || getUrlParam('debug') === '1';
+
+    if (ga4Id) {
+      var ga4Config = {
+        send_page_view: false,
+        server_container_url: (typeof window !== 'undefined' ? window.location.origin : '')
+      };
+      if (debugOn) ga4Config.debug_mode = true;
+      gtag('config', ga4Id, ga4Config);
+
+      // As callbacks rodam quando o gtag.js carrega e processa a fila acima.
+      var pendingIds = 2;
+      var gotGaId = function(field) {
+        return function(value) {
+          if (value) gaIds[field] = String(value);
+          if (--pendingIds === 0) resolveGaIds();
+        };
+      };
+      gtag('get', ga4Id, 'client_id', gotGaId('client_id'));
+      gtag('get', ga4Id, 'session_id', gotGaId('session_id'));
     }
-    gtag('config', __CONFIG__.ga4_measurement_id, ga4Config);
+
+    // Google Ads: sem este config, todo `send_to: AW-.../rotulo` e ignorado.
+    // NAO leva server_container_url — o destino AW- tem transporte proprio.
+    if (adsId) {
+      gtag('config', adsId);
+      if (debugOn) console.log('[Tracking] Google Ads (web) configurado: ' + adsId);
+    }
   }
+
+  // Alias historico — o nome antigo segue valido para quem chamava initGA4().
+  function initGA4() { return initGtag(); }
 
   if (__CONFIG__.debug || getUrlParam('debug') === '1') console.log('[Tracking] Verdadeiro Trackeamento v' + (__CONFIG__.vt_version || '?') + ' | @estruturamais | https://instagram.com/estruturamais');
 
@@ -898,38 +1003,71 @@
     return '';
   }
 
-  function findGaSessionCookie() {
+  // O nome do cookie de sessao carrega o ID da propriedade (`_ga_<ID sem "G-">`). Com
+  // mais de um GA4 no site (GTM antigo, widget de terceiro), o 1o `_ga_*` do
+  // document.cookie pode ser de OUTRA propriedade — por isso o nome exato. Devolve
+  // TODOS os valores: o mesmo nome pode existir em dois niveis de dominio (ex.: um GTM
+  // antigo gravou em outro escopo), e ai o document.cookie traz os dois.
+  function findGaSessionCookies() {
+    var ga4Id = __CONFIG__.ga4_measurement_id || '';
+    var name = ga4Id ? '_ga_' + ga4Id.replace(/^G-/, '') : '';
+    var found = [];
     var cookies = document.cookie.split(';');
     for (var i = 0; i < cookies.length; i++) {
       var c = cookies[i].trim();
-      if (c.indexOf('_ga_') === 0 && c.indexOf('=') > 0) {
-        return c.split('=')[1];
-      }
+      var eq = c.indexOf('=');
+      if (eq <= 0) continue;
+      var key = c.slice(0, eq);
+      if (name ? key === name : key.indexOf('_ga_') === 0) found.push(c.slice(eq + 1));
     }
-    return '';
+    return found;
   }
 
-  function extractGaSessionId() {
-    var cookie = findGaSessionCookie();
-    if (!cookie) return '';
-    var match = cookie.match(/s(\d+)j/);
-    return match ? match[1] : '';
+  // Le o cookie de sessao do GA4. Existem dois formatos:
+  //   GS1.1.1700000000.3.1.1700000500.0.0.0           (legado: campos por posicao)
+  //   GS2.1.s1700000000$o3$g1$t1700000500$j60$l0$h0   (atual: s=sessao, o=numero, t=ultimo hit)
+  // As regex antigas (/s(\d+)j/ e /j(\d+)t/) nao casavam com NENHUM dos dois: o
+  // session_id nunca foi extraido (0 de 189 visitantes no D1 em 10/2026), e sem ele o
+  // GA4 nao liga o evento do MP a sessao do navegador — o page_view nao aparecia no
+  // Tempo real nem nos relatorios por pagina.
+  // Com cookie duplicado, vale o de atividade mais recente (`t`): e o que o gtag acabou
+  // de atualizar. O outro e uma sessao velha que ninguem mais escreve.
+  function readGaSessionCookie() {
+    var best = { session_id: '', session_number: '', last_hit: '' };
+    var raws = findGaSessionCookies();
+    for (var i = 0; i < raws.length; i++) {
+      var cur = parseGaSessionCookie(raws[i]);
+      if (!cur.session_id) continue;
+      if (!best.session_id || Number(cur.last_hit || 0) > Number(best.last_hit || 0)) best = cur;
+    }
+    return best;
   }
 
-  function extractGaSessionCount() {
-    var cookie = findGaSessionCookie();
-    if (!cookie) return '';
-    var match = cookie.match(/j(\d+)t/);
-    return match ? match[1] : '';
-  }
+  function parseGaSessionCookie(raw) {
+    var out = { session_id: '', session_number: '', last_hit: '' };
+    try { raw = decodeURIComponent(raw); } catch(e) {}
 
-  function extractGaTimestamp() {
-    var cookie = findGaSessionCookie();
-    if (!cookie) return '';
-    var match = cookie.match(/t(\d+)/);
-    if (!match) return '';
-    var ts = parseInt(match[1], 10);
-    return String((ts + 60) * 1000000);
+    var gs2 = raw.match(/^GS2\.\d+\.(.*)$/);
+    if (gs2) {
+      var parts = gs2[1].split('$');
+      for (var i = 0; i < parts.length; i++) {
+        var key = parts[i].charAt(0);
+        var val = parts[i].slice(1);
+        if (!/^\d+$/.test(val)) continue;
+        if (key === 's') out.session_id = val;
+        else if (key === 'o') out.session_number = val;
+        else if (key === 't') out.last_hit = val;
+      }
+      return out;
+    }
+
+    var p = raw.split('.');
+    if (p[0] === 'GS1' && p.length >= 6) {
+      if (/^\d+$/.test(p[2])) out.session_id = p[2];
+      if (/^\d+$/.test(p[3])) out.session_number = p[3];
+      if (/^\d+$/.test(p[5])) out.last_hit = p[5];
+    }
+    return out;
   }
 
   function getUserData(eventData) {
@@ -968,15 +1106,22 @@
   }
 
   function getBrowserData() {
+    var gaCookie = readGaSessionCookie();
     return {
       fbp: getCookie('_fbp') || '',
       fbc: getCookie('_fbc') || (getUrlParam('fbclid') ? generateFbc() : ''),
       ttp: getCookie('_ttp') || '',
       ttclid: getCookie('ttclid') || getUrlParam('ttclid') || '',
-      ga_client_id: extractGaClientId(),
-      ga_session_id: extractGaSessionId(),
-      ga_session_count: extractGaSessionCount(),
-      ga_timestamp: extractGaTimestamp()
+      // Cookie PRIMEIRO, mesmo com o gtag ja pronto: na 1a visita o `gtag('get',
+      // 'client_id')` responde com um id PROVISORIO, diferente do que o gtag grava no
+      // `_ga` logo em seguida (reproduzido no Chrome) — e o do cookie e o que valera
+      // nas paginas seguintes. O valor do `get` so cobre quem nao tem cookie.
+      ga_client_id: extractGaClientId() || gaIds.client_id,
+      ga_session_id: gaCookie.session_id || gaIds.session_id,
+      ga_session_count: gaCookie.session_number,
+      // Horario do ultimo hit do gtag (informativo). NAO e o horario do evento: o
+      // Worker nao o usa mais como timestamp_micros (ver platforms/ga4.js).
+      ga_timestamp: gaCookie.last_hit ? gaCookie.last_hit + '000000' : ''
     };
   }
 
@@ -1094,10 +1239,48 @@
     }
   }
 
+  // O beacon do page_view nao pode sair no instante em que este script roda: ele e o
+  // 1o elemento do <head>, ANTES do <title> (document.title vazio — todo page_view do
+  // GA4 chegava sem titulo) e antes de o gtag.js (async) ter client_id/session_id
+  // (o 1o page_view de todo visitante novo morria em `missing_ga_client_id`). Entao
+  // ele espera as duas coisas, com teto: gtag bloqueado ou lento nao pode custar o
+  // evento, e se o visitante sair antes, envia o que tiver (sendBeacon sobrevive ao
+  // unload). Efeito colateral bom: `_fbp`/`_ttp` relidos no envio, se os pixels ja
+  // tiverem carregado.
+  var PAGE_VIEW_MAX_WAIT_MS = 3000;
+
+  function whenPageViewReady(send) {
+    var done = false;
+    function fire() {
+      if (done) return;
+      done = true;
+      try { send(); } catch(e) {}
+    }
+    function check() {
+      if (gaIds.resolved && (document.title || document.readyState !== 'loading')) fire();
+    }
+    onGaIdsResolved(check);
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', check);
+    setTimeout(fire, PAGE_VIEW_MAX_WAIT_MS);
+    window.addEventListener('pagehide', fire);
+    document.addEventListener('visibilitychange', function() {
+      if (document.visibilityState === 'hidden') fire();
+    });
+  }
+
   // `extraCustom` (opcional): propriedades custom da ROTA do form_submit
   // (triggers.lead.routes[].custom_data, ex.: {method:'email'} no login). Entram no
   // custom_data e, portanto, tambem no beacon que vai ao Worker.
+  //
+  // Cada destino de navegador (passos 1, 2 e 4) roda no SEU proprio try. Antes os
+  // passos 1-5 dividiam um try so: qualquer excecao de SDK de terceiro abortava o
+  // resto — sem GA4 no config, o `gtag` do passo 4 lancava ReferenceError e o
+  // beacon do passo 5 nunca saia, e o evento sumia de TODAS as plataformas
+  // server-side. O beacon fica fora de qualquer try compartilhado com SDK.
   function fireTrigger(eventName, eventData, extraCustom) {
+    var debugOn = __CONFIG__.debug || getUrlParam('debug') === '1';
+
+    // Preparacao — sem ela nao ha o que enviar a ninguem.
     try {
       var event_id = generateEventId();
       var userData = getUserData(eventData);
@@ -1110,8 +1293,13 @@
       }
       var names = EVENT_NAMES[eventName];
       if (!names) return;
+    } catch(e) {
+      if (__CONFIG__.debug) console.error('[Tracking] Error in fireTrigger:', e);
+      return;
+    }
 
-      // 1. Meta Pixel(s) — primario + espelhos (mesmo eventID para dedup browser↔CAPI por pixel)
+    // 1. Meta Pixel(s) — primario + espelhos (mesmo eventID para dedup browser↔CAPI por pixel)
+    try {
       if (names.meta) {
         var metaPixelIds = getMetaPixelIds();
         if (metaPixelIds.length) {
@@ -1126,42 +1314,68 @@
           }
         }
       }
+    } catch(e) {
+      if (debugOn) console.error('[Tracking] Meta Pixel ' + eventName + ' FAILED:', e);
+    }
 
-      // 2. TikTok
+    // 2. TikTok
+    try {
       if (__CONFIG__.tiktok_pixel_id && names.tiktok && typeof ttq !== 'undefined') {
         ttq.track(names.tiktok, buildTikTokEventData(customData), {event_id: event_id});
       }
+    } catch(e) {
+      if (debugOn) console.error('[Tracking] TikTok ' + eventName + ' FAILED:', e);
+    }
 
-      // 3. GA4 — dispatch movido para server-side (collect-event.js → sendGA4Event)
-      //    initGA4() mantido para gerar cookies _ga/_ga_* usados pelo beacon
+    // 3. GA4 — dispatch movido para server-side (collect-event.js → sendGA4Event)
+    //    initGA4() mantido para gerar cookies _ga/_ga_* usados pelo beacon
 
-      // 4. Google Ads (web — quando channel === 'web').
-      //    OPT-IN POR ROTULO: so dispara se o rotulo daquele evento existir no config.
-      //    Sem o guard, um evento sem rotulo montaria `send_to: AW-XXX/undefined` — o
-      //    gtag aceita calado e a conversao some. Quem decide QUAIS eventos viram
-      //    conversao (e quais sao principais) e o cliente, no painel do Google Ads;
-      //    o VT so precisa saber enviar o que estiver configurado.
+    // 4. Google Ads (web — quando channel === 'web').
+    //    OPT-IN POR ROTULO: so dispara se o rotulo daquele evento existir no config.
+    //    Sem o guard, um evento sem rotulo montaria `send_to: AW-XXX/undefined` — o
+    //    gtag aceita calado e a conversao some. Quem decide QUAIS eventos viram
+    //    conversao (e quais sao principais) e o cliente, no painel do Google Ads;
+    //    o VT so precisa saber enviar o que estiver configurado.
+    //    O `gtag` vem do initGtag(); se ele nao existir (init falhou), pula sem lancar.
+    try {
       var gadsLabel = names.gads ? __CONFIG__['google_ads_label_' + names.gads] : '';
       if (__CONFIG__.google_ads_conversion_id && gadsLabel && __CONFIG__.google_ads_channel === 'web') {
-        gtag('event', 'conversion', {
-          send_to: __CONFIG__.google_ads_conversion_id + '/' + gadsLabel,
-          value: customData.value || undefined,
-          currency: customData.currency || 'BRL'
-        });
-      }
-
-      // 5. sendBeacon ao Worker
-      sendTrackingBeacon(eventName, event_id, userData, browserData, customData);
-
-      // Debug mode
-      if (__CONFIG__.debug || getUrlParam('debug') === '1') {
-        console.log('[Tracking] ' + eventName + ' fired - event_id: ' + event_id);
-        console.log('[Tracking]   userData:', userData);
-        console.log('[Tracking]   browserData:', browserData);
-        console.log('[Tracking]   customData:', customData);
+        if (typeof window.gtag === 'function') {
+          window.gtag('event', 'conversion', {
+            send_to: __CONFIG__.google_ads_conversion_id + '/' + gadsLabel,
+            value: customData.value || undefined,
+            currency: customData.currency || 'BRL'
+          });
+        } else if (debugOn) {
+          console.warn('[Tracking] Google Ads ' + eventName + ' nao enviado: gtag indisponivel');
+        }
       }
     } catch(e) {
-      if (__CONFIG__.debug) console.error('[Tracking] Error in fireTrigger:', e);
+      if (debugOn) console.error('[Tracking] Google Ads ' + eventName + ' FAILED:', e);
+    }
+
+    // 5. sendBeacon ao Worker — alimenta TODAS as plataformas server-side.
+    //    O page_view espera o <title> e a identidade do GA4 (ver whenPageViewReady)
+    //    e rele os dados de navegador na hora do envio. Os eventos de clique
+    //    acontecem depois disso tudo e seguem saindo na hora.
+    try {
+      if (eventName === 'page_view') {
+        whenPageViewReady(function() {
+          sendTrackingBeacon(eventName, event_id, userData, getBrowserData(), customData);
+        });
+      } else {
+        sendTrackingBeacon(eventName, event_id, userData, browserData, customData);
+      }
+    } catch(e) {
+      if (__CONFIG__.debug) console.error('[Tracking] Error in fireTrigger beacon:', e);
+    }
+
+    // Debug mode
+    if (debugOn) {
+      console.log('[Tracking] ' + eventName + ' fired - event_id: ' + event_id);
+      console.log('[Tracking]   userData:', userData);
+      console.log('[Tracking]   browserData:', browserData);
+      console.log('[Tracking]   customData:', customData);
     }
   }
 

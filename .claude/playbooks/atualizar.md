@@ -47,6 +47,7 @@ negocio ("suas vendas passam a cair na planilha", nao "novo conector `sendSheets
 
 | Para chegar em | Acao de banco | Acao de config | Quebra algo? |
 |---|---|---|---|
+| **1.9.0** | — (nenhuma migracao) | Opcional, tudo opt-in: `platforms.ga4.unattributed_purchases`, `fdv.ip_fallback`, `cookies.user`, `collect_url` — ver abaixo. **Excecao:** quem tinha `collect_url` absoluto como patch local no `serve-webjs.js` poe a chave no `SITE_CONFIG` no **mesmo** deploy | Nao — sem as chaves nada some; ver "Mudancas de comportamento da 1.9.0" |
 | **1.8.0** | — | Opcional: route `{dominio}/fb/*` no `wrangler.toml` (o `git pull` nao a traz) + `platforms.meta.pixel_proxy: true` — ver abaixo | Nao — sem a flag nada muda |
 | **1.7.0** | `migrations/005_add_user_store_email_index.sql` (**todos**) + `migrations/004_add_subscriptions_table.sql` (**so** projeto de assinatura) | Opcional: `subscription_tracking` (ver abaixo) | Nao — ver "Mudancas de comportamento" |
 | **1.6.0** | `migrations/003_add_gclid_columns.sql` | Opcional: bloco `google_ads` (ver abaixo) | Nao — ver "Mudanca de comportamento" |
@@ -55,6 +56,66 @@ negocio ("suas vendas passam a cair na planilha", nao "novo conector `sendSheets
 
 **Pulou versoes?** Rode as migracoes **em ordem crescente**, uma de cada vez, conferindo cada uma
 antes da proxima.
+
+### Mudancas de comportamento da 1.9.0
+
+**Sem migracao de banco** e **sem config obrigatorio** (salvo a excecao do `collect_url`, abaixo).
+Tudo o que e novo e opt-in: sem as chaves, nada que funcionava deixa de funcionar. Mas tres correcoes
+de falha silenciosa **mudam numeros** sem acao do cliente — avise antes, nao depois.
+
+**1. Dominio de sufixo composto (`.com.br`, `.adv.br`, `.co.uk`…).** O cookie do `marca_user` saia
+com `Domain=.com.br`, que o navegador **rejeita** — a identidade nao persistia entre paginas e o
+`user_store` fragmentava. Agora sai com `Domain=.{dominio}.com.br` (em IP/localhost, sem `Domain`).
+E o checkout `.com.br` (`pay.kiwify.com.br`, `pay.hotmart.com.br`) era classificado como **interno** e
+o link saia **sem** o indexador (`sck`/`xcod`); agora recebe. Efeito: vendas que chegavam sem
+`marca_user` passam a ter FDV merge — a atribuicao sobe. Em dominio `.com` nada muda. Tambem: a
+identidade **local** do navegador (cookie/localStorage) passa a vencer o id que o Worker cunha —
+visitante antigo fica com o id que ja tinha. Conferir no Passo 7.
+
+**2. Google Ads pelo navegador (`channel: "web"`).** Ate a 1.8.0 o destino `AW-` nunca recebia
+`gtag('config')` e a conversao de navegador era descartada; **sem GA4** no config era pior: o `gtag`
+nem existia, o `ReferenceError` abortava o beacon e o evento (contact/lead/checkout) sumia de **todas**
+as plataformas — Meta CAPI, TikTok, GA4. Agora o `AW-` e configurado na carga, com ou sem GA4, e
+falha de um SDK nunca mais derruba o beacon. Avise o cliente:
+- Em site **sem GA4** com Google Ads web, **contact/lead na Meta, TikTok e GA4 podem subir**: sao
+  eventos que antes se perdiam, nao duplicidade.
+- A linha `google_ads | web` no D1 continua `200`, mas agora com `error_message` comecando por
+  `web: despacho do navegador nao confirmado pelo servidor`. **E normal** — o Worker nao ve o navegador;
+  a conversao de navegador se valida **no navegador** (`.claude/playbooks/google_ads.md`, Step 4).
+- A carga de pagina passa a mandar os hits de pagina do Google Ads, como o snippet padrao do Google.
+
+**3. GA4** — secao propria logo abaixo.
+
+**Opt-ins novos** (detalhe e quando ligar em `.claude/references/site-config-format.md`):
+
+- **`collect_url`** — destino absoluto do beacon (`https://track.{dominio}/collect/event`). Vazio =
+  `/collect/event` relativo, como antes. So e **obrigatorio** quando a pagina nao roda no host das
+  Worker Routes (page builder, site em plataforma SaaS com o tracking em `track.{dominio}`).
+  🛑 **Instalacao que tinha o `collect_url` absoluto como patch local no `serve-webjs.js`** (o `git
+  pull` reclama do arquivo editado — Passo 3): descartar o patch e por `collect_url` no `SITE_CONFIG`
+  no **mesmo** deploy. Deployar o codigo sem a chave volta o beacon para relativo e a coleta web morre
+  **sem erro** (o script carrega, o console mostra o `page_view` e o `events` fica vazio).
+  `cookie_domain` tambem e novo, opcional e quase nunca necessario.
+- **`cookies.user`** — nome da chave em que o navegador guarda o id do visitante, para herdar a base
+  de uma solucao anterior (GTM etc.) sem zera-la. Payload, D1 e indexador seguem `marca_user`. A tag
+  antiga que gravava a chave sai junto (o Worker regrava o cookie como `HttpOnly`). So
+  `cookies.user` vale: `email`/`phone`/`name` do bloco `cookies` seguem sem efeito. ⚠️ **Ligar e
+  seguro, desligar nao** — ver "Rollback".
+- **`fdv.ip_fallback`** — 3o caminho do FDV merge (indexador → e-mail → **IP do aparelho** que clicou
+  no checkout nas 12h anteriores). **So ligar se todo gateway do projeto com IP no parser estiver ✅**
+  na tabela "IP do payload = aparelho?" de `.claude/references/gateway-webhooks.md` (hoje so a
+  Kiwify). Com a flag, toda tentativa grava uma linha `platform='fdv'` em `events` —
+  `fdv_ip_no_match` com `status_code 0` **nao e falha de envio** (nada e enviado).
+- **`platforms.ga4.unattributed_purchases`** — ver a secao GA4 abaixo.
+
+**So docs, sem efeito no Worker:** o teste de webhook do gateway passa a ser feito sempre sob
+`purchase_dispatch: "shadow"` (ver "Teste de webhook com a instalacao em producao"); o
+`google_ads.md` cobre o OAuth do lado do operador — **quem ja sobe purchase pelo Google Ads e ve
+`oauth_refresh_failed(400)` + `invalid_grant` em todas as vendas ~7 dias depois do `gads:oauth`**
+tem o app OAuth "Em teste": publicar o app e reemitir o token com `npm run gads:oauth` (secao
+"Credenciais OAuth" do playbook); e a retencao documentada passou a ser a real — no `auto_clean`,
+`events` 7 dias, `webhook_raw` 14, `user_store` 90 (os playbooks diziam 30: quem prometeu 30 dias de
+historico ao cliente deve corrigir a expectativa).
 
 ### Mudanca de comportamento da 1.9.0 — GA4
 
@@ -215,6 +276,12 @@ npx wrangler d1 execute tracking_db --remote --command "SELECT COUNT(*) FROM sub
 
 ## Passo 5 — Config novo (so o que a versao pede)
 
+**A 1.9.0 nao exige config novo**, com uma excecao: instalacao que tinha o `collect_url` absoluto como
+patch local no `serve-webjs.js` poe `"collect_url": "https://track.{dominio}/collect/event"` no
+`SITE_CONFIG` no mesmo deploy (ver "Mudancas de comportamento da 1.9.0"). Os quatro opt-ins
+(`collect_url`, `cookies.user`, `fdv.ip_fallback`, `platforms.ga4.unattributed_purchases`) so entram
+se o caso do cliente pedir — cada um tem a sua condicao descrita la.
+
 **A 1.8.0 nao exige config novo.** O proxy do Meta Pixel e opt-in — route `/fb/*` + `pixel_proxy`,
 descritos em "Mudanca de comportamento da 1.8.0" acima. Sem os dois, nada muda.
 
@@ -252,11 +319,19 @@ npx wrangler d1 execute tracking_db --remote --command \
 
 # 3. (so com pixel_proxy ligado) o proxy do pixel responde JS, nao HTML?
 curl -s https://{dominio}/fb/sdk.js | head -c 120
+
+# 4. (1.9.0, dominio .com.br) o cookie sai com o Domain do site, nunca Domain=.com.br?
+curl -sI https://{dominio}/tracking/web.js | grep -i set-cookie
+
+# 5. (1.9.0, so com collect_url) o script servido leva o destino absoluto?
+curl -s "https://{dominio}/tracking/web.js?site_id={site_id}" | grep -o '"collect_url":"[^"]*"'
 ```
 
 Criterio: **as mesmas plataformas que apareciam antes continuam aparecendo, com os mesmos status.**
 Uma plataforma que sumiu da lista, ou que trocou `200` por `0`, e regressao — investigar pelo
-`audit-tracking` antes de dar a atualizacao por concluida.
+`audit-tracking` antes de dar a atualizacao por concluida. Duas linhas novas da 1.9.0 **nao** sao
+regressao: `platform = 'fdv'` (so com `fdv.ip_fallback`; o `0` do `fdv_ip_no_match` nao e envio) e o
+`error_message` `web: despacho do navegador nao confirmado…` na linha `google_ads | web`, que segue `200`.
 
 Se o site tem pouco trafego e a janela vier vazia, use o **smoke test sintetico** do Step 3b.5 do
 `overview.md` em vez de esperar.
@@ -326,6 +401,12 @@ Para achar o ponto de volta: `git tag` lista as versoes tagueadas e
 tag). **Nao** tente reverter a migracao: `DROP COLUMN` em SQLite/D1 e mais arriscado do que a coluna
 ociosa que voce quer remover.
 
+> ⚠️ **Com `cookies.user` ligado (1.9.0+), voltar nao e neutro.** A leitura de fallback vale num
+> sentido so (chave configurada → `marca_user`). Voltar para ≤ 1.8.0 **ou** tirar o `cookies.user` do
+> config da um id **novo** a quem so tem a chave configurada — os visitantes que chegaram depois da
+> troca e toda a base legada herdada. Se precisar mesmo voltar, avisar o cliente da quebra de
+> identidade (atribuicao do periodo seguinte cai) antes do deploy.
+
 ---
 
 ## Erros comuns
@@ -338,4 +419,6 @@ ociosa que voce quer remover.
 | Deploy OK e o `curl` ainda mostra a versao antiga | Cache de edge | Aguardar e repetir; conferir tambem `?v=` no browser |
 | Aviso `colunas de click id ausentes` no log | Deploy feito sem a migracao | Rodar a migracao (Passo 4). Nada quebrou |
 | `Some triggers failed to deploy` | Escopos do token do wrangler | `npx wrangler login` de novo e `npx wrangler triggers deploy` (ver `infra.md`) |
+| Depois do deploy da 1.9.0, `events` sem nenhuma linha `collect` num site de page builder / SaaS | Patch local do `collect_url` descartado sem a chave no `SITE_CONFIG` | Por `collect_url` absoluto no `SITE_CONFIG` e redeployar (Passo 5); conferir com o curl 5 do Passo 7 |
+| `google_ads \| web` com `200` e `error_message` `web: despacho do navegador nao confirmado…` | Comportamento da 1.9.0: o Worker nao ve o navegador | Nao e erro — validar a conversao no navegador (`google_ads.md`, Step 4) |
 | `[Tracking] Proxy do Meta Pixel indisponivel` no console do site | `pixel_proxy` ligado sem a route `/fb/*` no `wrangler.toml` | Acrescentar a route (copiar do `wrangler.toml.example`) e redeployar (Passo 6). O pixel segue funcionando pelo fallback enquanto isso |

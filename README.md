@@ -19,7 +19,7 @@ zero até o tracking validado em produção.
 
 ## Versão
 
-**Versão atual: 1.8.0**
+**Versão atual: 1.9.0**
 
 Para saber qual versão uma instalação roda, pergunte ao assistente *"qual a versão do seu VT?"* — ele
 lê o número (a) deste README e do `package.json` e (b) **direto da Cloudflare**: na 1ª linha do script
@@ -27,6 +27,47 @@ servido em `https://{dominio}/tracking/web.js` (e no campo `vt_version` do confi
 (b) sobrevive mesmo que o usuário apague os arquivos locais. O histórico abaixo mapeia cada versão às
 novidades:
 
+- **1.9.0** — **GA4 com dado de verdade, Google Ads pelo navegador, identidade em `.com.br` e FDV
+  merge por IP**. Release de correções de falha silenciosa, achadas e validadas em produção em
+  clientes reais (Kiwify, `.com.br`). **GA4:** o `page_view` do Measurement Protocol chegava **sem
+  título (100%), sem `session_id` (100%) e com data falsa** (o `timestamp_micros` era o do cookie +60 s:
+  futuro, ou dias atrás), e a 1ª página do visitante novo nem saía — no GA4, "usuário ativo sem
+  nenhuma página" e "usuário sem cidade". Agora o `_ga_<ID>` é lido pelo nome exato (formatos GS1 e
+  GS2), o `page_view` espera o `<title>` e o gtag (teto de 3 s, envio no `pagehide`; o `client_id` vem
+  do cookie primeiro, porque o `gtag('get')` devolve um id **provisório** na 1ª visita), a data é a do
+  recebimento, o MP leva `ip_override`/`user_agent` do visitante e `consent.ad_personalization` no lugar
+  do `non_personalized_ads` deprecado, e o proxy `/g/collect` repassa o IP. Medido no cliente: 100% com
+  título e sessão, 2% sem `client_id`. Purchase sem `client_id` deixa de ser um `return` mudo e grava
+  `missing_ga_client_id`; e o opt-in `platforms.ga4.unattributed_purchases` manda a venda sem visita
+  com `client_id` **sintético** (nunca PII) para a receita do GA4 bater com a do gateway — no caso
+  real, com o emissor antigo desligado, o GA4 mostrava R$ 0,00 com duas vendas. Pageviews e usuários
+  **sobem** a partir do deploy: é dado que se perdia, não duplicidade. **Google Ads web:** o destino
+  `AW-` nunca recebia `gtag('config')`, e o gtag só despacha para destino configurado — a conversão de
+  navegador era descartada em silêncio (comprovado no Chrome: zero requisição com o rótulo). **Sem
+  GA4** era pior: o `gtag` nem existia, o `ReferenceError` abortava o beacon e o evento sumia de
+  **todas** as plataformas. Agora o `initGtag` configura cada destino, com ou sem GA4, e cada SDK de
+  navegador roda isolado do beacon — falha de um nunca mais derruba o envio server-side. A linha
+  `google_ads | web` do D1 deixa de prometer despacho: conversão de navegador se valida no navegador.
+  **Identidade em domínio de sufixo composto:** o cookie saía com `Domain=.com.br` (rejeitado pelo
+  navegador) e o checkout `pay.kiwify.com.br`/`pay.hotmart.com.br` era tratado como **interno** —
+  link sem `sck`/`xcod`, venda sem FDV merge. Agora o domínio registrável conhece os sufixos de 2
+  níveis, a identidade local vence a cunhada pelo servidor, e `collect_url` passa a ser configurável
+  (obrigatório absoluto em page builder ou site SaaS com o tracking em `track.{dominio}` — antes, só
+  com patch local). O `cookies.user` do `config.example.json`, que estava documentado e **não fazia
+  nada**, passa a valer: o VT herda o id do visitante de uma solução anterior sem zerar a base
+  (`email`/`phone`/`name` seguem sem efeito). **FDV merge por IP do dispositivo** (opt-in
+  `fdv.ip_fallback`): 3º caminho, depois do indexador e do e-mail — a venda que chega sem código de
+  rastreio (link de checkout sem parâmetros, recuperação de carrinho) recupera `fbp`/`fbc`/`client_id`
+  pelo IP do aparelho que clicou no checkout nas 12 h anteriores; conservador, toda tentativa grava uma
+  linha `platform='fdv'`, e só deve ser ligado com o IP do payload conferido como sendo o do aparelho
+  (hoje, Kiwify). **Docs:** o teste de webhook do gateway passa a ser feito **sempre sob `shadow`**
+  (o teste da Kiwify tinha virado `Purchase` real na Meta e no TikTok no dia da instalação), e a
+  auditoria acha venda de teste já despachada; o `google_ads.md` cobre o OAuth do lado do operador
+  (app "Em teste" = refresh token de 7 dias; quem autoriza é dono do token; o código não se repassa;
+  atraso de segurança da conta Google) e o `gads:oauth` lembra de publicar o app; a retenção
+  documentada passou a ser a real (7/14/90 dias, não 30); host alternativo `*.pages.dev` com beacon
+  relativo → `405` entrou no onboarding e na auditoria. **Sem migração de banco**; tudo o que é novo é
+  opt-in (`platforms.ga4.unattributed_purchases`, `fdv.ip_fallback`, `cookies.user`, `collect_url`).
 - **1.8.0** — **Meta Pixel servido pelo próprio domínio (proxy first-party)**. O `fbevents.js`, a
   config do pixel, os plugins e o beacon `/tr` passam a ser servidos por `{dominio}/fb/*`, no mesmo
   modelo do proxy do GA4. `connect.facebook.net` e `facebook.com/tr` estão em toda lista de bloqueio,
