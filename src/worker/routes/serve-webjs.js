@@ -1,17 +1,11 @@
 import { getConfig, detectSiteId } from '../shared/config.js';
-import { parseCookies, generateId } from '../shared/helpers.js';
+import { parseCookies, generateId, getCookieDomain } from '../shared/helpers.js';
 import { resolvePixelProxyMode, getWorkerOrigin } from './meta-proxy.js';
 import WEB_JS_TEMPLATE from '../../web-template.txt';
 
 // Versao lida do banner do template (carimbada no build a partir do package.json).
 // Computada uma vez no carregamento do modulo; '' se o banner nao existir (defensivo).
 const VT_VERSION = (WEB_JS_TEMPLATE.match(/Verdadeiro Trackeamento v([0-9.]+)/) || [])[1] || '';
-
-function getRootDomain(request) {
-  const host = request.headers.get('host') || '';
-  const parts = host.replace(/:\d+$/, '').split('.');
-  return parts.length >= 2 ? '.' + parts.slice(-2).join('.') : host;
-}
 
 // DEFAULT_TRIGGERS: o agente nao precisa mais explicitar os
 // triggers canonicos no SITE_CONFIG. O cliente so define um trigger quando quer
@@ -101,6 +95,9 @@ export async function handleServeWebJs(request, env) {
     google_ads_label_purchase: config.platforms?.google_ads?.conversion_label_purchase,
     triggers: mergeTriggers(buildDefaultTriggers(config), config.triggers),
     cookies: config.cookies,
+    // Override do Domain= do cookie de identidade: o web.js grava a copia legivel dele
+    // com o mesmo Domain que o Set-Cookie do Worker (ver getCookieDomain).
+    cookie_domain: config.cookie_domain,
     gateways_config: config.gateways_config,
     custom_data: config.custom_data,
     qualification: config.qualification,
@@ -115,11 +112,15 @@ export async function handleServeWebJs(request, env) {
     .replace('/*__CONFIG__*/', 'var __CONFIG__=' + JSON.stringify(clientConfig) + ';')
     .replace('/*__MARCA_USER__*/', 'var __MARCA_USER__="' + marcaUser + '";');
 
+  // Domain= so quando ha dominio registravel seguro (ver getCookieDomain): IP, localhost
+  // e sufixo publico ficam host-only em vez de mandar um Domain que o navegador rejeita.
+  const cookieDomain = getCookieDomain(request.headers.get('host'), config.cookie_domain);
+
   return new Response(script, {
     headers: {
       'Content-Type': 'application/javascript; charset=utf-8',
       'Cache-Control': 'no-cache',
-      'Set-Cookie': `marca_user=${marcaUser};Path=/;Max-Age=63072000;HttpOnly;SameSite=Lax;Secure;Domain=${getRootDomain(request)}`
+      'Set-Cookie': `marca_user=${marcaUser};Path=/;Max-Age=63072000;HttpOnly;SameSite=Lax;Secure${cookieDomain ? ';Domain=' + cookieDomain : ''}`
     }
   });
 }

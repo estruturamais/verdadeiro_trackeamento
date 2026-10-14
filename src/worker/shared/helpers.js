@@ -93,3 +93,56 @@ export function utmFromPipe(str) {
     utm_content:  p[4] || ''
   };
 }
+
+// ---- Dominio registravel (eTLD+1) e o Domain= do cookie de identidade ----
+// Pegar os 2 ultimos rotulos do host devolve o SUFIXO PUBLICO num dominio brasileiro
+// (`www.exemplo.com.br` -> `com.br`), com duas falhas silenciosas:
+//   1. `Set-Cookie ... Domain=.com.br` e REJEITADO pelo navegador (Public Suffix List):
+//      o marca_user nunca persiste e o Worker cunha um id novo a cada page view;
+//   2. no web.js, `pay.kiwify.com.br` e `www.exemplo.com.br` viravam o "mesmo" site: o
+//      link do checkout era tratado como interno e o indexador (sck/xcod) nao entrava.
+// Heuristica no lugar da PSL inteira (centenas de KB): TLD de 2 letras + rotulo desta
+// lista = sufixo de 2 niveis (com.br, adv.br, co.uk, com.au...). Errar para MAIS rotulos
+// so estreita o cookie (continua valido); errar para menos o faz ser rejeitado.
+// Espelhada em src/web.js (getRegistrableDomain/getCookieDomain) — manter iguais.
+const SECOND_LEVEL_LABELS = new Set([
+  'com', 'net', 'org', 'gov', 'edu', 'mil', 'co', 'ac', 'or', 'ne', 'go', 'gob', 'nom',
+  'info', 'biz', 'gr', 'adv', 'art', 'eco', 'ind', 'inf', 'rec', 'srv', 'tur', 'tv',
+  'vet', 'med', 'eng', 'esp', 'jor', 'pro', 'psi', 'id', 'me', 'ltd', 'plc', 'sch', 'in'
+]);
+
+// Hosts de plataforma que dao um subdominio por cliente (secao privada da PSL):
+// `Domain=.pages.dev` e rejeitado igual a `.com.br`, o registravel e `{projeto}.pages.dev`.
+const PLATFORM_SUFFIXES = new Set([
+  'pages.dev', 'workers.dev', 'vercel.app', 'netlify.app', 'github.io',
+  'web.app', 'firebaseapp.com', 'herokuapp.com'
+]);
+
+// Dominio registravel SEM ponto (`exemplo.com.br`). '' quando nao ha um seguro de usar:
+// IP (v4/v6), host de um rotulo so (`localhost`) ou o host ja e o proprio sufixo publico.
+// Aceita o header Host (com porta).
+export function getRegistrableDomain(hostname) {
+  let host = String(hostname || '').trim().toLowerCase();
+  if (!host || host.charAt(0) === '[') return '';                  // [IPv6]:porta
+  host = host.replace(/:\d+$/, '').replace(/\.$/, '');
+  if (!host || host.includes(':') || /^[\d.]+$/.test(host)) return ''; // IPv6 / IPv4
+  const parts = host.split('.');
+  if (parts.length < 2 || parts.some(p => !p)) return '';
+  const n = parts.length;
+  const take = (PLATFORM_SUFFIXES.has(parts[n - 2] + '.' + parts[n - 1]) ||
+    (parts[n - 1].length === 2 && SECOND_LEVEL_LABELS.has(parts[n - 2]))) ? 3 : 2;
+  return n < take ? '' : parts.slice(-take).join('.');
+}
+
+// Valor do Domain= do cookie de identidade, com o ponto (`.exemplo.com.br`), ou '' para
+// OMITIR o atributo (cookie host-only, que o navegador aceita) quando nao ha dominio
+// registravel seguro. `configDomain` (SITE_CONFIG.cookie_domain) vence o calculo so se o
+// host estiver dentro dele e ele nao for um sufixo publico — senao o navegador rejeitaria
+// o cookie do mesmo jeito (ex.: o site aberto pelo host alternativo `*.pages.dev`).
+export function getCookieDomain(hostname, configDomain) {
+  const host = String(hostname || '').trim().toLowerCase().replace(/:\d+$/, '').replace(/\.$/, '');
+  const cfg = String(configDomain || '').trim().toLowerCase().replace(/^\.+/, '');
+  if (cfg && getRegistrableDomain(cfg) && (host === cfg || host.endsWith('.' + cfg))) return '.' + cfg;
+  const root = getRegistrableDomain(hostname);
+  return root ? '.' + root : '';
+}
