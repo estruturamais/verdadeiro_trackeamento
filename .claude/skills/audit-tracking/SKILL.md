@@ -267,6 +267,49 @@ onde o dado falta. Ao reportar, lembrar a **origem** de cada parametro:
 | email/phone/name | **web (form)** ou webhook | `user_store` (lead) / `webhook_raw.payload` (compra) |
 | value/currency/product/order_id | so webhook | `webhook_raw.payload` |
 
+### 2.4b GA4 — `204` em tudo e o relatorio por pagina vazio
+
+**Rodar so quando o baseline tiver GA4.** O sintoma que o cliente ve: no GA4, **usuario ativo no Tempo
+real sem nenhuma visualizacao** ("Nenhum dado disponivel" em *Visualizacoes por titulo da pagina*),
+paginas sem titulo, ou **usuario sem cidade**. O `204` do Measurement Protocol **nao prova nada** aqui:
+o MP aceita o evento mesmo quando ele nao vai aparecer onde o cliente olha. O usuario ativo vem dos
+eventos automaticos do gtag do navegador (que roda com `send_page_view: false`); o `page_view` e so o
+do MP — se ele chega sem titulo, sem sessao ou com a data errada, a pagina some do relatorio.
+
+```bash
+npx wrangler d1 execute tracking_db --remote --command "SELECT event_name, COUNT(*) n, SUM(error_message='missing_ga_client_id') sem_cid, SUM(CASE WHEN json_valid(sent_payload) THEN json_extract(sent_payload,'$.events[0].params.page_title')<>'' ELSE 0 END) com_titulo, SUM(CASE WHEN json_valid(sent_payload) THEN json_extract(sent_payload,'$.events[0].params.session_id') IS NOT NULL ELSE 0 END) com_sessao, SUM(CASE WHEN json_valid(sent_payload) THEN json_extract(sent_payload,'$.timestamp_micros') IS NOT NULL ELSE 0 END) com_timestamp, SUM(CASE WHEN json_valid(sent_payload) THEN json_extract(sent_payload,'$.ip_override') IS NOT NULL ELSE 0 END) com_ip FROM events WHERE site_id = '{site_id}' AND platform = 'google_analytics_4' AND timestamp >= datetime('now','-{X} days') GROUP BY event_name;"
+```
+(`CASE WHEN json_valid` e obrigatorio: as linhas de erro tem `sent_payload` vazio, e o SQLite nao garante
+curto-circuito no `AND` — o `json_extract` estoura com `malformed JSON`.)
+
+**Saudavel (1.9.0+):** `com_titulo` e `com_sessao` = enviados, `com_timestamp = 0`, `com_ip` = enviados,
+`sem_cid` em poucos % (gtag bloqueado / visitante que saiu antes de ele carregar).
+
+| Assinatura | Causa | Estado |
+|---|---|---|
+| `page_view` com `com_titulo = 0` (e `begin_checkout`/`contact` com titulo) | Beacon disparado antes do `<title>` ser lido (o script e o 1o do `<head>`) | Corrigido na 1.9.0: o page_view espera o titulo |
+| `com_sessao = 0` em tudo, e `user_store.ga_session_id` vazio para todos | Leitura do cookie `_ga_<ID>` nao casava com o formato `GS2` (`s…$o…$t…`) nem com o `GS1` | Corrigido na 1.9.0 |
+| `com_timestamp > 0` | `timestamp_micros` = ultimo hit do cookie + 60s: page_view ~1 min no **futuro**, visitante que volta datado horas/dias **atras** (o GA4 trava em 72h) — fora do Tempo real e no dia errado | Corrigido na 1.9.0: o Worker nao manda mais |
+| `sem_cid` alto so no `page_view` (dezenas de %) | 1a pagina do visitante novo, antes de o gtag criar o `_ga` | Corrigido na 1.9.0: o page_view espera o gtag (teto de 3 s). O resto e gtag bloqueado ou saida antes de ele carregar |
+| `com_ip = 0` | MP sem `ip_override`/`user_agent` (GA4 deriva cidade e aparelho dos eventos de tag) | Corrigido na 1.9.0 |
+
+Se alguma assinatura aparecer numa instalacao **1.9.0 ou mais nova**, o codigo no ar e anterior a
+correcao — conferir a versao no ar (Step 0.1) antes de investigar. Em instalacao antiga, e o motivo
+para atualizar (`.claude/playbooks/atualizar.md`).
+
+**"Usuario online sem cidade" (ou todo mundo na mesma cidade).** A doc do MP: sem `ip_override` /
+`user_location`, o GA4 deriva a geografia "dos eventos de tag pelo `client_id`" — os do gtag, que
+passam pelo proxy `/g/collect`. Se o proxy nao repassa o IP do visitante, o Google geolocaliza o IP
+da Cloudflare. Desde a 1.9.0 o MP manda `ip_override`/`user_agent` (coluna `com_ip` acima) e o proxy
+repassa `_uip` + `X-Forwarded-For`. A prova final e no GA4: Tempo real > *Usuarios por cidade* com a
+cidade real do visitante (comparar com `user_store.city`, que vem da Cloudflare). O `_uip` e evidencia
+de terceiros (o parametro do GTM server-side do Google), nao doc publica — se a cidade dos eventos
+**automaticos** continuar errada com o `com_ip` cheio, registrar e nao insistir no proxy.
+
+> **Leitura que evita alarme falso:** o card **"Finalizacoes de compra"** do GA4 e o `begin_checkout`
+> (checkout **iniciado** — o `initiate_checkout` do VT), nao venda. No caso real, os 7 do card bateram
+> com os 7 `begin_checkout` do D1. Venda e `purchase` / "Receita de compra".
+
 ### 2.5 Veracidade (NAO no `sent_payload` — esta hasheado)
 O `sent_payload` guarda o PII **hasheado** (SHA-256): prova presenca, nao veracidade. Para checar
 email fake/teste ou normalizacao errada **antes** do hash, inspecionar o **valor cru**:
@@ -299,6 +342,46 @@ elos em `.claude/references/marca-user.md`):
    (script ausente/bloqueado) → caso de instalacao (Step 5), nao de parser.
 5. **Sem nenhum sinal de passagem pelo site** (sem evento web, sem cookie em momento algum) →
    **(A) esperado:** comprador foi direto ao checkout. Nunca classificar como "organico".
+
+#### GA4 — "a venda nao apareceu no GA4" (receita do GA4 abaixo da do gateway)
+
+**Rodar so quando o baseline tiver GA4.** O Measurement Protocol exige `client_id`: venda que chega sem
+a identidade do navegador **nao vai ao GA4**. Desde a 1.9.0 isso deixa linha (antes era um `return`
+mudo — a venda sumia do GA4 sem rastro):
+
+```sql
+SELECT e.event_id, e.marca_user, e.sent_payload, e.timestamp
+  FROM events e
+ WHERE e.site_id = '{site_id}' AND e.platform = 'google_analytics_4' AND e.event_name = 'purchase'
+   AND e.error_message = 'missing_ga_client_id'
+   AND e.timestamp >= datetime('now','-{X} days')
+ ORDER BY e.id DESC;
+```
+
+O `event_id` e o mesmo da linha da Meta (`order_id` + `product_id`) — cruzar com o `webhook_raw` do
+pedido e percorrer a cadeia acima (`marca_user_presente: false` no `sent_payload` = a venda chegou sem
+nenhum `marca_user`; `true` = havia indexador, mas o visitante nunca teve o `_ga` gravado no
+`user_store` — gtag bloqueado, ou o `sck` nao e do VT).
+
+**Por que aparece "de repente":** enquanto existia um emissor antigo (integracao nativa do gateway,
+Stape/sGTM), ele mandava **toda** venda ao GA4 e mascarava o buraco. Quando o cliente desliga o antigo
+(o certo), toda venda sem identidade some e a receita do GA4 despenca — caso real: "Receita de compra
+R$ 0,00" com duas vendas no periodo. Assinaturas reais (Kiwify, 10/2026), lidas no `webhook_raw.payload`:
+
+| No payload | Leitura |
+|---|---|
+| `TrackingParameters.sck` com formato que **nao e do VT** (VT = `{ms}-{uuid}`), ex. `1788792865427-1788792865428.438712.2`, e sem linha no `user_store` | Link de checkout **antigo/salvo** (indexador de antes do VT, recuperacao de carrinho). O `sck` nao recupera; o e-mail ainda pode (FDV por e-mail) |
+| `TrackingParameters.src = "kiwify_sales_agent"` | Venda feita pelo **agente de vendas da Kiwify**, fora do site. Nao ha navegador para atribuir — caso (A) legitimo |
+
+**Correcao para a receita bater:** `platforms.ga4.unattributed_purchases: true` (opt-in) — a venda sai
+com `client_id` sintetico e grava `204` + `aviso_client_id_sintetico` (nao e erro). **Antes de ligar,
+confirmar que nao ha outro emissor de purchase no GA4** (contaria em dobro). Ver
+`.claude/references/site-config-format.md`. Venda perdida ha **menos de 72h** pode ser reenviada so
+ao GA4 — secao GA4 do `.claude/playbooks/reenvio_dados.md`.
+
+> **GA4 com valor/ID diferentes dos do VT = outro emissor.** O VT envia `transaction_id = order_id`
+> (UUID na Kiwify) e `value` = valor pago. Receita igual a `my_commission` e ID curto (`order_ref`, ex.:
+> `uXxikuj`) = webhook antigo (Stape/sGTM) ou integracao nativa do gateway ainda ligados → GA4 conta 2x.
 
 ### 2.7 Reconciliacao de volume
 ```bash

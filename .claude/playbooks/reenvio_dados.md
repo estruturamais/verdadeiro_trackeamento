@@ -48,7 +48,7 @@ Formato aceito do usuário: `DD/MM/AAAA` (padrão brasileiro). Converta internam
 **2. Plataforma(s)**
 > "Quais plataformas devem receber os dados? (Meta Ads, TikTok Ads, GA4 — pode ser mais de uma)"
 
-A execução automática via endpoint suporta atualmente apenas **Meta Ads** (`platform='meta_ads'`). Para TikTok Ads (`tiktok_ads`) e GA4 (`google_analytics_4`), documentar como limitação e orientar execução manual conforme a skill correspondente.
+A execução automática via endpoint suporta atualmente apenas **Meta Ads** (`platform='meta_ads'`). Para TikTok Ads (`tiktok_ads`) e GA4 (`google_analytics_4`), documentar como limitação e orientar execução manual conforme a skill correspondente. **GA4, compra que não foi ao GA4:** roteiro manual na seção [GA4 — reenvio manual do purchase (até 72h)](#ga4--reenvio-manual-do-purchase-até-72h) abaixo — ele **não** usa o endpoint.
 
 **3. Pixels / IDs de destino** *(apenas para Meta Ads)*
 > "Quais pixel IDs do Meta devem receber os dados? Liste apenas os pixels espelho ou de destino — **não inclua o pixel primário** a menos que o usuário confirme explicitamente que quer reenviar para ele também."
@@ -187,6 +187,94 @@ curl -s -X POST https://{WORKER_DOMAIN}/collect/reprocess-selective \
 - Verificar se o `META_ACCESS_TOKEN` está válido (`npx wrangler secret list`)
 - Verificar se os pixel IDs estão corretos
 - Consultar `events` no D1 com `platform='meta_ads'` para ver a resposta da API
+
+---
+
+## GA4 — reenvio manual do purchase (até 72h)
+
+**Quando:** venda que **não foi** ao GA4 — linha `google_analytics_4 / purchase / missing_ga_client_id`
+em `events` (1.9.0+), ou receita do GA4 abaixo da do gateway depois de desligar um emissor antigo (ver
+o sintoma na seção 2.6 do `.claude/skills/audit-tracking/SKILL.md`). Recupera **só o GA4**.
+
+**Por que não reenviar o webhook:** o dedup (`order_id` + `product_id`) barra a 2ª passagem — e, se
+passasse, duplicaria a venda na Meta, no TikTok e no Google Ads. O `/collect/reprocess-selective`
+também não serve: ele é só Meta.
+
+**A janela de 72h:** o Measurement Protocol aceita `timestamp_micros` até 72h no passado. Dentro dela,
+a venda entra **no dia e hora em que o webhook chegou**. Depois de 72h o GA4 aceita, mas lança o evento
+72h atrás — a receita cai no dia errado. Não deixe para depois.
+
+**1. Achar as vendas e o horário de recebimento** (só leitura):
+
+```bash
+npx wrangler d1 execute {DB_NAME} --remote --command \
+  "SELECT e.event_id, e.marca_user, w.gateway, w.timestamp AS recebido_em FROM events e JOIN webhook_raw w ON w.order_id = e.event_id WHERE e.platform = 'google_analytics_4' AND e.event_name = 'purchase' AND e.error_message = 'missing_ga_client_id' AND e.timestamp >= datetime('now','-3 days') ORDER BY e.id DESC"
+```
+
+> O `webhook_raw.order_id` guarda o `txnId` (`order_id` + `_` + `product_id`), o mesmo valor do
+> `events.event_id`. Se o JOIN vier vazio, buscar pelo `event_id` no `webhook_raw.payload` com `LIKE`.
+
+Conferir **antes** que a venda não está no GA4 por outro caminho (outro emissor ainda ligado, ou uma
+linha `204` do VT para o mesmo `event_id`) — reenviar o que já entrou conta em dobro.
+
+**2. Montar o payload com o código REAL** (parser + `fdvMerge` + `sendGA4MP`, com o `fetch`
+interceptado — nada sai daqui). Script descartável na raiz do repo, **não commitar**:
+
+```js
+// reenvio-ga4.mjs — node reenvio-ga4.mjs <gateway> <payload.json> <recebido_em ISO> [user_store.json]
+import { readFileSync } from 'node:fs';
+import { GATEWAY_PARSERS } from './src/worker/gateways/index.js';
+import { fdvMerge } from './src/worker/store/fdv.js';
+import { sendGA4MP } from './src/worker/platforms/ga4.js';
+
+const [, , gateway, payloadFile, recebidoEm, storeFile] = process.argv;
+const data = GATEWAY_PARSERS[gateway](JSON.parse(readFileSync(payloadFile, 'utf8')));
+const store = storeFile ? JSON.parse(readFileSync(storeFile, 'utf8')) : null; // linha do user_store, se o FDV recuperou
+const merged = { ...fdvMerge(store, data), gateway,
+  event_id: data.product_id ? `${data.order_id}_${data.product_id}` : String(data.order_id) };
+
+let out;
+globalThis.fetch = async (_url, init) => { out = JSON.parse(init.body); return new Response(null, { status: 204 }); };
+const DB = { prepare: () => ({ bind: () => ({ run: async () => {} }) }) };
+// unattributed_purchases so aqui: sem client_id real, sai o sintetico (mesma formula do opt-in, nunca PII)
+await sendGA4MP({ measurement_id: '{G-XXXXXXXXXX}', api_secret: 'x', unattributed_purchases: true },
+  merged, { DB }, '{site_id}');
+out.timestamp_micros = String(Date.parse(recebidoEm) * 1000);   // hora em que o webhook chegou
+console.log(JSON.stringify(out));
+```
+
+O `payload.json` é o `webhook_raw.payload` da venda. Com identidade recuperada (ex.: o `marca_user`
+existe no `user_store`), exporte a linha do `user_store` para o `user_store.json` — aí sai o `client_id`
+real, com sessão; sem ela, sai o sintético (sem sessão e sem engajamento: entra na receita sem inventar
+visita).
+
+**3. Validar o formato** no servidor oficial (não grava nada):
+
+```bash
+node reenvio-ga4.mjs kiwify payload.json 2026-10-13T14:02:11Z > ga4.json
+curl -s -X POST "https://www.google-analytics.com/debug/mp/collect?measurement_id={G-XXXXXXXXXX}&api_secret=x" \
+  -H "Content-Type: application/json" -d @ga4.json
+```
+
+Só seguir com `{"validationMessages":[]}`.
+
+**4. Enviar** — confirmação explícita do usuário antes (o envio é definitivo; o GA4 não apaga evento):
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" -X POST \
+  "https://www.google-analytics.com/mp/collect?measurement_id={G-XXXXXXXXXX}&api_secret={api_secret}" \
+  -H "Content-Type: application/json" -d @ga4.json
+```
+
+`204` = aceito. O `api_secret` não sai do cofre da Cloudflare (`wrangler secret` não devolve o valor):
+use um que o cliente tenha, ou crie um novo em GA4 > Admin > Fluxos de dados > Web > *Segredos da API
+do Measurement Protocol* só para o reenvio e apague depois. Apagar `reenvio-ga4.mjs`, `payload.json`,
+`user_store.json` e `ga4.json` ao terminar.
+
+**5. Conferir e registrar.** Evento com data no passado **não aparece no Tempo real** — conferir nos
+relatórios de monetização/receita depois do processamento do GA4 (pode levar até 24-48h). O reenvio
+manual **não grava** linha em `events`: registrar no `tracking_memory.md` (data, `event_id`s, `client_id`
+real ou sintético).
 
 ---
 

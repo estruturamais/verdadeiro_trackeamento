@@ -20,11 +20,20 @@ export async function handleGA4CollectProxy(request, env) {
   const targetUrl = new URL('https://www.google-analytics.com/g/collect');
   url.searchParams.forEach((value, key) => targetUrl.searchParams.set(key, value));
 
+  // IP do VISITANTE. Sem ele o Google geolocaliza o IP de saida da Cloudflare (quem faz
+  // este fetch): usuario no Tempo real sem cidade, ou na cidade do datacenter. `_uip` e o
+  // parametro com que o GTM server-side do proprio Google repassa o IP ao /g/collect; o
+  // X-Forwarded-For segue o snippet oficial do Google tag gateway para Cloudflare. Sempre
+  // sobrescreve: o gtag nunca manda `_uip`, e um valor vindo do navegador seria forjavel.
+  const clientIp = request.headers.get('CF-Connecting-IP') || '';
+  if (clientIp) targetUrl.searchParams.set('_uip', clientIp);
+
   const upstream = await fetch(targetUrl.toString(), {
     method: request.method,
     headers: {
       'User-Agent': request.headers.get('User-Agent') || '',
-      'Content-Type': request.headers.get('Content-Type') || ''
+      'Content-Type': request.headers.get('Content-Type') || '',
+      ...(clientIp ? { 'X-Forwarded-For': clientIp } : {})
     },
     body: request.method === 'POST' ? await request.text() : undefined
   });

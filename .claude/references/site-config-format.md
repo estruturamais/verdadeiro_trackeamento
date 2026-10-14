@@ -131,6 +131,31 @@ Trade-off, custo e validacao em `.claude/playbooks/meta_ads.md`.
 
 ---
 
+## GA4 — venda sem visita identificada (`platforms.ga4.unattributed_purchases`) — opt-in
+
+| Valor | Efeito |
+|---|---|
+| ausente / `false` | Venda sem `client_id` do GA **nao vai ao GA4** e grava `missing_ga_client_id` em `events` (comportamento ate a 1.8.0, agora com rastro) |
+| `true` (booleano) | A venda sai com `client_id` **sintetico**: SHA-256 de `site_id` + `order_id` (nunca e-mail/telefone), sem sessao e sem `engagement_time_msec`. Grava `204` + `aviso_client_id_sintetico` no `error_message` |
+
+Quem chega sem `client_id`: comprador que nunca passou pelo site, link de checkout antigo/salvo
+(indexador de antes do VT), venda pelo agente de vendas do gateway. Com a flag, a **receita do GA4
+bate com a do gateway** e essas vendas aparecem sem atribuicao (`(not set)`), sem inventar um
+"usuario ativo". Precedencia: `client_id` real (recuperado pelo FDV) **sempre** vence o sintetico.
+
+```jsonc
+{ "platforms": { "ga4": { "measurement_id": "G-XXXXXXXXXX", "unattributed_purchases": true } } }
+```
+
+> ⚠️ **Antes de ligar:** confirme que nao ha **outro emissor** de `purchase` no GA4 (integracao nativa
+> do gateway, webhook antigo de Stape/sGTM). Com dois emissores a receita conta **em dobro**: o VT
+> manda `transaction_id = order_id` do gateway, o outro costuma mandar um id diferente (na Kiwify, o
+> `order_ref` curto e o valor `my_commission`), e o GA4 nao deduplica. Sinal de que o antigo ja saiu:
+> receita do GA4 zerada num periodo com venda. Diagnostico em `.claude/skills/audit-tracking/SKILL.md`
+> (secao 2.6, "a venda nao apareceu no GA4").
+
+---
+
 ## Como getConfig() le o SITE_CONFIG
 
 O Worker tem dois caminhos de leitura de config:

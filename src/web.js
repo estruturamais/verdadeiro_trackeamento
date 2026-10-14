@@ -874,6 +874,30 @@
     }
   }
 
+  // Ponto de sincronia com o gtag para a identidade do GA4 (client_id / session_id)
+  // que vai no beacon para o Measurement Protocol. Antes de o gtag.js (async)
+  // processar o config, os cookies nao servem: no 1o page_view o `_ga` ainda nao
+  // existe, e numa sessao nova o `_ga_<ID>` ainda guarda a sessao ANTERIOR. Quando as
+  // callbacks do `gtag('get', ...)` voltam, o gtag ja gravou os cookies — e eles viram
+  // a fonte (ver getBrowserData). Os valores do `get` ficam so de reserva.
+  // Sem GA4 no config nao ha o que esperar: nasce resolvido.
+  // Declarado ANTES da chamada de initGA4(): `var` sobe sem o valor, e o initGtag
+  // encontraria `gaIds` undefined.
+  var gaIds = { client_id: '', session_id: '', resolved: !__CONFIG__.ga4_measurement_id };
+  var gaIdsWaiters = [];
+
+  function onGaIdsResolved(cb) {
+    if (gaIds.resolved) cb(); else gaIdsWaiters.push(cb);
+  }
+
+  function resolveGaIds() {
+    if (gaIds.resolved) return;
+    gaIds.resolved = true;
+    var waiters = gaIdsWaiters;
+    gaIdsWaiters = [];
+    for (var i = 0; i < waiters.length; i++) { try { waiters[i](); } catch(e) {} }
+  }
+
   // Carrega o gtag.js e CONFIGURA cada destino que o config declarar.
   //
   // Antes esta funcao so tratava o GA4: `gtag` era definido dentro dela e ela retornava
@@ -910,6 +934,17 @@
       };
       if (debugOn) ga4Config.debug_mode = true;
       gtag('config', ga4Id, ga4Config);
+
+      // As callbacks rodam quando o gtag.js carrega e processa a fila acima.
+      var pendingIds = 2;
+      var gotGaId = function(field) {
+        return function(value) {
+          if (value) gaIds[field] = String(value);
+          if (--pendingIds === 0) resolveGaIds();
+        };
+      };
+      gtag('get', ga4Id, 'client_id', gotGaId('client_id'));
+      gtag('get', ga4Id, 'session_id', gotGaId('session_id'));
     }
 
     // Google Ads: sem este config, todo `send_to: AW-.../rotulo` e ignorado.
@@ -967,38 +1002,71 @@
     return '';
   }
 
-  function findGaSessionCookie() {
+  // O nome do cookie de sessao carrega o ID da propriedade (`_ga_<ID sem "G-">`). Com
+  // mais de um GA4 no site (GTM antigo, widget de terceiro), o 1o `_ga_*` do
+  // document.cookie pode ser de OUTRA propriedade — por isso o nome exato. Devolve
+  // TODOS os valores: o mesmo nome pode existir em dois niveis de dominio (ex.: um GTM
+  // antigo gravou em outro escopo), e ai o document.cookie traz os dois.
+  function findGaSessionCookies() {
+    var ga4Id = __CONFIG__.ga4_measurement_id || '';
+    var name = ga4Id ? '_ga_' + ga4Id.replace(/^G-/, '') : '';
+    var found = [];
     var cookies = document.cookie.split(';');
     for (var i = 0; i < cookies.length; i++) {
       var c = cookies[i].trim();
-      if (c.indexOf('_ga_') === 0 && c.indexOf('=') > 0) {
-        return c.split('=')[1];
-      }
+      var eq = c.indexOf('=');
+      if (eq <= 0) continue;
+      var key = c.slice(0, eq);
+      if (name ? key === name : key.indexOf('_ga_') === 0) found.push(c.slice(eq + 1));
     }
-    return '';
+    return found;
   }
 
-  function extractGaSessionId() {
-    var cookie = findGaSessionCookie();
-    if (!cookie) return '';
-    var match = cookie.match(/s(\d+)j/);
-    return match ? match[1] : '';
+  // Le o cookie de sessao do GA4. Existem dois formatos:
+  //   GS1.1.1700000000.3.1.1700000500.0.0.0           (legado: campos por posicao)
+  //   GS2.1.s1700000000$o3$g1$t1700000500$j60$l0$h0   (atual: s=sessao, o=numero, t=ultimo hit)
+  // As regex antigas (/s(\d+)j/ e /j(\d+)t/) nao casavam com NENHUM dos dois: o
+  // session_id nunca foi extraido (0 de 189 visitantes no D1 em 10/2026), e sem ele o
+  // GA4 nao liga o evento do MP a sessao do navegador — o page_view nao aparecia no
+  // Tempo real nem nos relatorios por pagina.
+  // Com cookie duplicado, vale o de atividade mais recente (`t`): e o que o gtag acabou
+  // de atualizar. O outro e uma sessao velha que ninguem mais escreve.
+  function readGaSessionCookie() {
+    var best = { session_id: '', session_number: '', last_hit: '' };
+    var raws = findGaSessionCookies();
+    for (var i = 0; i < raws.length; i++) {
+      var cur = parseGaSessionCookie(raws[i]);
+      if (!cur.session_id) continue;
+      if (!best.session_id || Number(cur.last_hit || 0) > Number(best.last_hit || 0)) best = cur;
+    }
+    return best;
   }
 
-  function extractGaSessionCount() {
-    var cookie = findGaSessionCookie();
-    if (!cookie) return '';
-    var match = cookie.match(/j(\d+)t/);
-    return match ? match[1] : '';
-  }
+  function parseGaSessionCookie(raw) {
+    var out = { session_id: '', session_number: '', last_hit: '' };
+    try { raw = decodeURIComponent(raw); } catch(e) {}
 
-  function extractGaTimestamp() {
-    var cookie = findGaSessionCookie();
-    if (!cookie) return '';
-    var match = cookie.match(/t(\d+)/);
-    if (!match) return '';
-    var ts = parseInt(match[1], 10);
-    return String((ts + 60) * 1000000);
+    var gs2 = raw.match(/^GS2\.\d+\.(.*)$/);
+    if (gs2) {
+      var parts = gs2[1].split('$');
+      for (var i = 0; i < parts.length; i++) {
+        var key = parts[i].charAt(0);
+        var val = parts[i].slice(1);
+        if (!/^\d+$/.test(val)) continue;
+        if (key === 's') out.session_id = val;
+        else if (key === 'o') out.session_number = val;
+        else if (key === 't') out.last_hit = val;
+      }
+      return out;
+    }
+
+    var p = raw.split('.');
+    if (p[0] === 'GS1' && p.length >= 6) {
+      if (/^\d+$/.test(p[2])) out.session_id = p[2];
+      if (/^\d+$/.test(p[3])) out.session_number = p[3];
+      if (/^\d+$/.test(p[5])) out.last_hit = p[5];
+    }
+    return out;
   }
 
   function getUserData(eventData) {
@@ -1037,15 +1105,22 @@
   }
 
   function getBrowserData() {
+    var gaCookie = readGaSessionCookie();
     return {
       fbp: getCookie('_fbp') || '',
       fbc: getCookie('_fbc') || (getUrlParam('fbclid') ? generateFbc() : ''),
       ttp: getCookie('_ttp') || '',
       ttclid: getCookie('ttclid') || getUrlParam('ttclid') || '',
-      ga_client_id: extractGaClientId(),
-      ga_session_id: extractGaSessionId(),
-      ga_session_count: extractGaSessionCount(),
-      ga_timestamp: extractGaTimestamp()
+      // Cookie PRIMEIRO, mesmo com o gtag ja pronto: na 1a visita o `gtag('get',
+      // 'client_id')` responde com um id PROVISORIO, diferente do que o gtag grava no
+      // `_ga` logo em seguida (reproduzido no Chrome) — e o do cookie e o que valera
+      // nas paginas seguintes. O valor do `get` so cobre quem nao tem cookie.
+      ga_client_id: extractGaClientId() || gaIds.client_id,
+      ga_session_id: gaCookie.session_id || gaIds.session_id,
+      ga_session_count: gaCookie.session_number,
+      // Horario do ultimo hit do gtag (informativo). NAO e o horario do evento: o
+      // Worker nao o usa mais como timestamp_micros (ver platforms/ga4.js).
+      ga_timestamp: gaCookie.last_hit ? gaCookie.last_hit + '000000' : ''
     };
   }
 
@@ -1163,6 +1238,35 @@
     }
   }
 
+  // O beacon do page_view nao pode sair no instante em que este script roda: ele e o
+  // 1o elemento do <head>, ANTES do <title> (document.title vazio — todo page_view do
+  // GA4 chegava sem titulo) e antes de o gtag.js (async) ter client_id/session_id
+  // (o 1o page_view de todo visitante novo morria em `missing_ga_client_id`). Entao
+  // ele espera as duas coisas, com teto: gtag bloqueado ou lento nao pode custar o
+  // evento, e se o visitante sair antes, envia o que tiver (sendBeacon sobrevive ao
+  // unload). Efeito colateral bom: `_fbp`/`_ttp` relidos no envio, se os pixels ja
+  // tiverem carregado.
+  var PAGE_VIEW_MAX_WAIT_MS = 3000;
+
+  function whenPageViewReady(send) {
+    var done = false;
+    function fire() {
+      if (done) return;
+      done = true;
+      try { send(); } catch(e) {}
+    }
+    function check() {
+      if (gaIds.resolved && (document.title || document.readyState !== 'loading')) fire();
+    }
+    onGaIdsResolved(check);
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', check);
+    setTimeout(fire, PAGE_VIEW_MAX_WAIT_MS);
+    window.addEventListener('pagehide', fire);
+    document.addEventListener('visibilitychange', function() {
+      if (document.visibilityState === 'hidden') fire();
+    });
+  }
+
   // `extraCustom` (opcional): propriedades custom da ROTA do form_submit
   // (triggers.lead.routes[].custom_data, ex.: {method:'email'} no login). Entram no
   // custom_data e, portanto, tambem no beacon que vai ao Worker.
@@ -1250,8 +1354,17 @@
     }
 
     // 5. sendBeacon ao Worker — alimenta TODAS as plataformas server-side.
+    //    O page_view espera o <title> e a identidade do GA4 (ver whenPageViewReady)
+    //    e rele os dados de navegador na hora do envio. Os eventos de clique
+    //    acontecem depois disso tudo e seguem saindo na hora.
     try {
-      sendTrackingBeacon(eventName, event_id, userData, browserData, customData);
+      if (eventName === 'page_view') {
+        whenPageViewReady(function() {
+          sendTrackingBeacon(eventName, event_id, userData, getBrowserData(), customData);
+        });
+      } else {
+        sendTrackingBeacon(eventName, event_id, userData, browserData, customData);
+      }
     } catch(e) {
       if (__CONFIG__.debug) console.error('[Tracking] Error in fireTrigger beacon:', e);
     }
