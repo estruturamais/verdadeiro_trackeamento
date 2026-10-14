@@ -86,6 +86,16 @@ async function main() {
     include_granted_scopes: 'true'
   }).toString();
 
+  // Lembrete, nao trava: app Externo em "Em teste" recebe refresh token que expira
+  // em 7 dias — o purchase sobe por uma semana e para com `invalid_grant` no refresh.
+  // Fonte: developers.google.com/identity/protocols/oauth2#expiration
+  console.log('\n[antes de autorizar] O app OAuth tem que estar PUBLICADO ("Em producao").');
+  console.log('  Google Cloud > Google Auth Platform > Publico-alvo (Audience) > Status de publicacao.');
+  console.log('  Em "Em teste", a Google emite refresh token que EXPIRA EM 7 DIAS: as vendas sobem');
+  console.log('  por uma semana e param com `invalid_grant`. Se estiver "Em teste", clique em');
+  console.log('  "Publicar app" ANTES de seguir. O aviso de "app nao verificado" na autorizacao e');
+  console.log('  esperado para uso proprio — siga por "Avancado".');
+
   console.log('\n1) Abra esta URL no navegador, logado na conta que administra o Google Ads:\n');
   console.log(authUrl + '\n');
   console.log('2) Autorize os DOIS acessos pedidos (Google Ads e Data Manager).');
