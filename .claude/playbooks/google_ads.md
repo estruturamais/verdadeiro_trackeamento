@@ -209,14 +209,57 @@ isso: **preencher o id numerico no config e o caminho padrao, nao um plano B.**
   MCC; caso contrario, omitir.
 
 ### Credenciais OAuth (secretas)
+
+As paradas reais do OAuth foram todas do lado do operador, nao do VT. **Antes de marcar a
+autorizacao**, conferir com o cliente:
+- [ ] Quem vai autorizar e a conta do **dono do negocio** (ver "Quem autoriza e dono do token").
+- [ ] Essa conta **nao mexeu em login/seguranca recentemente** (senha, chave de acesso/passkey,
+  verificacao em duas etapas). Logo depois de uma mudanca dessas o Google pode bloquear a
+  autorizacao por dias ("Tente de novo em 6 dias"). Se o bloqueio aparecer: autorizar com **outra
+  conta com acesso administrativo ao Google Ads** (respeitando a regra de quem autoriza) ou
+  aguardar — o resto do VT nao depende disso, so o `purchase` do Google Ads espera.
+- [ ] O **titular da conta vai estar presente** na hora de rodar o `gads:oauth` (passo 3).
+
 1. **Google Cloud Console**, no projeto do cliente:
    - APIs e servicos > Biblioteca > **Google Ads API** > Ativar
    - APIs e servicos > Biblioteca > **Data Manager API** > Ativar ← **o passo mais esquecido**
    - Credenciais > Criar credenciais > **ID do cliente OAuth** > tipo **App para computador**
-2. No repo: `npm run gads:oauth --client-id={id} --client-secret={secret}`
-3. Autorizar os **dois** acessos. O script confere o `scope` devolvido e **falha** se faltar
+   - **Google Auth Platform > Publico-alvo (Audience) > Status de publicacao > Publicar app** (na UI
+     antiga: *Tela de consentimento OAuth*). ← **o passo mais caro de esquecer**
+     - **Por que:** app **Externo** em **"Em teste"** recebe refresh token que **expira em 7 dias**.
+       O `purchase` sobe por uma semana e depois para — `invalid_grant` no refresh, em todas as
+       vendas, sem nada ter mudado no VT.
+     - **Como confirmar:** o status mostra **"Em producao"**, nao "Em teste".
+     - Publicado sem passar pela verificacao do Google, a autorizacao pode mostrar o aviso de **"app
+       nao verificado"** — esperado para uso proprio; segue-se por **Avancado**.
+     - Token gerado com o app ainda em "Em teste": publicar e **reemitir** — nao esperar o 7o dia.
+     - **Fonte (Google, conferida em 14/10/2026):** [OAuth 2.0 — Refresh token expiration](https://developers.google.com/identity/protocols/oauth2#expiration):
+       *"A Google Cloud Platform project with an OAuth consent screen configured for an external
+       user type and a publishing status of "Testing" is issued a refresh token expiring in 7
+       days"*. A unica excecao e pedir so nome/e-mail/perfil — `adwords` e `datamanager` estao fora
+       dela. E [Manage App Audience](https://support.google.com/cloud/answer/15549945):
+       *"Authorizations by a test user will expire seven days from the time of consent"*; o botao
+       *Publish app* leva o status a *In production*.
+2. No repo: `npm run gads:oauth --client-id={id} --client-secret={secret}` — o script repete o
+   lembrete do app publicado antes de mostrar a URL.
+3. **Com o titular presente**, autorizar **no navegador da mesma maquina que roda o script** (o
+   script rodando na maquina dele, ou tela compartilhada com controle). O retorno vai para
+   `http://127.0.0.1:{porta}` e o script troca o codigo **na hora**, sozinho.
+   - **Nao repassar a URL de retorno nem o `code=`** por mensagem (dono → gestor → agente). O codigo
+     de autorizacao vence em minutos e so vale uma vez: repassado, a troca da **`invalid_grant`**.
+     Nesse caso, refazer o fluxo inteiro, com URL nova — diferente do `invalid_grant` **no refresh**
+     (app em "Em teste", passo 1).
+   - Autorizado em outra maquina, o navegador cai num erro de conexao com o `code=` na barra de
+     enderecos — e dai que nasce o repasse. A correcao e rodar o script onde o navegador esta.
+4. Autorizar os **dois** acessos. O script confere o `scope` devolvido e **falha** se faltar
    `datamanager` — token emitido so com `adwords` responde `403 insufficient authentication scopes`
    no upload, e **token antigo nunca ganha escopo novo** (tem que ser reemitido).
+
+**Quem autoriza e dono do token.** O refresh token fica atrelado a **conta Google que clicou em
+Permitir**. Autorize com a conta do **dono do negocio** — a que administra a conta Google Ads e nao
+vai sair. Se for a conta do gestor/agencia e ela perder o acesso a conta Google Ads do cliente, o
+upload para e ninguem e avisado. Registrar no `tracking_memory` qual conta autorizou (campo "conta
+que autorizou o OAuth").
 
 ### Bloco unico para o cliente copiar, colar e responder
 
@@ -389,6 +432,8 @@ nao casa — e nao ha erro nenhum no upload.
 | `status_code 0` + `missing_conversion_label_{evento}` | Opt-in: rotulo daquele evento ausente | Preencher o rotulo, ou ignorar se o evento nao deve ser conversao |
 | `403` + `api_nao_habilitada` | Data Manager API desligada no Cloud | Ativar no Cloud Console e aguardar alguns minutos |
 | `403` + `escopo_oauth_insuficiente` | Refresh token sem o escopo `datamanager` | `npm run gads:oauth` e resubir o secret. Token antigo **nao** ganha escopo novo |
+| `status_code 0` + `oauth_refresh_failed(400)` com `invalid_grant` **no refresh**, em todas as vendas, ~7 dias depois do `gads:oauth` | App OAuth Externo em **"Em teste"**: o token de teste expira em 7 dias | Publicar o app ("Em producao"), **reemitir** com `npm run gads:oauth` e resubir o secret. Nao e bug do VT |
+| `gads:oauth` para com `a troca do code falhou (HTTP 400)` + `invalid_grant` **na troca** | Codigo de autorizacao vencido ou ja usado — repassado por mensagem, troca atrasada | Refazer o fluxo inteiro (URL nova), com o titular presente e a troca na hora. **Nao** e o `invalid_grant` do refresh |
 | `400` + `conversion_upload_bloqueado` | Conta nao allowlisted no servico legado | `upload_api: "data_manager"` (ou remover o campo) |
 | `200` + `partial_failure ... EXPIRED_CLICK` | Clique fora da janela de conversao | Nao e bug — venda de clique antigo demais |
 | `web` com `200` + `web: despacho do navegador nao confirmado pelo servidor` | **Normal** — o Worker nao enxerga o gtag | Validar no navegador (Step 4, canal web) |

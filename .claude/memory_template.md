@@ -107,6 +107,7 @@
 - GOOGLE_ADS_CLIENT_ID: CONFIGURADO (SECRETO) | nao usa purchase server-side
 - GOOGLE_ADS_CLIENT_SECRET: CONFIGURADO (SECRETO) | nao usa purchase server-side
 - GOOGLE_ADS_REFRESH_TOKEN: CONFIGURADO (SECRETO) | nao usa purchase server-side
+- conta que autorizou o OAuth: {e-mail da conta Google} — dono do negocio | gestor/agencia   <!-- o refresh token e DESSA conta: se ela perder o acesso ao Google Ads, o upload para sem aviso. Preferir a do dono do negocio. Ver playbooks/google_ads.md, "Credenciais OAuth". -->
 - Data Manager API habilitada no Cloud: sim | nao
 - Marcacao automatica (auto-tagging) ligada: sim | nao | nao verificado
 
