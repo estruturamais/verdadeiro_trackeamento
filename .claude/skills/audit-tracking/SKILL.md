@@ -286,6 +286,70 @@ npx wrangler d1 execute tracking_db --remote --command "SELECT COUNT(*) AS webho
 Comparar `webhooks` x `events` Purchase com status 2xx x vendas que o cliente sabe que houve. Sobra
 em `webhook_raw` com `processed = 0` ou `error` preenchido → vendas perdidas (investigar `error`).
 
+**`shadow` esquecido.** Webhooks com `processed = 1` e o `events` do webhook so com `status_code = 0` +
+`shadow_mode` → a chave `purchase_dispatch: "shadow"` ficou no config e **nenhuma venda chega as
+plataformas**:
+
+```bash
+npx wrangler d1 execute tracking_db --remote --command "SELECT COUNT(*) AS linhas_shadow, MAX(timestamp) AS ultima FROM events WHERE site_id = '{site_id}' AND error_message LIKE 'shadow_mode%' AND timestamp >= datetime('now','-{X} days');"
+```
+
+`ultima` depois do `shadow_desligado_em` da memoria (ou sem `shadow` registrado) → remover a chave e
+deployar (`overview.md`, 5.4.4). Excecao: `shadow` intencional registrado na memoria (validacao do
+`saas.md`, Passo 7). As vendas do intervalo ficaram fora das plataformas — listar com a consulta de
+`atualizar.md` ("Teste de webhook com a instalacao em producao").
+
+**Venda de teste despachada como venda real.** O webhook de teste do gateway (simulacao do painel,
+compra de teste) chega como compra aprovada; sem `shadow` no ar na hora, vira `Purchase` real. Sobra de
+Purchase 2xx contra as vendas que o cliente conhece costuma ser isto. Candidatos = webhook com marcador
+de teste no payload **e** envio 2xx a algum destino:
+
+```bash
+npx wrangler d1 execute tracking_db --remote --command "
+SELECT * FROM (
+  SELECT w.id, w.timestamp, w.gateway, w.order_id, w.value,
+    (SELECT GROUP_CONCAT(e.platform || ' ' || e.event_name || ' ' || e.status_code, ', ')
+       FROM events e
+      WHERE e.site_id = w.site_id AND e.channel = 'webhook'
+        AND e.status_code BETWEEN 200 AND 299
+        AND e.timestamp BETWEEN w.timestamp AND strftime('%Y-%m-%dT%H:%M:%fZ', w.timestamp, '+60 seconds')
+        AND instr(COALESCE(w.order_id, ''), e.event_id) = 1) AS despachado_2xx
+  FROM webhook_raw w
+  WHERE w.site_id = '{site_id}' AND w.timestamp >= datetime('now','-{X} days')
+    AND (lower(w.payload) LIKE '%@example.com%' OR lower(w.payload) LIKE '%john doe%'
+      OR lower(w.payload) LIKE '%johndoe%' OR lower(w.payload) LIKE '%example product%'
+      OR lower(w.payload) GLOB '*[^a-z]test[^a-z]*' OR lower(w.payload) GLOB '*[^a-z]teste[^a-z]*')
+) WHERE despachado_2xx IS NOT NULL ORDER BY id DESC;"
+```
+
+- `despachado_2xx` lista o que cada destino aceitou (`meta_ads Purchase 200, meta_ads Purchase 200,
+  tiktok_ads Purchase 200` = 2 pixels + TikTok). Teste feito sob `shadow` nao aparece (`status_code 0`).
+- **Por que janela de 60 s + prefixo, e nao `event_id = order_id`:** so Meta e Google Ads gravam o envio
+  com o mesmo `order_id` do `webhook_raw`; TikTok e GA4 gravam `event_id` vazio e a planilha grava o
+  `order_id` cru (sem o `_{product_id}`). Igualdade simples perde esses destinos. Efeito colateral:
+  outra venda no mesmo minuto pode somar uma linha de TikTok/GA4 a lista — a selecao do teste nao muda.
+- **Confirmar no payload antes de concluir** (`SELECT payload FROM webhook_raw WHERE id = {id};`): o
+  marcador e candidato, nao veredito — comprador real pode ter nome parecido, ou o produto ter "teste"
+  no nome. A heuristica serve a esta revisao humana, **nunca** para filtrar despacho no codigo.
+- **Retencao:** o `events` guarda 7 dias e o `webhook_raw` 14 (`src/worker/shared/cleanup.js`) — usar
+  `X <= 7`. Teste de 8 a 14 dias atras so aparece no `webhook_raw` (rodar o `SELECT` interno, sem o
+  filtro de fora): `processed = 1` sem `shadow` registrado na memoria para aquela data = foi despachado.
+
+O que fazer (o VT nao tem rotina de remocao em destino nenhum):
+
+| Destino | O que da para fazer |
+|---|---|
+| Meta | Nao ha remocao. Registrar no `tracking_memory.md` (data, valor, `order_id`, pixels) e descontar na leitura do periodo |
+| GA4 | O `transaction_id` e o `order_id` do gateway (o da consulta sem o `_{product_id}`) e fica no relatorio — usar para identificar e excluir nas analises |
+| TikTok / Google Ads | O VT nao envia retratacao — registrar e descontar como na Meta |
+| Planilha (`sheets`) | Apagar a linha do pedido a mao |
+
+Sinal para o cliente, em linguagem de negocio: *"No dia {data}, a {gateway} mandou um webhook de teste e
+ele contou como venda de R$ {valor} na Meta/TikTok. Na Meta nao da para apagar; anotei a data para
+descontarmos na leitura desse periodo. Os proximos testes passam pelo modo de validacao, que nao envia
+nada as plataformas."* Proximo teste: so sob `shadow` (`overview.md` 5.4, ou `atualizar.md` em
+producao).
+
 ### 2.8 Duplicatas / order bump
 ```bash
 npx wrangler d1 execute tracking_db --remote --command "SELECT order_id, COUNT(*) AS n FROM webhook_raw WHERE site_id = '{site_id}' AND order_id IS NOT NULL GROUP BY order_id HAVING n > 1 ORDER BY n DESC LIMIT 20;"
