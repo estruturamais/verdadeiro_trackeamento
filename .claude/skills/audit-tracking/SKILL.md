@@ -60,6 +60,7 @@ todas essas causas se parecem (ausencia de linha), mas a solucao de cada uma e o
 | Google Ads sem conversao, D1 "verde" | `channel` errado no config: instalacao antiga em `server` grava `200` para evento de navegador que nunca disparou — ver 2.10 | sim |
 | **Nenhuma invocacao do Worker** (`wrangler tail` conecta e nao mostra nada), com rotas registradas | o host e servido por **plataforma SaaS** (Lovable/Vercel/Netlify/Framer) por custom hostname — o request nao entra na zona do cliente. 🛑 **Nunca "resolver" ligando o proxy no apex**: isso ja derrubou site em producao e a validacao imediata **passa mesmo assim**. Tracking so em `track.{dominio}` — ver `.claude/references/saas-hospedado.md` | sim |
 | **Site instavel/fora do ar** logo apos alguem ter ligado a nuvem laranja | Cloudflare na frente de Cloudflare com custom hostname. **Voltar para nuvem cinza e a PRIMEIRA acao**, antes de qualquer investigacao | sim |
+| Script carrega, o console mostra o `page_view` e a pagina **nao aparece** no `events` (ou tudo zerado) | beacon relativo indo para o host da pagina, que nao tem Worker: page builder/SaaS sem `collect_url` absoluto, ou o site aberto pelo **host alternativo** da plataforma (`*.pages.dev`, `*.vercel.app`) — `405` sem erro nenhum. Ver **2.1b** | sim — config/infra (`overview.md` 5.1, `infra.md` 0.11b) |
 | Renovacao de assinatura "sumindo" | ver **2.11** (`subscription_tracking`, tabela ausente, id da assinatura usado como `order_id`) | depende |
 | Console com `[Tracking] Proxy do Meta Pixel indisponivel`, ou `connect.facebook.net` no Network com `pixel_proxy` ligado | Route `/fb/*` ausente no `wrangler.toml` (o `git pull` nao a traz) — o pixel esta no fallback direto, **nao morreu** | sim — config de infra; ver `atualizar.md` (1.8.0) |
 
@@ -149,6 +150,26 @@ Para cada item: rodar a query, interpretar contra o baseline, dar **veredito** e
 ### 2.1 Pulso por plataforma
 Ja coletado em 0.3. Plataforma do baseline **sem nenhuma linha** → falha silenciosa: conferir se ela
 esta no `SITE_CONFIG` e se os secrets existem (`npx wrangler secret list`).
+
+### 2.1b Hosts que chegam ao Worker (page builder / host alternativo)
+De quais hosts os beacons chegam (o host sai da `page_url` da linha de ingestao):
+```bash
+npx wrangler d1 execute tracking_db --remote --command "SELECT substr(r, 1, instr(r || '/', '/') - 1) AS host, COUNT(*) AS beacons, MAX(ts) AS ultimo FROM (SELECT substr(u, instr(u, '://') + 3) AS r, ts FROM (SELECT json_extract(sent_payload,'\$.page_url') AS u, timestamp AS ts FROM events WHERE site_id = '{site_id}' AND platform = 'collect' AND timestamp >= datetime('now','-{X} days'))) GROUP BY host ORDER BY beacons DESC;"
+```
+- **Esperado:** so os hosts do dominio que o cliente usa (`{dominio}`, `www.`, subdominios de LP).
+- **Host de plataforma na lista** (`*.pages.dev`, `*.vercel.app`, `*.netlify.app`, preview de
+  builder) → ha trafego real pelo host alternativo, chegando ao Worker por `collect_url` absoluto.
+  Ali a identidade e cookie de terceiro → `ATENCAO`: redirecionar o host (`infra.md` 0.11b).
+- **Host que o cliente diz ter o script e nao aparece** → o beacon morre antes do Worker: `FALHA`.
+  ⚠️ **No host quebrado nao existe linha nenhuma** — o banco nao mostra o que nunca chegou, entao a
+  ausencia e o unico sinal. Confirmar pelo destino servido e pelo host:
+  ```bash
+  curl -s "https://{dominio}/tracking/web.js?site_id={site_id}" | grep -o '"collect_url":"[^"]*"'
+  curl -s -o /dev/null -w "%{http_code} -> %{redirect_url}\n" "https://{host-alternativo}/"
+  ```
+  `"/collect/event"` com a pagina fora do host das routes (page builder, `track.{dominio}`) → falta o
+  `collect_url` absoluto (`overview.md` Step 2). Host alternativo respondendo `200` em vez de `301`
+  → aplicar o redirect (`infra.md` 0.11b). Roteiro completo no `overview.md` 5.1.
 
 ### 2.2 Config declarada x banco entrega
 ```bash

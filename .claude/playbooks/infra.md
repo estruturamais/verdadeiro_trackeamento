@@ -275,6 +275,43 @@ curl -s https://{dominio}/fb/sdk.js | head -c 120
 
 ---
 
+### 0.11b — Host alternativo da plataforma (Cloudflare Pages, Vercel, Netlify)
+
+So quando o site e hospedado numa plataforma que **tambem** o publica num host dela:
+`{projeto}.pages.dev` (Cloudflare Pages), `{projeto}.vercel.app`, `{site}.netlify.app`. O mesmo
+site passa a responder em dois hosts, e no host da plataforma o tracking morre **sem erro**:
+
+- o `<script src="https://{dominio}/tracking/web.js">` e absoluto e carrega normalmente;
+- o beacon vai ao `collect_url` **relativo** (`/collect/event`), ou seja, ao host da pagina — que ali
+  e a plataforma, sem Worker: `POST /collect/event` → `405`. Nenhum evento, nenhum erro no console:
+  "parece instalado e nao registra nada";
+- o cookie de identidade vem do dominio principal, e naquele host e cookie de terceiro
+  (bloqueado/particionado pelo navegador).
+
+**Correcao (sem codigo):** redirecionar o host da plataforma para o dominio, `301`, preservando
+caminho e query string (as UTMs do anuncio vao junto).
+- **Cloudflare Pages:** Bulk Redirect (painel: Rules > Redirect Rules > Bulk Redirects) de
+  `{projeto}.pages.dev` para `https://{dominio}`. Os previews (`{hash}.{projeto}.pages.dev`) servem
+  para teste, nao para trafego — nao precisam de tracking.
+- **Vercel / Netlify:** o redirect de dominio da propria plataforma, do host dela para o dominio.
+
+Verificar:
+
+```bash
+# Dominio: o Worker responde o preflight do beacon com 204
+curl -s -o /dev/null -w "%{http_code}\n" -X OPTIONS "https://{dominio}/collect/event"
+# Host da plataforma: tem que redirecionar para o dominio
+curl -s -o /dev/null -w "%{http_code} -> %{redirect_url}\n" "https://{projeto}.pages.dev/"
+```
+
+**Resultado esperado:** `204` no dominio e `301 -> https://{dominio}/` no host da plataforma. Se o
+host da plataforma devolver `200`, ele nao esta redirecionando — e `curl -s -o /dev/null -w
+"%{http_code}\n" -X POST "https://{projeto}.pages.dev/collect/event"` devolvendo `405` (ou qualquer
+coisa diferente do Worker) confirma que todo beacon daquele host se perde. Anotar o host alternativo
+no `tracking_memory.md` (`## Infraestrutura`, `host_alternativo: {host} → redirect 301`).
+
+---
+
 ### 0.12 — Verificar retencao automatica de dados
 
 Explicar: "O cron de limpeza automatica do banco ja vem ativo por padrao no `wrangler.toml`. Nao e necessario descomentar nada. O deploy que fizemos no step 0.10 ja registrou o cron na Cloudflare."

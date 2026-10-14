@@ -15,6 +15,54 @@
   // MODULE 1 — Identification (SPEC 2.1)
   // ============================================================
 
+  // Dominio registravel (eTLD+1) — espelho de getRegistrableDomain/getCookieDomain em
+  // src/worker/shared/helpers.js (manter as listas iguais). Os 2 ultimos rotulos do host
+  // davam `com.br` em `www.exemplo.com.br`: o cookie `domain=.com.br` e rejeitado pelo
+  // navegador e `pay.kiwify.com.br` passava por link INTERNO (sem indexador no checkout).
+  // Declarado ANTES do primeiro uso no carregamento: uma tabela `var` mais abaixo no
+  // arquivo ainda estaria undefined quando este modulo grava o cookie.
+  var SECOND_LEVEL_LABELS = {
+    com: 1, net: 1, org: 1, gov: 1, edu: 1, mil: 1, co: 1, ac: 1, or: 1, ne: 1, go: 1, gob: 1, nom: 1,
+    info: 1, biz: 1, gr: 1, adv: 1, art: 1, eco: 1, ind: 1, inf: 1, rec: 1, srv: 1, tur: 1, tv: 1,
+    vet: 1, med: 1, eng: 1, esp: 1, jor: 1, pro: 1, psi: 1, id: 1, me: 1, ltd: 1, plc: 1, sch: 1, 'in': 1
+  };
+  var PLATFORM_SUFFIXES = {
+    'pages.dev': 1, 'workers.dev': 1, 'vercel.app': 1, 'netlify.app': 1, 'github.io': 1,
+    'web.app': 1, 'firebaseapp.com': 1, 'herokuapp.com': 1
+  };
+
+  // Sem ponto (`exemplo.com.br`); '' para IP, `localhost` ou o proprio sufixo publico.
+  function getRegistrableDomain(hostname) {
+    var host = String(hostname || '').trim().toLowerCase();
+    if (!host || host.charAt(0) === '[') return '';
+    host = host.replace(/:\d+$/, '').replace(/\.$/, '');
+    if (!host || host.indexOf(':') !== -1 || /^[\d.]+$/.test(host)) return '';
+    var parts = host.split('.');
+    var n = parts.length;
+    if (n < 2) return '';
+    for (var i = 0; i < n; i++) if (!parts[i]) return '';
+    var take = (PLATFORM_SUFFIXES.hasOwnProperty(parts[n - 2] + '.' + parts[n - 1]) ||
+      (parts[n - 1].length === 2 && SECOND_LEVEL_LABELS.hasOwnProperty(parts[n - 2]))) ? 3 : 2;
+    return n < take ? '' : parts.slice(-take).join('.');
+  }
+
+  // Domain= do cookie com o ponto, ou '' para omitir o atributo (host-only, aceito).
+  // `cookie_domain` do SITE_CONFIG vence, se o host estiver dentro dele.
+  function getCookieDomain(hostname) {
+    var host = String(hostname || '').trim().toLowerCase().replace(/\.$/, '');
+    var cfg = String(__CONFIG__.cookie_domain || '').trim().toLowerCase().replace(/^\.+/, '');
+    if (cfg && getRegistrableDomain(cfg) &&
+        (host === cfg || host.slice(-(cfg.length + 1)) === '.' + cfg)) return '.' + cfg;
+    var root = getRegistrableDomain(host);
+    return root ? '.' + root : '';
+  }
+
+  // Chave de "mesmo site" para o isExternal: o dominio registravel, ou o host inteiro
+  // quando nao ha um (localhost, IP).
+  function siteKey(hostname) {
+    return getRegistrableDomain(hostname) || String(hostname || '').toLowerCase();
+  }
+
   function generateEventId() {
     var timestamp = Date.now();
     var uuid;
@@ -30,50 +78,39 @@
     return timestamp + '-' + uuid;
   }
 
-  function getOrCreateMarcaUser() {
-    var cookieMatch = document.cookie.match(/marca_user=([^;]+)/);
-    if (cookieMatch && cookieMatch[1]) return cookieMatch[1];
-
-    var localVal = localStorage.getItem('marca_user');
-    if (localVal) return localVal;
-
-    var sessionVal = sessionStorage.getItem('marca_user');
-    if (sessionVal) return sessionVal;
-
-    var newId = generateEventId();
-
-    try { localStorage.setItem('marca_user', newId); } catch(e) {}
-    try { sessionStorage.setItem('marca_user', newId); } catch(e) {}
+  // Identidade que ESTE navegador ja tem: cookie legivel pelo JS -> localStorage ->
+  // sessionStorage. Cada leitura isolada: storage bloqueado (iframe sandbox, modo
+  // restrito) lanca, e nao pode derrubar as outras fontes.
+  function readMarcaUserLocal() {
     try {
-      var rd = (function() {
-        var p = window.location.hostname.split('.');
-        return p.length >= 2 ? '.' + p.slice(-2).join('.') : window.location.hostname;
-      })();
-      document.cookie = 'marca_user=' + newId + ';path=/;max-age=63072000;SameSite=Lax;domain=' + rd;
+      var m = document.cookie.match(/(?:^|;\s*)marca_user=([^;]+)/);
+      if (m && m[1]) return m[1];
     } catch(e) {}
-
-    return newId;
+    try { var l = localStorage.getItem('marca_user'); if (l) return l; } catch(e) {}
+    try { var s = sessionStorage.getItem('marca_user'); if (s) return s; } catch(e) {}
+    return '';
   }
 
-  try {
-    var __MARCA_USER__ = (typeof __MARCA_USER__ !== 'undefined' && __MARCA_USER__)
-      ? __MARCA_USER__
-      : getOrCreateMarcaUser();
-  } catch(e) {
-    var __MARCA_USER__ = getOrCreateMarcaUser();
+  // Grava nas tres fontes. O cookie do Worker e HttpOnly (invisivel ao JS) e o
+  // getAamaisId() le daqui.
+  function persistMarcaUser(id) {
+    try { localStorage.setItem('marca_user', id); } catch(e) {}
+    try { sessionStorage.setItem('marca_user', id); } catch(e) {}
+    try {
+      var cd = getCookieDomain(window.location.hostname);
+      document.cookie = 'marca_user=' + id + ';path=/;max-age=63072000;SameSite=Lax' + (cd ? ';domain=' + cd : '');
+    } catch(e) {}
   }
 
-  // Persist marca_user in localStorage/sessionStorage so getAamaisId() can read it
-  // (the Worker sets HttpOnly cookie which JS cannot read)
-  try { localStorage.setItem('marca_user', __MARCA_USER__); } catch(e) {}
-  try { sessionStorage.setItem('marca_user', __MARCA_USER__); } catch(e) {}
-  try {
-    var rootDomain = (function() {
-      var parts = window.location.hostname.split('.');
-      return parts.length >= 2 ? '.' + parts.slice(-2).join('.') : window.location.hostname;
-    })();
-    document.cookie = 'marca_user=' + __MARCA_USER__ + ';path=/;max-age=63072000;SameSite=Lax;domain=' + rootDomain;
-  } catch(e) {}
+  // Precedencia: a identidade LOCAL vence a cunhada pelo servidor. O Worker injeta
+  // `var __MARCA_USER__="..."` no topo do script e, por hoisting de `var`, o antigo
+  // `typeof __MARCA_USER__ !== 'undefined'` era sempre verdadeiro: o storage nunca era
+  // consultado e ainda era regravado com o valor do servidor — que e um id NOVO toda vez
+  // que o cookie nao volta ao Worker (cookie rejeitado, Worker em outro site). O valor do
+  // servidor fica de fallback para o navegador sem nada local; por ultimo, gera um id.
+  var __MARCA_USER_SRV__ = (typeof __MARCA_USER__ !== 'undefined' && __MARCA_USER__) ? __MARCA_USER__ : '';
+  var __MARCA_USER__ = readMarcaUserLocal() || __MARCA_USER_SRV__ || generateEventId();
+  persistMarcaUser(__MARCA_USER__);
 
   // ============================================================
   // MODULE 2 — Transfer (SPEC 2.2)
@@ -301,11 +338,6 @@
     return null;
   }
 
-  function getRootDomain(hostname) {
-    var parts = hostname.split('.');
-    return parts.length >= 2 ? parts.slice(-2).join('.') : hostname;
-  }
-
   function addParamsToUrl(url) {
     var newUrl;
     try {
@@ -316,7 +348,8 @@
 
     var existingParams = new URLSearchParams(newUrl.search);
     var pageUtms = getUtmData();
-    var isExternal = getRootDomain(newUrl.hostname) !== getRootDomain(window.location.hostname);
+    // Por dominio registravel (siteKey): `pay.kiwify.com.br` e externo a `lp.exemplo.com.br`.
+    var isExternal = siteKey(newUrl.hostname) !== siteKey(window.location.hostname);
 
     // User data from cookies (inline — avoids naming conflict with Module 4 getUserData)
     var email = getCookie('marca_email') || '';

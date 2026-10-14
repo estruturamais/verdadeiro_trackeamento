@@ -10,18 +10,19 @@ import { sendGA4Event } from '../platforms/ga4.js';
 import { sendSheetsLead } from '../platforms/sheets.js';
 import { runCleanup } from '../shared/cleanup.js';
 import { dbWrite } from '../shared/db-write.js';
+import { getCookieDomain } from '../shared/helpers.js';
 
 // Origem (para o CORS) e dominio raiz (para o cookie) derivados da page_url do
 // beacon. Usado tanto pela resposta normal quanto pela do `identify`.
-function originDoBeacon(pageUrl) {
+// `rootDomain` ja vem com o ponto, ou '' (omitir o Domain) — ver getCookieDomain.
+function originDoBeacon(pageUrl, cookieDomainCfg) {
   let origin = 'https://example.com';
   let rootDomain = '';
   try {
     if (pageUrl) {
       const u = new URL(pageUrl);
       origin = u.origin;
-      const parts = u.hostname.split('.');
-      rootDomain = parts.length >= 2 ? '.' + parts.slice(-2).join('.') : u.hostname;
+      rootDomain = getCookieDomain(u.hostname, cookieDomainCfg);
     }
   } catch (e) { /* fallback */ }
   return { origin, rootDomain };
@@ -103,7 +104,7 @@ export async function handleCollectEvent(request, env, ctx) {
   // Purchase (e, num SaaS, na renovacao, que e 100% server-side e nao tem navegador).
   // A linha `platform='collect'` do passo 1.5 fica, para a auditoria enxergar o vinculo.
   if (eventName === 'identify') {
-    const idOrigin = originDoBeacon(body.page_url);
+    const idOrigin = originDoBeacon(body.page_url, config.cookie_domain);
     return new Response(JSON.stringify({ status: 'ok', identify: true }), {
       status: 200,
       headers: {
@@ -184,7 +185,7 @@ export async function handleCollectEvent(request, env, ctx) {
   await Promise.allSettled(promises);
 
   // Response com Set-Cookie para renovar marca_user
-  const { origin, rootDomain } = originDoBeacon(body.page_url);
+  const { origin, rootDomain } = originDoBeacon(body.page_url, config.cookie_domain);
 
   return new Response(JSON.stringify({ status: 'ok' }), {
     status: 200,
