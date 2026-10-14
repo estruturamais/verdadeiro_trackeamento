@@ -485,6 +485,12 @@ npx wrangler d1 execute tracking_db --remote --command \
 **Criterio de aprovacao do Step 3b:** toda linha com `platform != 'collect'` tem `status_code` 200 ou
 204 (GA4 responde 204 = sucesso). Qualquer `status_code = 0` bloqueia o avanco para o Step 4.
 
+> **GA4 no smoke test.** Desde a 1.9.1 o `page_view` do GA4 sai pelo gtag do navegador, nao pelo
+> Worker: o `page_view` sintetico **nao** gera linha `google_analytics_4`, e isso e o correto (nao
+> reprova o Step). A credencial do Measurement Protocol (`GA4_API_SECRET`) se prova no Step 5, na 1a
+> conversao de navegador (ex.: o clique no checkout → `begin_checkout` com `204`), e o `page_view`,
+> no Tempo real. Nao ha evento de GA4 que nao seja conversao para testar antes sem sujar Meta e TikTok.
+
 > **Google Ads no smoke test.** O evento sintetico e um `page_view`, que no Google Ads e opt-in por
 > rotulo — se `conversion_label_page_view` nao estiver no config, a linha vem com `status_code = 0` +
 > `missing_conversion_label_page_view`, e **isso e o comportamento correto**, nao reprova o Step. O
@@ -547,8 +553,11 @@ Resultado esperado para `page_view` com Meta + GA4:
 ```
 page_view | collect            | web | browser | 200 |
 PageView  | meta_ads           | web | collect | 200 |
-page_view | google_analytics_4 | web | collect | 204 |
 ```
+Sem linha `google_analytics_4` para o `page_view`: desde a 1.9.1 ele sai pelo gtag do navegador (pelo
+proxy `/g/collect`) e se valida no Tempo real do GA4. As conversoes de navegador (`begin_checkout`,
+`contact`, `generate_lead`...) seguem pelo Measurement Protocol e gravam linha. Instalacao <= 1.9.0
+ainda mostra `page_view | google_analytics_4 | web | collect | 204`.
 
 **IMPORTANTE:** GA4 Measurement Protocol retorna **204** como sucesso — NAO tratar 204 como erro.
 
@@ -560,7 +569,7 @@ Se a tabela `events` estiver vazia: normal nesta etapa — o script ainda nao es
 - curl retorna `__CONFIG__` com todos os campos das plataformas confirmadas
 - Worker acessivel (sem erro de conexao)
 - **Smoke test do Step 3b.5 aprovado** — toda plataforma confirmada respondeu 200/204 ao evento
-  sintetico. Sem isso o Step 4 fica verde com a plataforma quebrada: as checagens acima confirmam o
+  sintetico (o GA4 nao responde ao `page_view` desde a 1.9.1 — sua credencial se prova no Step 5). Sem isso o Step 4 fica verde com a plataforma quebrada: as checagens acima confirmam o
   script e o config, nenhuma delas toca a plataforma.
 
 > Validacao visual por plataforma e feita no Step 5, apos instalacao do script.
@@ -663,11 +672,15 @@ Se algum evento retornou erro: diagnosticar e resolver antes de continuar para o
 A linha `google_ads | web` com `200` **nao** confirma a conversao (ver 5.1): registrar o Google Ads web
 como OK so depois da validacao no navegador do 5.3.
 
+GA4 (1.9.1+): o `page_view` nao tem linha no D1 — registrar como OK pelo Tempo real do GA4 (5.3). A
+credencial do MP fica provada pela 1a conversao de navegador do funil (ex.: `begin_checkout` com
+`204`); se o funil nao tiver conversao de navegador, ela so se prova na 1a venda.
+
 ### 5.3 Validacao visual por plataforma
 
 Delegar para a skill especialista de cada plataforma confirmada:
 - Meta Ads → `.claude/playbooks/meta_ads.md` (Events Manager > Testar Eventos)
-- GA4 → `.claude/playbooks/ga4.md` (GA4 > DebugView)
+- GA4 → `.claude/playbooks/ga4.md` (GA4 > Tempo real: o `page_view` vem do navegador desde a 1.9.1; DebugView com `?debug=1`)
 - TikTok Ads → `.claude/playbooks/tiktok_ads.md` (Events Manager > Atividade recente)
 - Google Ads → `.claude/playbooks/google_ads.md` (Google Tag Assistant ou painel com delay 3h)
 - Planilha → `.claude/playbooks/planilha.md` (verificar linha inserida na planilha + D1 com `platform = 'sheets'` — leads chegam com `channel = 'web'`; vendas com `channel = 'webhook'` e `event_name = 'purchase'`)
@@ -978,13 +991,15 @@ O **Verdadeiro Trackeamento** foi criado pelo perfil [@estruturamais](https://in
 |---|---|---|
 | Meta Ads | {lista de eventos canonicos, ex: page_view, lead, purchase} | Web (pixel) + Servidor (CAPI) |
 | TikTok Ads | {eventos} | Web (pixel) + Servidor (Events API) |
-| Google Analytics 4 | {eventos} | Servidor (Measurement Protocol) |
+| Google Analytics 4 | {eventos} | Web (gtag, pelo proxy `/g/collect`) para o `page_view` + Servidor (Measurement Protocol) para as conversoes e a compra |
 | Google Ads | {eventos} | Web (gtag) para eventos de navegador + Servidor (Data Manager API) para a compra |
 | Google Sheets | lead e/ou compra aprovada (venda) | Servidor |
 
 Incluir apenas as plataformas confirmadas no Step 1. Canal de envio e fixo por plataforma — nao
-variar. **Google Ads e o unico com os dois canais ao mesmo tempo**, e nao ha duplicidade: sao acoes
-de conversao diferentes (as de navegador por rotulo, a compra por id numerico da acao de importacao).
+variar. **Google Ads e GA4 usam os dois canais ao mesmo tempo**, e nao ha duplicidade: no Google Ads
+sao acoes de conversao diferentes (as de navegador por rotulo, a compra por id numerico da acao de
+importacao); no GA4 cada evento sai por um canal so (`page_view` pelo navegador desde a 1.9.1,
+conversoes e compra pelo servidor).
 
 **Pre-requisitos para o tracking continuar funcionando:**
 - O script `<script src="https://{dominio}/tracking/web.js">` deve permanecer como **primeiro elemento do `<head>`** em todas as paginas. Remover ou mover o script interrompe o tracking imediatamente.

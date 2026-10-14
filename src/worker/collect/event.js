@@ -166,8 +166,11 @@ export async function handleCollectEvent(request, env, ctx) {
     }
   }
 
-  // GA4 Measurement Protocol — todos os eventos
-  if (config.platforms?.ga4?.measurement_id) {
+  // GA4 Measurement Protocol — conversoes de navegador (begin_checkout, contact,
+  // generate_lead, sign_up, login...). O page_view NAO: desde a 1.9.1 ele sai pelo gtag do
+  // navegador, no config (ver initGtag no web.js) — mandar os dois contaria em dobro. Por
+  // isso o page_view tambem nao grava linha `google_analytics_4` no D1.
+  if (config.platforms?.ga4?.measurement_id && eventName !== 'page_view') {
     promises.push(
       sendGA4Event(config.platforms.ga4, eventName, eventId, body, clientIp, userAgent, env, siteId)
     );

@@ -280,12 +280,22 @@ deixa o JSON ilegivel). Baixo mesmo na 1.9.1 = pixel bloqueado/lento no navegado
 
 ### 2.4b GA4 — `204` em tudo e o relatorio por pagina vazio
 
-**Rodar so quando o baseline tiver GA4.** O sintoma que o cliente ve: no GA4, **usuario ativo no Tempo
-real sem nenhuma visualizacao** ("Nenhum dado disponivel" em *Visualizacoes por titulo da pagina*),
-paginas sem titulo, ou **usuario sem cidade**. O `204` do Measurement Protocol **nao prova nada** aqui:
-o MP aceita o evento mesmo quando ele nao vai aparecer onde o cliente olha. O usuario ativo vem dos
-eventos automaticos do gtag do navegador (que roda com `send_page_view: false`); o `page_view` e so o
-do MP — se ele chega sem titulo, sem sessao ou com a data errada, a pagina some do relatorio.
+**Rodar so quando o baseline tiver GA4.**
+
+> **Desde a 1.9.1 o `page_view` do GA4 nao fica no D1.** Ele sai pelo gtag do navegador
+> (`send_page_view: true`, pelo proxy `/g/collect`) e se valida no **Tempo real** (*Visualizacoes por
+> titulo da pagina*, *Usuarios por cidade*) ou no DebugView com `?debug=1` — nunca pela consulta
+> abaixo. Nela, e na tabela de assinaturas, o que vale numa 1.9.1+ sao as **conversoes de navegador**
+> (`begin_checkout`, `contact`, `generate_lead`, `sign_up`, `login`); inteiras, valem para
+> instalacao **<= 1.9.0**. Tempo real sem nenhuma visualizacao numa 1.9.1+ = o gtag nao esta mandando o
+> `page_view`: routes `/scripts/ga.js` e `/g/collect`, script como 1o elemento do `<head>`.
+
+O sintoma que o cliente ve (<= 1.9.0): no GA4, **usuario ativo no Tempo real sem nenhuma visualizacao**
+("Nenhum dado disponivel" em *Visualizacoes por titulo da pagina*), paginas sem titulo, ou **usuario
+sem cidade**. O `204` do Measurement Protocol **nao prova nada** aqui: o MP aceita o evento mesmo
+quando ele nao vai aparecer onde o cliente olha. Ate a 1.9.0 o usuario ativo vinha dos eventos
+automaticos do gtag do navegador (que rodava com `send_page_view: false`) e o `page_view` era so o do
+MP — se ele chegava sem titulo, sem sessao ou com a data errada, a pagina sumia do relatorio.
 
 ```bash
 npx wrangler d1 execute tracking_db --remote --command "SELECT event_name, COUNT(*) n, SUM(error_message='missing_ga_client_id') sem_cid, SUM(CASE WHEN json_valid(sent_payload) THEN json_extract(sent_payload,'$.events[0].params.page_title')<>'' ELSE 0 END) com_titulo, SUM(CASE WHEN json_valid(sent_payload) THEN json_extract(sent_payload,'$.events[0].params.session_id') IS NOT NULL ELSE 0 END) com_sessao, SUM(CASE WHEN json_valid(sent_payload) THEN json_extract(sent_payload,'$.timestamp_micros') IS NOT NULL ELSE 0 END) com_timestamp, SUM(CASE WHEN json_valid(sent_payload) THEN json_extract(sent_payload,'$.ip_override') IS NOT NULL ELSE 0 END) com_ip FROM events WHERE site_id = '{site_id}' AND platform = 'google_analytics_4' AND timestamp >= datetime('now','-{X} days') GROUP BY event_name;"
@@ -303,6 +313,7 @@ curto-circuito no `AND` — o `json_extract` estoura com `malformed JSON`.)
 | `com_timestamp > 0` | `timestamp_micros` = ultimo hit do cookie + 60s: page_view ~1 min no **futuro**, visitante que volta datado horas/dias **atras** (o GA4 trava em 72h) — fora do Tempo real e no dia errado | Corrigido na 1.9.0: o Worker nao manda mais |
 | `sem_cid` alto so no `page_view` (dezenas de %) | 1a pagina do visitante novo, antes de o gtag criar o `_ga` | Corrigido na 1.9.0: o page_view espera o gtag (teto de 3 s). O resto e gtag bloqueado ou saida antes de ele carregar |
 | `com_ip = 0` | MP sem `ip_override`/`user_agent` (GA4 deriva cidade e aparelho dos eventos de tag) | Corrigido na 1.9.0 |
+| Usuarios e sessoes do GA4 bem acima das visitas reais e pagina de entrada sumindo; no Chrome, o `client_id` do beacon da 1a pagina diferente do `_ga` gravado depois | Container que **adia** o cookie ate o 1o hit + `send_page_view: false`: o `gtag('get')` devolvia id/sessao **provisorios**, e o `page_view` do MP ia para um usuario e uma sessao que nao existiam | Corrigido na 1.9.1: o `page_view` sai pelo navegador e grava o cookie na carga; o MP nao manda mais `page_view` |
 
 Se alguma assinatura aparecer numa instalacao **1.9.0 ou mais nova**, o codigo no ar e anterior a
 correcao — conferir a versao no ar (Step 0.1) antes de investigar. Em instalacao antiga, e o motivo

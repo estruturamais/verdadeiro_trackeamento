@@ -27,8 +27,9 @@ servido em `https://{dominio}/tracking/web.js` (e no campo `vt_version` do confi
 (b) sobrevive mesmo que o usuário apague os arquivos locais. O histórico abaixo mapeia cada versão às
 novidades:
 
-- **1.9.1** — **`fbp` no `PageView` desde a 1ª página, identidade sempre em `marca_user` e um
-  onboarding que desliga o que contaria em dobro.** **`fbp`:** o `web.js` é o 1º elemento do `<head>` e
+- **1.9.1** — **`fbp` no `PageView` desde a 1ª página, `page_view` do GA4 pelo navegador (identidade
+  certa em qualquer container), identidade sempre em `marca_user` e um onboarding que desliga o que
+  contaria em dobro.** **`fbp`:** o `web.js` é o 1º elemento do `<head>` e
   o cookie `_fbp` só nasce depois que o pixel da Meta carrega — na 1ª página do visitante o beacon do
   `page_view` saía antes, e o `PageView` da CAPI ia sem `fbp` (a espera pelo gtag da 1.9.0 já tinha
   levado a cobertura de cerca de 32% para 65% de carona). Agora, com Meta no config, o `page_view`
@@ -49,8 +50,19 @@ novidades:
   `DESTINATION_ACCOUNT_NOT_ENABLED_ENHANCED_CONVERSIONS_FOR_LEADS`. **Correção:** o comando
   documentado do OAuth do Google Ads (`npm run gads:oauth --client-id=...`) não entregava as
   credenciais ao script — o npm 11 fica com as flags e o script parava pedindo o Client ID; o certo é
-  `npm run gads:oauth -- --client-id=... --client-secret=...`. O `logging.retention_days` saiu do
-  `config.example.json`: nenhum código o lia. **Sem migração de banco e sem config novo.**
+  `npm run gads:oauth -- --client-id=... --client-secret=...`. **GA4 — `page_view` pelo navegador:**
+  há container de GA4 que só grava `_ga`/`_ga_<ID>` no 1º hit do gtag; com `send_page_view: false` o
+  `gtag('get')` devolvia um `client_id`/sessão **provisórios** e o hit seguinte gravava outros — a 1ª
+  página de cada visita ia para um usuário e uma sessão que não existiam (usuários e sessões
+  inflados, página de entrada perdida). Agora o `page_view` do GA4 sai pelo gtag do navegador, pelo
+  proxy próprio `/g/collect`, e grava os cookies na carga; o Worker deixa de mandá-lo pelo
+  Measurement Protocol (contaria em dobro) e a linha `google_analytics_4 | page_view` some do D1 — o
+  `page_view` se confere no Tempo real. Conversões de navegador e `purchase` seguem pelo MP, com o
+  `client_id` e a sessão reais. Trade-off: bloqueador que barra o `/g/collect` perde o `page_view` do
+  GA4, como em qualquer GA4; Meta e TikTok seguem server-side. O reference de configuração automática
+  deixa de mandar desligar "Visualizações de página" (em site tradicional, desmarca-se só a opção do
+  histórico do navegador). O `logging.retention_days` saiu do `config.example.json`: nenhum código o
+  lia. **Sem migração de banco e sem config novo.**
 - **1.9.0** — **GA4 com dado de verdade, Google Ads pelo navegador, identidade em `.com.br` e FDV
   merge por IP**. Release de correções de falha silenciosa, achadas e validadas em produção em
   clientes reais (Kiwify, `.com.br`). **GA4:** o `page_view` do Measurement Protocol chegava **sem

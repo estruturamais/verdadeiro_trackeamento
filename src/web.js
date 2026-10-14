@@ -859,11 +859,14 @@
   }
 
   // Ponto de sincronia com o gtag para a identidade do GA4 (client_id / session_id)
-  // que vai no beacon para o Measurement Protocol. Antes de o gtag.js (async)
+  // que vai no beacon: o user_store guarda os ids REAIS que as conversoes de navegador
+  // e o purchase do webhook mandam ao Measurement Protocol. Antes de o gtag.js (async)
   // processar o config, os cookies nao servem: no 1o page_view o `_ga` ainda nao
-  // existe, e numa sessao nova o `_ga_<ID>` ainda guarda a sessao ANTERIOR. Quando as
-  // callbacks do `gtag('get', ...)` voltam, o gtag ja gravou os cookies — e eles viram
-  // a fonte (ver getBrowserData). Os valores do `get` ficam so de reserva.
+  // existe, e numa sessao nova o `_ga_<ID>` ainda guarda a sessao ANTERIOR. Quem grava
+  // os cookies e o hit do page_view que o proprio gtag manda no config (ver initGtag):
+  // ha container que so grava `_ga`/`_ga_<ID>` no 1o hit. Quando as callbacks do
+  // `gtag('get', ...)` voltam, esse hit ja foi montado e os cookies gravados — e eles
+  // viram a fonte (ver getBrowserData). Os valores do `get` ficam so de reserva.
   // Sem GA4 no config nao ha o que esperar: nasce resolvido.
   // Declarado ANTES da chamada de initGA4(): `var` sobe sem o valor, e o initGtag
   // encontraria `gaIds` undefined.
@@ -912,8 +915,14 @@
     var debugOn = __CONFIG__.debug || getUrlParam('debug') === '1';
 
     if (ga4Id) {
+      // O page_view do GA4 sai PELO NAVEGADOR, no config (pelo proxy proprio /g/collect do
+      // server_container_url); as conversoes e o purchase seguem pelo Measurement Protocol.
+      // Com `send_page_view: false` havia container que nao gravava cookie nenhum ate o 1o
+      // hit: o `gtag('get')` devolvia um client_id/session_id PROVISORIO, e o hit seguinte
+      // gravava OUTRO — a 1a pagina de cada visita ia para um usuario e uma sessao que nao
+      // existiam. O Worker nao manda mais page_view pelo MP (contaria em dobro).
       var ga4Config = {
-        send_page_view: false,
+        send_page_view: true,
         server_container_url: (typeof window !== 'undefined' ? window.location.origin : '')
       };
       if (debugOn) ga4Config.debug_mode = true;
@@ -1222,9 +1231,10 @@
   }
 
   // O beacon do page_view nao pode sair no instante em que este script roda: ele e o
-  // 1o elemento do <head>, ANTES do <title> (document.title vazio — todo page_view do
-  // GA4 chegava sem titulo) e antes de o gtag.js (async) ter client_id/session_id
-  // (o 1o page_view de todo visitante novo morria em `missing_ga_client_id`). Entao
+  // 1o elemento do <head>, ANTES do <title> (document.title vazio) e antes de o gtag.js
+  // (async) mandar o page_view do GA4, que e o hit que grava `_ga`/`_ga_<ID>`. O beacon
+  // alimenta Meta e TikTok e grava no user_store o client_id e a sessao REAIS, lidos dos
+  // cookies que esse hit acabou de gravar (ver gaIds). Entao
   // ele espera as duas coisas, com teto: gtag bloqueado ou lento nao pode custar o
   // evento, e se o visitante sair antes, envia o que tiver (sendBeacon sobrevive ao
   // unload). Com Meta no config espera tambem o `_fbp`, no mesmo teto: o pixel so cria
@@ -1325,8 +1335,8 @@
       if (debugOn) console.error('[Tracking] TikTok ' + eventName + ' FAILED:', e);
     }
 
-    // 3. GA4 — dispatch movido para server-side (collect-event.js → sendGA4Event)
-    //    initGA4() mantido para gerar cookies _ga/_ga_* usados pelo beacon
+    // 3. GA4 — o page_view sai pelo proprio gtag, no config (initGtag); as conversoes
+    //    vao server-side pelo Measurement Protocol (collect/event.js → sendGA4Event)
 
     // 4. Google Ads (web — quando channel === 'web').
     //    OPT-IN POR ROTULO: so dispara se o rotulo daquele evento existir no config.

@@ -47,7 +47,7 @@ negocio ("suas vendas passam a cair na planilha", nao "novo conector `sendSheets
 
 | Para chegar em | Acao de banco | Acao de config | Quebra algo? |
 |---|---|---|---|
-| **1.9.1** | — (nenhuma migracao) | — (nenhuma). O bloco `cookies` do `SITE_CONFIG` passa a ser ignorado e o `logging.retention_days` nunca foi lido: os dois podem sair | So para quem configurou o `cookies.user` da 1.9.0: os visitantes que so tinham o id na chave antiga ganham id novo — ver "Mudancas de comportamento da 1.9.1" |
+| **1.9.1** | — (nenhuma migracao) | — (nenhuma). O bloco `cookies` do `SITE_CONFIG` passa a ser ignorado e o `logging.retention_days` nunca foi lido: os dois podem sair | Nao quebra; muda numero: com GA4, some a linha `google_analytics_4 \| page_view` do D1 (o `page_view` passou para o navegador); quem configurou o `cookies.user` da 1.9.0 da id novo a quem so tinha a chave antiga — ver "Mudancas de comportamento da 1.9.1" |
 | **1.9.0** | — (nenhuma migracao) | Opcional, tudo opt-in: `platforms.ga4.unattributed_purchases`, `fdv.ip_fallback`, `collect_url` — ver abaixo (o `cookies.user` que a 1.9.0 trazia saiu na 1.9.1). **Excecao:** quem tinha `collect_url` absoluto como patch local no `serve-webjs.js` poe a chave no `SITE_CONFIG` no **mesmo** deploy | Nao — sem as chaves nada some; ver "Mudancas de comportamento da 1.9.0" |
 | **1.8.0** | — | Opcional: route `{dominio}/fb/*` no `wrangler.toml` (o `git pull` nao a traz) + `platforms.meta.pixel_proxy: true` — ver abaixo | Nao — sem a flag nada muda |
 | **1.7.0** | `migrations/005_add_user_store_email_index.sql` (**todos**) + `migrations/004_add_subscriptions_table.sql` (**so** projeto de assinatura) | Opcional: `subscription_tracking` (ver abaixo) | Nao — ver "Mudancas de comportamento" |
@@ -60,7 +60,7 @@ antes da proxima.
 
 ### Mudancas de comportamento da 1.9.1
 
-**Sem migracao de banco e sem config novo.** Duas mudancas de comportamento — avise o cliente antes
+**Sem migracao de banco e sem config novo.** Tres mudancas de comportamento — avise o cliente antes
 do deploy:
 
 **1. `cookies.user` removido: a identidade no navegador e sempre `marca_user`.** A 1.9.0 tinha tornado
@@ -79,6 +79,30 @@ antes). Efeito: a cobertura de `fbp` no `PageView` da CAPI sobe (consulta da 2.4
 `audit-tracking`). Com o pixel bloqueado ou lento, o `page_view` sai no teto — ate 3 s depois da
 carga, como ja acontecia com o gtag bloqueado. Cliques e demais eventos nao esperam nada. Sem Meta no
 config, nada muda.
+
+**3. GA4: o `page_view` sai pelo navegador, nao mais pelo Measurement Protocol.** O gtag do VT passa a
+mandar o `page_view` no `config` (`send_page_view: true`, pelo proxy `{dominio}/g/collect`) e o
+Worker deixa de manda-lo pelo MP — os dois juntos contariam em dobro. Por que: ha container de GA4 que
+so grava `_ga`/`_ga_<ID>` no 1o hit do gtag; com `send_page_view: false` o beacon levava um
+`client_id`/sessao **provisorios** e o hit seguinte gravava outros — a 1a pagina de cada visita ia para
+um usuario e uma sessao que nao existiam (usuarios e sessoes inflados no GA4, pagina de entrada
+perdida). Agora o cookie nasce na carga e o `client_id`/sessao do beacon — os que as conversoes e o
+`purchase` usam — sao os reais. Avise o cliente:
+- **Some do D1 a linha `google_analytics_4 | page_view`** — esperado. O `page_view` do GA4 se confere
+  no **Tempo real** (*Visualizacoes por titulo da pagina*), nao mais no D1. As conversoes de navegador
+  (`begin_checkout`, `contact`, `generate_lead`, `sign_up`, `login`) e o `purchase` seguem pelo MP,
+  com linha no D1, sem mudanca.
+- **Usuarios e sessoes do GA4 podem cair** em propriedade cujo container adiava o cookie: era a
+  inflacao, nao perda de visita.
+- **SPA com a opcao do historico ligada** na medicao otimizada: as trocas de rota ja saiam pelo gtag
+  (a doc do Google: mesmo com `send_page_view: false`); o que muda e que a 1a carga tambem sai pelo
+  navegador, com a mesma identidade das trocas seguintes. Em **site tradicional**, desmarcar essa
+  opcao do historico — `.claude/references/disable-auto-tracking.md`, secao GA4 (o reference antigo
+  mandava desligar "Visualizacoes de pagina": **nao** desligar).
+- **Trade-off:** visitante com bloqueador que barra o `/g/collect` (ou o `gtag.js`) perde o `page_view`
+  do GA4, como em qualquer GA4. Meta e TikTok seguem server-side, sem mudanca.
+- Exige as routes `{dominio}/scripts/*` e `{dominio}/g/*` no `wrangler.toml` (estao no template desde
+  as primeiras versoes; conferir no Passo 7). Nenhuma migracao e nenhum config novo.
 
 **Config sem efeito, so limpeza:** o `logging.retention_days` saiu do `config.example.json` — nenhum
 codigo le a chave (a retencao real e a do `retention.mode`, 7/14/90 dias no `auto_clean`). Se estiver
@@ -360,6 +384,9 @@ curl -sI https://{dominio}/tracking/web.js | grep -i set-cookie
 
 # 5. (1.9.0, so com collect_url) o script servido leva o destino absoluto?
 curl -s "https://{dominio}/tracking/web.js?site_id={site_id}" | grep -o '"collect_url":"[^"]*"'
+
+# 6. (1.9.1, com GA4) as routes do proxy do GA4 estao no wrangler.toml? (o page_view sai por elas)
+grep -nE '/scripts/\*|/g/\*' wrangler.toml
 ```
 
 Criterio: **as mesmas plataformas que apareciam antes continuam aparecendo, com os mesmos status.**
@@ -367,6 +394,8 @@ Uma plataforma que sumiu da lista, ou que trocou `200` por `0`, e regressao — 
 `audit-tracking` antes de dar a atualizacao por concluida. Duas linhas novas da 1.9.0 **nao** sao
 regressao: `platform = 'fdv'` (so com `fdv.ip_fallback`; o `0` do `fdv_ip_no_match` nao e envio) e o
 `error_message` `web: despacho do navegador nao confirmado…` na linha `google_ads | web`, que segue `200`.
+Da 1.9.1 em diante, a linha `google_analytics_4` do `page_view` **some** — esperado (o GA4 do
+`page_view` se confere no Tempo real); `google_analytics_4` das conversoes e do `purchase` continua.
 
 Se o site tem pouco trafego e a janela vier vazia, use o **smoke test sintetico** do Step 3b.5 do
 `overview.md` em vez de esperar.

@@ -2,35 +2,52 @@
 
 ## Papel
 
-Voce e o especialista em GA4 (Google Analytics 4). Conhece o modelo server-only deste sistema, o Measurement Protocol, o proxy de primeiro dominio, e os guards criticos extraidos do codigo real em producao.
+Voce e o especialista em GA4 (Google Analytics 4). Conhece o modelo deste sistema (page_view pelo navegador, conversoes pelo servidor), o Measurement Protocol, o proxy de primeiro dominio, e os guards criticos extraidos do codigo real em producao.
 
-Voce e carregado pelo `tracking_base` apenas quando o cliente confirma uso de GA4 no Step 1. Sua responsabilidade: coletar credenciais, explicar o modelo server-only, e validar os eventos pelo Tempo real do GA4 (o DebugView nao mostra os eventos do Measurement Protocol — ver "Validacao").
+Voce e carregado pelo `tracking_base` apenas quando o cliente confirma uso de GA4 no Step 1. Sua responsabilidade: coletar credenciais, explicar o modelo, e validar pelo Tempo real do GA4 (o DebugView mostra o page_view e os automaticos do navegador, mas nao as conversoes do Measurement Protocol — ver "Validacao").
 
 ---
 
-## Modelo server-only (CRITICO — o aspecto mais contra-intuitivo do sistema)
+## Modelo: page_view pelo navegador, conversoes pelo servidor (CRITICO — mudou na 1.9.1)
 
-GA4 e a unica plataforma em que os eventos de **pagina e conversao** saem **exclusivamente pelo servidor** neste sistema. Entender por que e essencial para nao confundir o cliente nem introduzir contagem dupla.
+Cada evento do GA4 sai por **um** caminho so: o GA4 NAO deduplica por `event_id` como a Meta e o
+TikTok, e o mesmo evento pelo navegador **e** pelo servidor conta em dobro.
 
-**O que o browser faz:**
-- Carrega `gtag.js` (via proxy de primeiro dominio em `/scripts/ga.js`)
-- O gtag cria e mantem os cookies `_ga` e `_ga_*`
-- `send_page_view: false` — o browser NAO envia `page_view` nem os eventos de conversao
-- **Mas o gtag envia os eventos automaticos** (`session_start`, `first_visit`, `user_engagement`,
-  `scroll`, cliques de saida — medicao otimizada) pelo proxy `/g/collect`. E deles que vem o
-  "usuario ativo" no Tempo real, e e deles que o GA4 deriva sessao, origem, cidade e dispositivo.
+**O que o navegador faz (gtag.js, pelo proxy de primeiro dominio):**
+- Carrega `gtag.js` de `/scripts/ga.js` e manda os hits para `{dominio}/g/collect` (proxy proprio,
+  via `server_container_url`).
+- **Envia o `page_view`** no `config` (`send_page_view: true`, o padrao do Google) e os eventos
+  automaticos (`session_start`, `first_visit`, `user_engagement`, `scroll`, cliques de saida —
+  medicao otimizada). E desses hits que o GA4 deriva usuario, sessao, origem, cidade e dispositivo.
+- E esse hit que grava `_ga` e `_ga_<ID>`. Ha container que **adia** o cookie ate o 1o hit: ate a
+  1.9.0, com `send_page_view: false`, o `gtag('get')` devolvia um `client_id`/`session_id`
+  **provisorio** e o hit seguinte gravava OUTRO — a 1a pagina de cada visita ia para um usuario e uma
+  sessao que nao existiam (usuarios e sessoes inflados, pagina de entrada perdida).
+- **Nao** envia as conversoes.
 
-**O que o Worker faz:**
-- Recebe no beacon a identidade GA4 (`ga_client_id`, `ga_session_id`, `ga_session_count`)
-- Envia `page_view`, `begin_checkout`, `contact`, `generate_lead` e `purchase` via Measurement
-  Protocol para `google-analytics.com/mp/collect`, amarrados a sessao do navegador pelo `session_id`
+**O que o Worker faz (Measurement Protocol, `google-analytics.com/mp/collect`):**
+- Recebe no beacon a identidade GA4 (`ga_client_id`, `ga_session_id`, `ga_session_count`) — lida
+  dos cookies que o `page_view` do navegador acabou de gravar — e a guarda no `user_store`.
+- Envia as **conversoes de navegador** (`begin_checkout`, `contact`, `generate_lead`, `sign_up`,
+  `login`) e o **`purchase`** do webhook, amarrados a sessao do navegador pelo `session_id`.
+- **Nao** envia `page_view` (ate a 1.9.0 enviava): o D1 nao tem mais linha `google_analytics_4` de
+  `page_view` — ele se valida no Tempo real.
 
-**Por que esses eventos vao pelo servidor?**
-GA4 NAO tem mecanismo de deduplicacao por `event_id` como Meta e TikTok. Se o browser E o servidor enviassem o mesmo evento, o GA4 contaria em dobro. Por isso os eventos de pagina e conversao saem SO pelo Worker, e o browser fica com os automaticos.
+**Trade-off, dito com honestidade:** o `page_view` do GA4 passou a depender do navegador. Visitante
+com bloqueador que barra o `/g/collect` do proprio dominio (ou o `gtag.js`) perde o `page_view` do
+GA4 — como em qualquer instalacao de GA4. Meta e TikTok seguem server-side (o beacon do VT nao passa
+pelo gtag), e as conversoes do GA4 seguem pelo MP para quem tem o `_ga`.
 
-> **Sintoma classico de que o MP esta quebrado:** usuario ativo no Tempo real e *Visualizacoes por
-> titulo da pagina* vazio. O usuario vem dos eventos automaticos do gtag; a pagina, so do MP. Ver a
-> secao 2.4b do `audit-tracking`.
+**Fonte (Google, conferida em 14/10/2026):** [Measure pageviews](https://developers.google.com/analytics/devguides/collection/ga4/views?client_type=gtag)
+— `send_page_view` vem `true` por padrao e o `config` "sends a pageview by default", com
+`page_title` de `document.title` e `page_location` de `location.href`; e *"Google Analytics will
+send `page_view` events based on browser history changes even if you set `send_page_view: false`"*
+(medicao otimizada — ver `.claude/references/disable-auto-tracking.md`).
+
+> **Sintoma de que o `page_view` do navegador nao esta saindo (1.9.1+):** Tempo real sem
+> *Visualizacoes por titulo da pagina*, com o site no ar. Conferir as routes `/scripts/ga.js` e
+> `/g/collect` no `wrangler.toml` e o script como 1o elemento do `<head>`. Ate a 1.9.0, o mesmo
+> sintoma apontava para o MP — ver a secao 2.4b do `audit-tracking`.
 
 ---
 
@@ -62,14 +79,14 @@ Extraido de `src/web-template.txt` funcao `initGtag` (`initGA4` segue como alias
 ```javascript
 // Carrega de /scripts/ga.js (proxy, NAO googletagmanager.com direto)
 var ga4Config = {
-  send_page_view: false,
-  server_container_url: window.location.origin  // aponta coleta para o proprio dominio
+  send_page_view: true,                          // o page_view do GA4 sai PELO NAVEGADOR (1.9.1)
+  server_container_url: window.location.origin  // aponta coleta para o proprio dominio (/g/collect)
 };
 // Se debug mode ativo:
 ga4Config.debug_mode = true;
 gtag('config', __CONFIG__.ga4_measurement_id, ga4Config);
-// Sinal de pronto para o page_view (ver abaixo): as callbacks rodam quando o gtag.js
-// carrega e processa a fila — a essa altura os cookies _ga/_ga_<ID> ja estao gravados.
+// Sinal de pronto para o beacon (ver abaixo): as callbacks rodam quando o gtag.js
+// carrega e processa a fila — a essa altura o page_view do navegador ja gravou _ga/_ga_<ID>.
 gtag('get', __CONFIG__.ga4_measurement_id, 'client_id', cb);
 gtag('get', __CONFIG__.ga4_measurement_id, 'session_id', cb);
 ```
@@ -85,13 +102,14 @@ gtag('get', __CONFIG__.ga4_measurement_id, 'session_id', cb);
 - `ga_timestamp` (`t` + `000000`) segue no beacon e no `user_store` so como **informativo** — o
   Worker nao o usa mais como `timestamp_micros`.
 
-**O beacon do `page_view` espera o `<title>` e o gtag** (desde a 1.9.0). O script e o 1o elemento do
-`<head>`: rodando na hora, ele saia **antes do `<title>`** (`page_title` vazio em 100% dos page_view)
-e **antes do gtag.js** (async) — na 1a pagina do visitante novo nao havia `_ga` e o evento morria em
-`missing_ga_client_id`; numa sessao nova, o `_ga_<ID>` ainda guardava a sessao anterior. Agora:
+**O beacon do `page_view` espera o `<title>`, o gtag e, com Meta, o `_fbp`** (desde a 1.9.0/1.9.1).
+Desde a 1.9.1 ele **nao vai ao GA4**: alimenta Meta e TikTok e grava no `user_store` o `client_id` e a
+sessao **reais**, usados nas conversoes e no `purchase`. O script e o 1o elemento do `<head>`:
+rodando na hora, ele saia **antes do `<title>`** e **antes do gtag.js** (async) — sem `_ga` na 1a
+pagina do visitante novo, ou com a sessao anterior no `_ga_<ID>`. Agora:
 - so o **beacon** do page_view espera; o `fbq`/`ttq` de navegador saem na hora, com o mesmo `event_id`;
-- sai quando o `<title>` foi lido **e** as callbacks do `gtag('get', ...)` voltaram (sinal de que o
-  gtag processou o config e gravou os cookies);
+- sai quando o `<title>` foi lido **e** as callbacks do `gtag('get', ...)` voltaram — a essa altura o
+  `page_view` do navegador ja foi montado e gravou os cookies que o beacon le;
 - **teto de 3 s** (gtag bloqueado/lento nao custa o evento) e envio imediato no `pagehide` /
   `visibilitychange=hidden` se o visitante sair antes (`sendBeacon` sobrevive ao unload);
 - os dados de navegador sao **relidos no envio** (de quebra pega `_fbp`/`_ttp` que nasceram nesse
@@ -121,9 +139,10 @@ Log gravado na tabela events:
 **Motivo:** o Measurement Protocol exige `client_id`.
 
 **Quando acontece:**
-- **Beacon (web):** visitante com o gtag bloqueado, ou que saiu antes de ele carregar. Com o page_view
-  esperando o gtag (1.9.0), caiu de 37% para ~2% dos page_view no cliente onde foi medido. **Nao** e
-  "normal na 1a visita" — isso era o defeito.
+- **Conversao de navegador (beacon):** `begin_checkout`/`contact`/`generate_lead`... de visitante com
+  o gtag bloqueado, ou que saiu antes de ele carregar. Ate a 1.9.0 o `page_view` tambem passava por
+  aqui (com a espera do gtag, caiu de 37% para ~2% no cliente medido); desde a 1.9.1 ele sai pelo
+  navegador e nao gera mais esta linha.
 - **Purchase (webhook):** venda sem visita identificada — comprador que nunca passou pelo site, link
   de checkout antigo/salvo com indexador de antes do VT, venda pelo agente de vendas do gateway
   (`src: kiwify_sales_agent`). Por padrao a venda **nao vai ao GA4** e a receita fica abaixo da do
@@ -159,7 +178,7 @@ O onboarding **oferece** a flag ao cliente; ela nunca e ligada por default nem p
 Extraido de `src/shared/event-names.js` coluna `ga4`:
 
 ```
-page_view         → page_view
+page_view         → page_view           (pelo NAVEGADOR, no config do gtag — nao passa pelo MP desde a 1.9.1)
 contact           → contact
 lead              → generate_lead       (NAO "lead" — nome especifico do GA4!)
 initiate_checkout → begin_checkout      (NAO "initiate_checkout"!)
@@ -181,7 +200,7 @@ Extraido de `sendGA4Event` em `src/worker/platforms/ga4.js`:
   "user_agent": "{User-Agent do visitante}",
   "consent": { "ad_personalization": "GRANTED" },
   "events": [{
-    "name": "page_view | contact | generate_lead | begin_checkout | purchase",
+    "name": "contact | generate_lead | begin_checkout | sign_up | login | purchase",
     "params": {
       "engagement_time_msec": 100,
       "page_location": "{page_url}",
@@ -194,6 +213,9 @@ Extraido de `sendGA4Event` em `src/worker/platforms/ga4.js`:
   }]
 }
 ```
+
+O `page_view` nao passa por aqui desde a 1.9.1 (sai pelo gtag do navegador); ate a 1.9.0 tinha este
+mesmo formato.
 
 **Campos condicionais:**
 - `session_id`, `session_number`: incluidos apenas se presentes nos cookies
@@ -311,13 +333,15 @@ rm secrets.json                          # PowerShell: Remove-Item secrets.json 
 **Tempo real (o teste que o cliente consegue fazer):**
 > GA4 > Relatorios > Tempo real — abrir uma pagina do site e conferir, em segundos, o card
 > *Visualizacoes por titulo da pagina* (o titulo aparece) e *Usuarios por cidade* (a cidade certa).
+> Desde a 1.9.1 e o **unico** lugar para validar o `page_view`: ele sai pelo navegador e nao grava
+> linha no D1.
 
 > **Leitura que evita alarme falso:** o card **"Finalizacoes de compra"** do GA4 e o `begin_checkout`
 > (checkout **iniciado**, o `initiate_checkout` do VT), nao venda. Venda e `purchase` / "Receita".
 
-**DebugView:** com `?debug=1` o gtag do navegador liga `debug_mode` — o DebugView mostra os eventos
-**automaticos** do navegador. Os eventos do MP (page_view, conversoes) **nao** levam `debug_mode` e
-nao aparecem la: para eles, usar o Tempo real.
+**DebugView:** com `?debug=1` o gtag do navegador liga `debug_mode` — o DebugView mostra o
+`page_view` (1.9.1+) e os eventos **automaticos** do navegador. As conversoes do MP **nao** levam
+`debug_mode` e nao aparecem la: para elas, usar o Tempo real.
 
 **Validar o FORMATO do payload do MP** (servidor de validacao oficial — nao grava nada na
 propriedade): `POST https://www.google-analytics.com/debug/mp/collect?measurement_id={G-...}&api_secret={qualquer}`
@@ -328,17 +352,19 @@ com o JSON do `sent_payload`. Resposta `{"validationMessages":[]}` = payload val
 npx wrangler d1 execute tracking_db --remote --command "SELECT event_name, platform, channel, source, status_code, error_message FROM events WHERE site_id = '{site_id}' AND platform = 'google_analytics_4' ORDER BY id DESC LIMIT 10;"
 ```
 
-**Resultado esperado:**
+**Resultado esperado** (depois de uma conversao de navegador, ex.: clique no checkout):
 ```
-page_view | google_analytics_4 | web | collect | 204 |
+begin_checkout | google_analytics_4 | web | collect | 204 |
 ```
+Sem linha de `page_view`: desde a 1.9.1 ele sai pelo navegador (validar no Tempo real). Instalacao
+<= 1.9.0 ainda grava `page_view | google_analytics_4 | web | collect | 204`.
 
 **Status 204 = sucesso.** Nao e erro. E o comportamento correto da API do GA4 Measurement Protocol.
-Mas `204` **nao prova** que o evento aparece onde o cliente olha (o MP aceita page_view sem titulo,
+Mas `204` **nao prova** que o evento aparece onde o cliente olha (o MP aceita evento sem titulo,
 sem sessao ou com data errada): a query de qualidade (titulo, sessao, `timestamp_micros`, IP) esta na
 secao 2.4b do `.claude/skills/audit-tracking/SKILL.md`.
 
-**Se aparecer `status_code: 0` e `error_message: 'missing_ga_client_id'`:** no `page_view`, gtag bloqueado ou visitante que saiu antes de ele carregar (esperado em poucos %). No `purchase`, venda sem visita identificada — ver o guard acima e `unattributed_purchases`.
+**Se aparecer `status_code: 0` e `error_message: 'missing_ga_client_id'`:** numa conversao de navegador, gtag bloqueado ou visitante que saiu antes de ele carregar (esperado em poucos %). No `purchase`, venda sem visita identificada — ver o guard acima e `unattributed_purchases`.
 
 **`status_code: 204` com `error_message: 'aviso_client_id_sintetico: ...'`:** nao e erro. A venda
 entrou no GA4 com `client_id` sintetico (sem atribuicao), porque `unattributed_purchases` esta ligado.
