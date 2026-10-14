@@ -56,6 +56,29 @@ negocio ("suas vendas passam a cair na planilha", nao "novo conector `sendSheets
 **Pulou versoes?** Rode as migracoes **em ordem crescente**, uma de cada vez, conferindo cada uma
 antes da proxima.
 
+### Mudanca de comportamento da 1.9.0 — GA4
+
+**Sem migracao de banco e sem config obrigatorio.** Para quem tem GA4, o efeito visivel e **dado
+melhor** no mesmo envio: `page_view` com titulo e `session_id`, data certa (o `timestamp_micros`
+falso saiu), cidade/aparelho do visitante (`ip_override`/`user_agent` no MP e IP repassado pelo
+proxy `/g/collect`) e o 1o `page_view` do visitante novo, que antes morria em `missing_ga_client_id`.
+Nada que funcionava deixa de funcionar. Avise o cliente de duas coisas que **mudam numeros**:
+
+- **Mais pageviews e usuarios no GA4** a partir do deploy (a 1a pagina de cada visitante novo passa a
+  chegar) e paginas antes vazias em *Visualizacoes por titulo*. Nao e duplicidade: e dado que se perdia.
+- **Linhas novas `missing_ga_client_id` no `purchase`** em `events`: a venda sem identidade **ja nao
+  ia** ao GA4 — so nao deixava rastro. Agora deixa. A receita do GA4 nao cai por causa disso.
+
+**Rodar a query da secao 2.4b do `.claude/skills/audit-tracking/SKILL.md` antes e depois do deploy**
+(janela de 1-2 dias depois): o saudavel e `com_titulo` e `com_sessao` = enviados, `com_timestamp = 0`,
+`com_ip` = enviados e `sem_cid` em poucos %. Guarde o "antes" no `tracking_memory.md` — e a prova da
+melhora para o cliente.
+
+**Opt-in novo — `platforms.ga4.unattributed_purchases`:** a venda sem visita identificada entra no GA4
+com `client_id` sintetico (receita do GA4 batendo com a do gateway). **So ligar sem outro emissor de
+`purchase` no GA4** (integracao nativa do gateway, Stape/sGTM) — com dois, a receita conta em dobro.
+Ver `.claude/references/site-config-format.md`.
+
 ### Mudanca de comportamento da 1.8.0
 
 **Nenhuma sem acao do cliente.** A 1.8.0 traz o proxy de primeiro dominio do Meta Pixel
