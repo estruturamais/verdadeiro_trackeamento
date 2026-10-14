@@ -429,6 +429,11 @@ export async function sendGoogleAdsWebhook(googleAdsConfig, hashed, merged, env,
 // que de fato aconteceu — e o ponto e nao mentir: a versao antiga gravava
 // `200 "web-only: dispatched via gtag"` inclusive no canal `server`, onde nada
 // dispara. Log verde com zero conversao e a pior falha possivel numa auditoria.
+//
+// Mesmo no canal `web` com rotulo, o Worker so sabe que o BEACON chegou — nao que
+// o gtag despachou (ate a 1.8.0 o destino AW- nunca era configurado no navegador e
+// esta linha ficava verde com zero conversao saindo). O status segue 200 para nao
+// quebrar consultas; o error_message diz o que o servidor nao tem como provar.
 export async function sendGoogleAdsConversion(googleAdsConfig, eventName, hashed, body, env, siteId) {
   const cfg = googleAdsConfig || {};
   const canal = cfg.channel || 'web';
@@ -451,7 +456,8 @@ export async function sendGoogleAdsConversion(googleAdsConfig, eventName, hashed
   } else {
     statusCode = 200;
     sentPayload = 'web: gtag conversion send_to=' + cfg.conversion_id + '/' + label;
-    errorMsg = '';
+    errorMsg = 'web: despacho do navegador nao confirmado pelo servidor — validar no navegador ' +
+      '(Tag Assistant ou aba Network: pagead/conversion ou 1p-conversion com o rotulo)';
   }
 
   await logEvent(env.DB, {
