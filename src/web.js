@@ -78,44 +78,39 @@
     return timestamp + '-' + uuid;
   }
 
-  function getOrCreateMarcaUser() {
-    var cookieMatch = document.cookie.match(/marca_user=([^;]+)/);
-    if (cookieMatch && cookieMatch[1]) return cookieMatch[1];
-
-    var localVal = localStorage.getItem('marca_user');
-    if (localVal) return localVal;
-
-    var sessionVal = sessionStorage.getItem('marca_user');
-    if (sessionVal) return sessionVal;
-
-    var newId = generateEventId();
-
-    try { localStorage.setItem('marca_user', newId); } catch(e) {}
-    try { sessionStorage.setItem('marca_user', newId); } catch(e) {}
+  // Identidade que ESTE navegador ja tem: cookie legivel pelo JS -> localStorage ->
+  // sessionStorage. Cada leitura isolada: storage bloqueado (iframe sandbox, modo
+  // restrito) lanca, e nao pode derrubar as outras fontes.
+  function readMarcaUserLocal() {
     try {
-      var rd = getCookieDomain(window.location.hostname);
-      document.cookie = 'marca_user=' + newId + ';path=/;max-age=63072000;SameSite=Lax' + (rd ? ';domain=' + rd : '');
+      var m = document.cookie.match(/(?:^|;\s*)marca_user=([^;]+)/);
+      if (m && m[1]) return m[1];
     } catch(e) {}
-
-    return newId;
+    try { var l = localStorage.getItem('marca_user'); if (l) return l; } catch(e) {}
+    try { var s = sessionStorage.getItem('marca_user'); if (s) return s; } catch(e) {}
+    return '';
   }
 
-  try {
-    var __MARCA_USER__ = (typeof __MARCA_USER__ !== 'undefined' && __MARCA_USER__)
-      ? __MARCA_USER__
-      : getOrCreateMarcaUser();
-  } catch(e) {
-    var __MARCA_USER__ = getOrCreateMarcaUser();
+  // Grava nas tres fontes. O cookie do Worker e HttpOnly (invisivel ao JS) e o
+  // getAamaisId() le daqui.
+  function persistMarcaUser(id) {
+    try { localStorage.setItem('marca_user', id); } catch(e) {}
+    try { sessionStorage.setItem('marca_user', id); } catch(e) {}
+    try {
+      var cd = getCookieDomain(window.location.hostname);
+      document.cookie = 'marca_user=' + id + ';path=/;max-age=63072000;SameSite=Lax' + (cd ? ';domain=' + cd : '');
+    } catch(e) {}
   }
 
-  // Persist marca_user in localStorage/sessionStorage so getAamaisId() can read it
-  // (the Worker sets HttpOnly cookie which JS cannot read)
-  try { localStorage.setItem('marca_user', __MARCA_USER__); } catch(e) {}
-  try { sessionStorage.setItem('marca_user', __MARCA_USER__); } catch(e) {}
-  try {
-    var rootDomain = getCookieDomain(window.location.hostname);
-    document.cookie = 'marca_user=' + __MARCA_USER__ + ';path=/;max-age=63072000;SameSite=Lax' + (rootDomain ? ';domain=' + rootDomain : '');
-  } catch(e) {}
+  // Precedencia: a identidade LOCAL vence a cunhada pelo servidor. O Worker injeta
+  // `var __MARCA_USER__="..."` no topo do script e, por hoisting de `var`, o antigo
+  // `typeof __MARCA_USER__ !== 'undefined'` era sempre verdadeiro: o storage nunca era
+  // consultado e ainda era regravado com o valor do servidor — que e um id NOVO toda vez
+  // que o cookie nao volta ao Worker (cookie rejeitado, Worker em outro site). O valor do
+  // servidor fica de fallback para o navegador sem nada local; por ultimo, gera um id.
+  var __MARCA_USER_SRV__ = (typeof __MARCA_USER__ !== 'undefined' && __MARCA_USER__) ? __MARCA_USER__ : '';
+  var __MARCA_USER__ = readMarcaUserLocal() || __MARCA_USER_SRV__ || generateEventId();
+  persistMarcaUser(__MARCA_USER__);
 
   // ============================================================
   // MODULE 2 — Transfer (SPEC 2.2)
