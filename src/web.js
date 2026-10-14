@@ -15,6 +15,54 @@
   // MODULE 1 — Identification (SPEC 2.1)
   // ============================================================
 
+  // Dominio registravel (eTLD+1) — espelho de getRegistrableDomain/getCookieDomain em
+  // src/worker/shared/helpers.js (manter as listas iguais). Os 2 ultimos rotulos do host
+  // davam `com.br` em `www.exemplo.com.br`: o cookie `domain=.com.br` e rejeitado pelo
+  // navegador e `pay.kiwify.com.br` passava por link INTERNO (sem indexador no checkout).
+  // Declarado ANTES do primeiro uso no carregamento: uma tabela `var` mais abaixo no
+  // arquivo ainda estaria undefined quando este modulo grava o cookie.
+  var SECOND_LEVEL_LABELS = {
+    com: 1, net: 1, org: 1, gov: 1, edu: 1, mil: 1, co: 1, ac: 1, or: 1, ne: 1, go: 1, gob: 1, nom: 1,
+    info: 1, biz: 1, gr: 1, adv: 1, art: 1, eco: 1, ind: 1, inf: 1, rec: 1, srv: 1, tur: 1, tv: 1,
+    vet: 1, med: 1, eng: 1, esp: 1, jor: 1, pro: 1, psi: 1, id: 1, me: 1, ltd: 1, plc: 1, sch: 1, 'in': 1
+  };
+  var PLATFORM_SUFFIXES = {
+    'pages.dev': 1, 'workers.dev': 1, 'vercel.app': 1, 'netlify.app': 1, 'github.io': 1,
+    'web.app': 1, 'firebaseapp.com': 1, 'herokuapp.com': 1
+  };
+
+  // Sem ponto (`exemplo.com.br`); '' para IP, `localhost` ou o proprio sufixo publico.
+  function getRegistrableDomain(hostname) {
+    var host = String(hostname || '').trim().toLowerCase();
+    if (!host || host.charAt(0) === '[') return '';
+    host = host.replace(/:\d+$/, '').replace(/\.$/, '');
+    if (!host || host.indexOf(':') !== -1 || /^[\d.]+$/.test(host)) return '';
+    var parts = host.split('.');
+    var n = parts.length;
+    if (n < 2) return '';
+    for (var i = 0; i < n; i++) if (!parts[i]) return '';
+    var take = (PLATFORM_SUFFIXES.hasOwnProperty(parts[n - 2] + '.' + parts[n - 1]) ||
+      (parts[n - 1].length === 2 && SECOND_LEVEL_LABELS.hasOwnProperty(parts[n - 2]))) ? 3 : 2;
+    return n < take ? '' : parts.slice(-take).join('.');
+  }
+
+  // Domain= do cookie com o ponto, ou '' para omitir o atributo (host-only, aceito).
+  // `cookie_domain` do SITE_CONFIG vence, se o host estiver dentro dele.
+  function getCookieDomain(hostname) {
+    var host = String(hostname || '').trim().toLowerCase().replace(/\.$/, '');
+    var cfg = String(__CONFIG__.cookie_domain || '').trim().toLowerCase().replace(/^\.+/, '');
+    if (cfg && getRegistrableDomain(cfg) &&
+        (host === cfg || host.slice(-(cfg.length + 1)) === '.' + cfg)) return '.' + cfg;
+    var root = getRegistrableDomain(host);
+    return root ? '.' + root : '';
+  }
+
+  // Chave de "mesmo site" para o isExternal: o dominio registravel, ou o host inteiro
+  // quando nao ha um (localhost, IP).
+  function siteKey(hostname) {
+    return getRegistrableDomain(hostname) || String(hostname || '').toLowerCase();
+  }
+
   function generateEventId() {
     var timestamp = Date.now();
     var uuid;
@@ -45,11 +93,8 @@
     try { localStorage.setItem('marca_user', newId); } catch(e) {}
     try { sessionStorage.setItem('marca_user', newId); } catch(e) {}
     try {
-      var rd = (function() {
-        var p = window.location.hostname.split('.');
-        return p.length >= 2 ? '.' + p.slice(-2).join('.') : window.location.hostname;
-      })();
-      document.cookie = 'marca_user=' + newId + ';path=/;max-age=63072000;SameSite=Lax;domain=' + rd;
+      var rd = getCookieDomain(window.location.hostname);
+      document.cookie = 'marca_user=' + newId + ';path=/;max-age=63072000;SameSite=Lax' + (rd ? ';domain=' + rd : '');
     } catch(e) {}
 
     return newId;
@@ -68,11 +113,8 @@
   try { localStorage.setItem('marca_user', __MARCA_USER__); } catch(e) {}
   try { sessionStorage.setItem('marca_user', __MARCA_USER__); } catch(e) {}
   try {
-    var rootDomain = (function() {
-      var parts = window.location.hostname.split('.');
-      return parts.length >= 2 ? '.' + parts.slice(-2).join('.') : window.location.hostname;
-    })();
-    document.cookie = 'marca_user=' + __MARCA_USER__ + ';path=/;max-age=63072000;SameSite=Lax;domain=' + rootDomain;
+    var rootDomain = getCookieDomain(window.location.hostname);
+    document.cookie = 'marca_user=' + __MARCA_USER__ + ';path=/;max-age=63072000;SameSite=Lax' + (rootDomain ? ';domain=' + rootDomain : '');
   } catch(e) {}
 
   // ============================================================
@@ -301,11 +343,6 @@
     return null;
   }
 
-  function getRootDomain(hostname) {
-    var parts = hostname.split('.');
-    return parts.length >= 2 ? parts.slice(-2).join('.') : hostname;
-  }
-
   function addParamsToUrl(url) {
     var newUrl;
     try {
@@ -316,7 +353,8 @@
 
     var existingParams = new URLSearchParams(newUrl.search);
     var pageUtms = getUtmData();
-    var isExternal = getRootDomain(newUrl.hostname) !== getRootDomain(window.location.hostname);
+    // Por dominio registravel (siteKey): `pay.kiwify.com.br` e externo a `lp.exemplo.com.br`.
+    var isExternal = siteKey(newUrl.hostname) !== siteKey(window.location.hostname);
 
     // User data from cookies (inline — avoids naming conflict with Module 4 getUserData)
     var email = getCookie('marca_email') || '';
