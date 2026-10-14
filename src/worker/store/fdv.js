@@ -5,6 +5,29 @@ export function firstDefined(...values) {
   return '';
 }
 
+// Fallback do FDV merge por IP do dispositivo — opt-in em SITE_CONFIG.fdv.ip_fallback.
+// Aceita `true` ou { enabled, window_hours, require_checkout }. Omitido = desligado e o
+// comportamento e exatamente o de antes.
+//   window_hours     quanto tempo ANTES do webhook a visita ainda conta (default 12, teto 72;
+//                    `events` so guarda 7 dias no modo auto_clean)
+//   require_checkout so casa se aquele IP clicou no checkout (initiate_checkout) na janela
+//                    (default true). Sem isso, IP compartilhado (CGNAT, wifi de casa) casaria
+//                    comprador com qualquer visitante curioso do mesmo IP.
+export function fdvIpFallbackConfig(config) {
+  const off = { enabled: false, windowHours: 12, requireCheckout: true };
+  const raw = config?.fdv?.ip_fallback;
+  if (raw === true) return { ...off, enabled: true };
+  if (raw && typeof raw === 'object' && !Array.isArray(raw) && raw.enabled === true) {
+    const h = Number(raw.window_hours);
+    return {
+      enabled: true,
+      windowHours: Number.isFinite(h) && h > 0 ? Math.min(h, 72) : off.windowHours,
+      requireCheckout: raw.require_checkout !== false
+    };
+  }
+  return off;
+}
+
 export function fdvMerge(storeData, webhookData) {
   const store = storeData || {};
 

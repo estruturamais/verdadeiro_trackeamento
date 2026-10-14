@@ -2,8 +2,8 @@ import { getConfigForWebhook } from '../shared/config.js';
 import { hashPII } from '../shared/hash.js';
 import { getNestedValue } from '../shared/helpers.js';
 import { splitFirstName, splitLastName } from '../shared/helpers.js';
-import { getUserStore, getUserStoreByEmail } from '../store/user-store.js';
-import { fdvMerge } from '../store/fdv.js';
+import { getUserStore, getUserStoreByEmail, getUserStoreByIp } from '../store/user-store.js';
+import { fdvMerge, fdvIpFallbackConfig } from '../store/fdv.js';
 import { GATEWAY_PARSERS, APPROVAL_EVENTS, CANCEL_EVENTS } from '../gateways/index.js';
 import { sendMetaCAPIWebhook } from '../platforms/meta.js';
 import { sendTikTokWebhook } from '../platforms/tiktok.js';
@@ -195,6 +195,42 @@ export async function handleWebhook(request, env, gateway, ctx) {
   // de outro modo, sem identidade nenhuma.
   if (!storeResult && webhookData.email) {
     storeResult = await getUserStoreByEmail(env.DB, webhookData.email).catch(() => null);
+  }
+
+  // 4c. FDV merge por IP DO DISPOSITIVO (opt-in: SITE_CONFIG.fdv.ip_fallback) — ultimo
+  // recurso quando nao ha indexador nem e-mail conhecido. So roda se o webhook NAO trouxe
+  // marca_user: com indexador presente a identidade ja e a do navegador, e trocar por um
+  // palpite de IP seria piorar. Exige clique de checkout do mesmo IP na janela (ver
+  // getUserStoreByIp). O resultado — acerto OU nao — vira linha consultavel no D1
+  // (platform='fdv'): atribuicao recuperada por palpite nunca pode ser silenciosa.
+  const ipCfg = fdvIpFallbackConfig(config);
+  if (!storeResult && !webhookData.marca_user && ipCfg.enabled && webhookData.ip) {
+    const achado = await getUserStoreByIp(
+      env.DB, config.site_id || '', webhookData.ip,
+      { windowHours: ipCfg.windowHours, requireCheckout: ipCfg.requireCheckout }
+    ).catch((e) => {
+      console.error('[webhook] fdv ip fallback failed:', e.message);
+      return null;
+    });
+    if (achado) storeResult = achado.store;
+    await logEvent(env.DB, {
+      site_id: config.site_id || '',
+      event_name: achado ? 'fdv_ip_match' : 'fdv_ip_no_match',
+      event_id: txnId || '',
+      platform: 'fdv', channel: 'webhook', source: gateway,
+      status_code: achado ? 200 : 0, request_ms: 0,
+      sent_payload: JSON.stringify({
+        window_hours: ipCfg.windowHours, require_checkout: ipCfg.requireCheckout,
+        ...(achado ? {
+          candidatos: achado.candidatos, ambiguo: achado.ambiguo,
+          checkouts: achado.checkouts, ultimo_checkout: achado.ultimo_checkout
+        } : {})
+      }),
+      error_message: achado ? '' : 'ip_sem_visita_com_checkout_na_janela',
+      response_payload: '',
+      marca_user: achado ? (achado.store.marca_user || '') : '',
+      source_ip: webhookData.ip || '', user_agent: ''
+    }).catch(() => {});
   }
 
   // 5. Merge fdv
