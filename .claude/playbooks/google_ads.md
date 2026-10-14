@@ -203,6 +203,30 @@ isso: **preencher o id numerico no config e o caminho padrao, nao um plano B.**
    `conversion_action_id_purchase`
 - Publico. **Esta acao nao tem rotulo** — nao procure por um.
 
+### Pre-requisito da conta: "Conversões otimizadas para leads" (OBRIGATORIO antes do 1o envio)
+
+Nao e otimizacao, e **bloqueio**: um `purchase` cujo unico identificador e o `userData` (e-mail e
+telefone hasheados), **sem** `gclid`, e recusado pela Google enquanto este recurso estiver desligado
+na conta. Com `gclid` o match e pelo clique e o recurso nao e exigido — por isso o mesmo envio passa
+ou falha conforme a venda tem click id, e um teste feito com `gclid` esconde o bloqueio. E a venda sem
+`gclid` e a **maioria**: na implantacao que originou esta regra, 2% das vendas tinham `gclid` e 100%
+tinham e-mail.
+
+1. **Onde:** Google Ads > **Metas** (na UI antiga, *Objetivos*) > **Conversoes** > **Configuracoes**.
+2. **O que fazer:** expandir **"Conversões otimizadas para leads"** → marcar **"Ativar as conversões
+   otimizadas para leads"** → no menu *"Escolha um método para configurar e gerenciar os dados
+   fornecidos pelo usuário"* escolher **"Tag do Google"** → **Salvar**. O menu so oferece *Tag do
+   Google* e *Google Tag Manager* — nao existe "Google Ads API" ali, e nao precisa: a escolha diz de
+   onde vem o `user_data` **no site**; o upload pela API so precisa do recurso **ligado na conta**.
+3. **Como confirmar:** a linha recolhida da secao sai de **"Ainda não foi configurada"** para
+   **"Gerenciadas usando a tag do Google"**.
+4. **Se pular:** todo `purchase` sem `gclid` grava `400` no D1, com
+   `DESTINATION_ACCOUNT_NOT_ENABLED_ENHANCED_CONVERSIONS_FOR_LEADS` no `error_message`.
+
+> ⚠️ **Nao confundir com a secao vizinha "Conversões otimizadas"** (sem "para leads"). Ela governa o
+> `user_data` das acoes de conversao **do site** e pode ja estar ativa — **nao** destrava o upload
+> offline. A que precisa estar ligada e a **"para leads"**.
+
 ### Customer ID (e Login Customer ID)
 - Numero de 10 digitos no topo direito do painel (`123-456-7890` → gravar so os digitos)
 - Se a conta e gerenciada por uma **MCC/conta de administrador**, o `login_customer_id` e o ID da
@@ -240,8 +264,10 @@ autorizacao**, conferir com o cliente:
        dela. E [Manage App Audience](https://support.google.com/cloud/answer/15549945):
        *"Authorizations by a test user will expire seven days from the time of consent"*; o botao
        *Publish app* leva o status a *In production*.
-2. No repo: `npm run gads:oauth --client-id={id} --client-secret={secret}` — o script repete o
-   lembrete do app publicado antes de mostrar a URL.
+2. No repo: `npm run gads:oauth -- --client-id={id} --client-secret={secret}` — o script repete o
+   lembrete do app publicado antes de mostrar a URL. O `--` sozinho e obrigatorio: sem ele o npm
+   (versao 11) fica com as flags para si, o script nao recebe as credenciais e para no prompt
+   `Client ID:` pedindo para digitar.
 3. **Com o titular presente**, autorizar **no navegador da mesma maquina que roda o script** (o
    script rodando na maquina dele, ou tela compartilhada com controle). O retorno vai para
    `http://127.0.0.1:{porta}` e o script troca o codigo **na hora**, sozinho.
@@ -431,6 +457,7 @@ nao casa — e nao ha erro nenhum no upload.
 | `status_code 0` + `canal_server_nao_despacha_navegador` | `channel: "server"` com evento de navegador | Trocar para `channel: "web"` |
 | `status_code 0` + `missing_conversion_label_{evento}` | Opt-in: rotulo daquele evento ausente | Preencher o rotulo, ou ignorar se o evento nao deve ser conversao |
 | `403` + `api_nao_habilitada` | Data Manager API desligada no Cloud | Ativar no Cloud Console e aguardar alguns minutos |
+| `400` + `DESTINATION_ACCOUNT_NOT_ENABLED_ENHANCED_CONVERSIONS_FOR_LEADS` no `error_message` — so nas vendas **sem** `gclid` (as com `gclid` passam) | "Conversões otimizadas para leads" desligada na conta: venda so com e-mail/telefone e recusada | Metas > Conversoes > Configuracoes > "Conversões otimizadas para leads" > ativar + método "Tag do Google" > Salvar; confirmar pela linha "Gerenciadas usando a tag do Google" (Step 3, "Pre-requisito da conta"). **Nao** e a secao "Conversões otimizadas" (sem "para leads") |
 | `403` + `escopo_oauth_insuficiente` | Refresh token sem o escopo `datamanager` | `npm run gads:oauth` e resubir o secret. Token antigo **nao** ganha escopo novo |
 | `status_code 0` + `oauth_refresh_failed(400)` com `invalid_grant` **no refresh**, em todas as vendas, ~7 dias depois do `gads:oauth` | App OAuth Externo em **"Em teste"**: o token de teste expira em 7 dias | Publicar o app ("Em producao"), **reemitir** com `npm run gads:oauth` e resubir o secret. Nao e bug do VT |
 | `gads:oauth` para com `a troca do code falhou (HTTP 400)` + `invalid_grant` **na troca** | Codigo de autorizacao vencido ou ja usado — repassado por mensagem, troca atrasada | Refazer o fluxo inteiro (URL nova), com o titular presente e a troca na hora. **Nao** e o `invalid_grant` do refresh |

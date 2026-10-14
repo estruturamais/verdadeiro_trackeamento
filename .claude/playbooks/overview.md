@@ -279,18 +279,6 @@ URL ou titulo contendo: "obrigado", "thankyou", "confirmacao", "sucesso"
 Detectar inicializacoes preexistentes de: `fbq(`, `ttq.`, `gtag(`, `dataLayer.push`
 Se detectados: **alertar o cliente e orientar remocao ANTES de continuar.** Scripts conflitantes causam dupla contagem.
 
-### Identificador legado do visitante (`cookies.user`)
-Perguntar: **"O site ja tem um id proprio do visitante, criado pelo GTM ou por outra solucao de
-rastreamento, que precisa continuar valendo?"** O HTML so mostra o GTM (`googletagmanager.com/gtm.js`);
-a chave se confirma no navegador do cliente (DevTools > Application > Cookies e Local Storage): mesmo
-nome e mesmo valor nos dois.
-- **Nao ha** → nada a fazer (o VT usa `marca_user`).
-- **Ha** → anotar o nome EXATO da chave e configurar `"cookies": { "user": "{chave}" }` no Step 3b: o
-  VT passa a ler e gravar o id com esse nome e quem ja tinha historico herda o mesmo id. A tag antiga
-  que grava a chave sai junto da instalacao (um dono so). Limites em
-  `.claude/references/site-config-format.md`.
-- Gravar no `tracking_memory.md`: `identificador_legado: nenhum | {chave}`.
-
 ### UTMify (coexistencia)
 Procurar no HTML o padrao `cdn.utmify.com.br/scripts/utms`. Se presente: gravar `utmify_detectada: sim`
 no `tracking_memory.md` e **nao** pedir remocao — os dois convivem. Orientar ordem de instalacao (VT
@@ -404,6 +392,10 @@ Ler `config.example.json` para a estrutura base. Preencher com os dados do `trac
 - TikTok: incluir `access_token` no config JSON (excecao — ver Step 3 acima)
 - Meta: nao incluir `access_token` — e wrangler secret
 - GA4: nao incluir `api_secret` — e wrangler secret
+- GA4: `unattributed_purchases` (venda sem visita na receita do GA4) **nao se decide aqui** — fica o
+  `false` do `config.example.json`. Ele e **oferecido** no 5.3b, depois de o checklist de integracoes
+  antigas confirmar que nao ha outro emissor de purchase no GA4 (com outro emissor, a receita dobra).
+  Ver `.claude/playbooks/ga4.md`
 - Omitir `pixel_ids_mirror` se o cliente usar apenas um pixel Meta
 - Meta: manter `pixel_proxy: true` (default do `config.example.json` — a route `/fb/*` ja esta no
   `wrangler.toml` da instalacao nova). O trade-off do modo completo e o modo `"script"` estao em
@@ -680,6 +672,49 @@ Delegar para a skill especialista de cada plataforma confirmada:
 - Google Ads → `.claude/playbooks/google_ads.md` (Google Tag Assistant ou painel com delay 3h)
 - Planilha → `.claude/playbooks/planilha.md` (verificar linha inserida na planilha + D1 com `platform = 'sheets'` — leads chegam com `channel = 'web'`; vendas com `channel = 'webhook'` e `event_name = 'purchase'`)
 
+### 5.3b — Desligar integracoes antigas (ANTES do teste de webhook e do go-live)
+
+Tudo o que ja mandava evento as plataformas continua mandando depois da instalacao, **em paralelo**
+com o VT — e conta em dobro. No GA4 a receita duplica (o outro emissor manda o proprio
+`transaction_id`, e o GA4 nao deduplica); na Meta e no TikTok so ha dedup com o mesmo `event_id`, que
+o emissor antigo nao tem; no Google Ads o lance passa a contar a venda duas vezes. Por isso o
+checklist roda **aqui**, antes do teste de webhook (5.4) e antes de subir campanha — nao so na
+entrega. Passar item a item ao cliente, esperar a resposta de cada um e gravar no `tracking_memory.md`
+(`integracoes_antigas: {item}: desligado | nao tinha | pendente`). Os itens de gateway so valem para
+infoproduto.
+
+Onde o caminho exato do painel nao esta escrito abaixo, ele muda de gateway para gateway (e de versao
+da interface): descreva **o que procurar**, nao invente menu.
+
+| Desligar | O que procurar | Como confirmar que saiu |
+|---|---|---|
+| **Integracao GA4 nativa do gateway** | No painel do gateway, na area de integracoes, pixels ou rastreamento (da conta e de cada produto/oferta): um campo com um ID `G-...` ou a opcao Google Analytics/GA4 | No GA4, toda compra tem `transaction_id` = o `order_id` do gateway e valor = o que o cliente pagou (e o que o VT envia). Transacao com **ID diferente** do `order_id` (um codigo curto, por exemplo) ou **valor = comissao** do produtor = outro emissor ainda ligado |
+| **Tags GA4 de evento/compra no GTM** | No container do GTM do site: tags de evento do GA4 (`purchase`, `begin_checkout`, `generate_lead`...) e a tag do Google com o mesmo `G-` mandando `page_view`. Pausar/remover e **publicar** o container — sem publicar, nada muda no site | No navegador (DevTools > Network, filtro `collect`): nenhuma requisicao a `*.google-analytics.com/g/collect` saindo direto da pagina. O gtag do VT manda pelo proprio dominio (`/g/collect`); hit direto para o Google = outra tag GA4 ativa |
+| **Webhooks antigos de servidor** (Stape, sGTM ou outro) ainda no painel do gateway | Na mesma tela de webhooks da tabela abaixo: toda URL de **rastreamento** que nao seja a do VT (`https://{dominio}/collect/webhook/{gateway}`) — dominio `stape.io`, subdominio de servidor de tags do proprio site, servico de "CAPI"/conversao. Webhook de area de membros, CRM ou e-mail marketing **fica** | A lista do painel so tem, para rastreamento, a URL do VT. E no GA4/Meta a compra de teste nao aparece durante o `shadow` (prova cruzada abaixo) |
+| **Meta** | Pixel colado no `<head>`, plugin (PixelYourSite, Pixel Cat, Facebook for WordPress), tag da Meta no GTM, integracao do gateway com o pixel ou com a API de Conversoes, "Deteccao automatica de eventos" (`.claude/references/disable-auto-tracking.md`) | No Gerenciador de Eventos do pixel, abrir o `Purchase` e o `PageView` e ver **de onde** chegam: devem sobrar o navegador (o pixel que o VT carrega) e o servidor do VT, deduplicados pelo mesmo `event_id`. Outra fonte — integracao de parceiro (o gateway) ou um segundo servidor — = emissor antigo. Compras do dia ≈ vendas aprovadas no gateway, nao o dobro |
+| **TikTok** | Pixel colado no `<head>`, plugin TikTok for Business, tag do TikTok no GTM, integracao do gateway com o pixel | No Events Manager do TikTok, os eventos chegam so pelo pixel do VT e pela Events API do VT, deduplicados; compras do dia ≈ vendas aprovadas |
+| **Google Ads** | Tag de conversao de compra no site ou no GTM (`gtag` com `send_to: 'AW-.../...'` de compra), integracao do gateway com o Google Ads, acao de compra importada do GA4 | Em Metas (na UI antiga, Objetivos) > Conversoes: as acoes de compra que **recebem** conversao. Se, alem da acao de importacao do VT (`conversion_action_id_purchase`), outra acao de compra recebe conversao como **principal**, o lance conta a venda duas vezes — avisar o cliente; quem decide qual fica principal e ele, no painel |
+
+**Prova cruzada no teste do 5.4.** Com o `shadow` ligado o VT **nao envia** compra a nenhuma plataforma.
+Se o teste for uma **compra de teste de verdade** (nao so a simulacao do webhook) e ela aparecer no
+GA4 (Tempo real, evento `purchase`), na Meta, no TikTok ou no Google Ads, quem mandou foi um emissor
+antigo — voltar a tabela antes do go-live.
+
+**Oferta — venda sem visita no GA4 (`platforms.ga4.unattributed_purchases`).** So com GA4 confirmado
+e **depois** de o checklist acima confirmar que **nao ha outro emissor de purchase no GA4** (as tres
+primeiras linhas): com outro emissor ligado, a receita conta em dobro. Perguntar:
+
+> "Algumas vendas chegam sem uma visita identificada no site — link de checkout antigo ou salvo,
+> venda feita pelo agente de vendas do gateway, comprador que nunca passou pelo site. Hoje elas nao
+> entram no GA4, e a receita do GA4 fica abaixo da do gateway. Posso fazer essas vendas entrarem na
+> receita do GA4, mas **sem atribuicao**: elas aparecem sem campanha nem origem ('(not set)'). Quer que
+> eu ligue?"
+
+- **Sim** → `"unattributed_purchases": true` em `platforms.ga4` no `SITE_CONFIG`, no mesmo deploy do
+  5.4.1. Gravar `ga4_unattributed_purchases: sim`.
+- **Nao, ou sem resposta** → **nao liga** (fica o `false` do `config.example.json`). Gravar `nao`.
+- O que o recurso faz e como aparece no D1: `.claude/playbooks/ga4.md`, "Venda sem visita".
+
 ---
 
 ### Webhooks de gateway — apenas se modelo for infoproduto
@@ -716,8 +751,8 @@ Instruir o cliente a configurar a URL de webhook no painel do gateway detectado:
 
 O parser **nao distingue teste de venda**: a simulacao do painel e a compra de teste chegam como compra
 aprovada, e o Worker despacha `Purchase` para todas as plataformas. Caso real: o teste da Kiwify
-(`johndoe@example.com`, "Example product", R$ 42,50) virou `Purchase` nos 2 pixels da Meta e no TikTok
-no dia da instalacao — venda fantasma no aprendizado das campanhas, sem remocao possivel na Meta. Por
+(`johndoe@example.com`, "Example product", R$ 42,50) virou `Purchase` em todos os pixels e
+plataformas configurados no dia da instalacao — venda fantasma no aprendizado das campanhas, sem remocao possivel na Meta. Por
 isso o teste roda **sempre** sob `purchase_dispatch: "shadow"`, nesta ordem: **ligar → testar →
 conferir → desligar → conferir que desligou**.
 
@@ -874,33 +909,51 @@ Se **S**: carregar `.claude/skills/audit-tracking/SKILL.md`. O Step 0 da auditor
 
 **Fonte dos dados para a mensagem:** usar `tracking_memory.md` — especificamente as secoes de plataformas confirmadas, eventos confirmados e `Validacao Step 5`. Nao raspar arquivos de config para montar a entrega; a memoria e a fonte canonica do que foi configurado e validado.
 
-**Estrutura da mensagem de entrega:**
+**Estrutura da mensagem de entrega — tres blocos, nesta ordem.** O terceiro e **passo obrigatorio
+antes de subir campanha**, nao um aviso no rodape: o cliente le rapido e nao desliga. Os itens dele
+saem do checklist do 5.3b (`integracoes_antigas` no `tracking_memory.md`): o que ficou `pendente` la
+vai marcado como pendente aqui.
 
-> Seu tracking esta configurado e funcionando.
+> **✅ TRACKING ATIVO**
 >
-> **O que foi instalado:**
-> Um script leve no seu site que coleta dados de forma segura e os envia para um servidor no seu proprio dominio.
+> Seu tracking esta configurado e funcionando. Um script leve no seu site coleta os dados de forma
+> segura e os envia para um servidor no seu proprio dominio.
 >
-> **O que sera rastreado:**
-> - Visualizacao de pagina — toda vez que alguem acessa seu site
-> - {evento 2 em linguagem simples, ex: "Envio de formulario — quando alguem preenche e envia o formulario de contato"}
-> - {evento 3, ex: "Clique no WhatsApp — quando alguem clica para te chamar no WhatsApp"}
+> - **Plataformas recebendo os dados:** {plataforma}: {descricao simples, ex: "Meta Ads: recebe todos os eventos para otimizar seus anuncios"}
+> - **O que sera rastreado:**
+>   - Visualizacao de pagina — toda vez que alguem acessa seu site
+>   - {evento 2 em linguagem simples, ex: "Envio de formulario — quando alguem preenche e envia o formulario de contato"}
+>   - {evento 3, ex: "Clique no WhatsApp — quando alguem clica para te chamar no WhatsApp"}
+> - **Paginas com o script:** {quantas e quais, das instaladas no Step 5}
+> - **Vendas recebidas de:** {gateway(s) com o aviso de venda configurado} *(so infoproduto)*
 >
-> **Plataformas recebendo os dados:**
-> - {plataforma}: {descricao simples, ex: "Meta Ads: recebe todos os eventos para otimizar seus anuncios"}
+> **⚠️ ONDE O TRACKING FUNCIONA (E ONDE NAO FUNCIONA)**
 >
-> Voce pode subir sua campanha normalmente. Os dados aparecem em cada plataforma em poucos minutos (Meta e TikTok) ou ate 24h (Google Ads).
-
----
-
-**⚠️ Importante — Remover integracoes antigas:**
-
-Para evitar eventos duplicados que prejudicam a otimizacao das campanhas, remova do site e das ferramentas:
-
-- **Pixels instalados via `<script>` no site**: Meta Pixel base code, TikTok Pixel base code
-- **Plugins de tracking** (WordPress ou construtores): PixelYourSite, Pixel Cat, Facebook for WordPress, TikTok for Business, qualquer plugin com "pixel" ou "conversions" no nome
-- **Tags de conversao no Google Tag Manager** para Meta, TikTok ou Google Ads — se usar GTM para outros fins, manter, mas remover as tags de evento de conversao
-- **Integracoes nativas dos gateways com Meta/TikTok**: dentro do painel Hotmart, Kiwify etc., desativar integracao direta com pixel se houver
+> - ✓ **Funciona** nas paginas onde o script foi colocado no `<head>`: {lista}.
+> - ✗ **NAO funciona** em pagina sem o script — landing nova, outro dominio, pagina feita em outro
+>   construtor. Toda pagina nova precisa receber o script, senao fica sem tracking sem avisar.
+> - ✓ **Funciona** para compras pela {gateway(s)}. *(so infoproduto)*
+> - ✗ **NAO funciona** para vendas em outro gateway, ou numa conta nova do mesmo gateway, ate o aviso
+>   de venda dela ser configurado — me chame antes de comecar a vender por la. *(so infoproduto)*
+>
+> **🚫 OBRIGATORIO — DESLIGAR INTEGRACOES ANTIGAS**
+>
+> Tudo o que ja mandava evento para as plataformas continua mandando, em paralelo com o novo
+> tracking: as compras contam em dobro e a otimizacao das campanhas piora. Antes de subir campanha,
+> confirme que esta tudo desligado:
+>
+> - [ ] Pixels colados direto no site (codigo da Meta, do TikTok, `gtag` de conversao do Google Ads ou do Google Analytics)
+> - [ ] Plugins de pixel (PixelYourSite, Pixel Cat, Facebook for WordPress, TikTok for Business, qualquer plugin com "pixel" ou "conversions" no nome)
+> - [ ] Tags de conversao e de compra no Google Tag Manager (Google Analytics, Meta, TikTok, Google Ads) — o GTM pode ficar para outros usos
+> - [ ] Integracao nativa do gateway com Meta, TikTok, Google Analytics ou Google Ads
+> - [ ] Avisos de venda (webhooks) antigos de rastreamento no painel do gateway — Stape, servidor de tags ou outro *(so infoproduto)*
+> {itens `pendente` no 5.3b: "⏳ ainda pendente: {item}"}
+>
+> Qualquer um desses ainda ativo dispara o evento de novo. Quando desligar, me avise que eu confiro
+> nas plataformas que so o novo tracking esta enviando.
+>
+> Voce pode subir sua campanha. Os dados aparecem em cada plataforma em poucos minutos (Meta e
+> TikTok) ou ate 24h (Google Ads).
 
 ---
 

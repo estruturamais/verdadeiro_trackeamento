@@ -80,7 +80,7 @@ risco e de **atribuicao errada**, nao de falta.
 
 | Gateway | Campo que o parser le | IP = aparelho? | Evidencia |
 |---|---|---|---|
-| **Kiwify** | `Customer.ip` | ✅ | 3 vendas reais (10/2026): IP igual ao que a Cloudflare gravou nos beacons do comprador (mesmo aparelho; o mesmo que a Meta recebeu como `client_ip_address`); IPv6 completo identico ao `user_store.ip` do comprador identificado pelo `sck`; IPv4 igual ao de uma visita do mesmo iPhone 5 dias antes |
+| **Kiwify** | `Customer.ip` | ✅ | Conferido em vendas reais: IP igual ao que a Cloudflare gravou nos beacons do comprador (mesmo aparelho; o mesmo que a Meta recebeu como `client_ip_address`); IPv6 completo identico ao `user_store.ip` do comprador identificado pelo `sck`; IPv4 igual ao de uma visita do mesmo iPhone 5 dias antes |
 | Hubla | `event.invoice.paymentSession.ip` | ⬜ a conferir | — |
 | Lastlink | `Data.DeviceInfo.ip` | ⬜ a conferir | — |
 | Payt | `customer.ip` | ⬜ a conferir | — |

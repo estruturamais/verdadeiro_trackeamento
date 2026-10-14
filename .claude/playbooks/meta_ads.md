@@ -162,6 +162,25 @@ Testar eventos, "Navegador" e "Servidor" continuam chegando com o mesmo `event_i
 
 ---
 
+## `fbp` no `PageView` da CAPI — o page_view espera o `_fbp` (1.9.1)
+
+O `_fbp` so existe depois que o `fbevents.js` carrega e roda — e o `web.js` e o 1o elemento do
+`<head>`. Na **1a pagina** do visitante o beacon do `page_view` saia antes de o pixel criar o cookie,
+e o `PageView` da CAPI ia **sem `fbp`** (das paginas seguintes em diante o cookie ja existe). Antes
+desta melhoria, so a espera pelo gtag que a 1.9.0 colocou no `page_view` ja tinha levado a cobertura
+de `fbp` no `PageView` de cerca de 32% para 65% no cliente medido: quem tinha GA4 ganhava o `fbp` "de
+carona", quem nao tinha seguia sem.
+
+Desde a 1.9.1, com `pixel_id` no config, o beacon do `page_view` espera tambem o cookie `_fbp`:
+- re-checa a cada ~100 ms (criar cookie nao dispara evento), dentro do **mesmo teto de 3 s** do
+  `<title>` e do gtag — pixel bloqueado ou lento custa no maximo isso, nunca o evento;
+- visitante que sai antes do teto: o beacon sai no `pagehide`/`visibilitychange`, com o que tiver;
+- **sem Meta no config, nao espera nada**; cliques e demais eventos tambem nao esperam (saem na hora).
+
+Medir a cobertura antes x depois: consulta de `fbp` no `PageView` da 2.4 do `audit-tracking`.
+
+---
+
 ## Eventos custom de qualificacao — `QualifiedLead` / `DisqualifiedLead`
 
 Quando o cliente tem um formulario de qualificacao multi-step (Elementor), o **Modulo 7** do client (`src/web.js`) emite, no sucesso do form, **um** destes eventos custom em vez do `lead` padrao:

@@ -132,6 +132,28 @@ Log gravado na tabela events:
 
 ---
 
+## Venda sem visita (`unattributed_purchases`) — oferecer no onboarding, nunca ligar sozinho
+
+O onboarding **oferece** a flag ao cliente; ela nunca e ligada por default nem por decisao do agente.
+
+- **Quando oferecer:** so **depois** de o checklist de integracoes antigas (Step 5, 5.3b do
+  `overview.md`) confirmar que **nao ha outro emissor de purchase no GA4** — integracao GA4 nativa do
+  gateway, tag de compra do GA4 no GTM, webhook antigo de servidor (Stape, sGTM ou outro). Com outro
+  emissor ligado, a receita do GA4 conta **em dobro**: ele manda o proprio `transaction_id` e o GA4 nao
+  deduplica. No Step 3b ela fica `false`, como vem no `config.example.json`.
+- **O trade-off, dito ao cliente:** a venda sem visita identificada (link de checkout antigo ou
+  salvo, venda pelo agente de vendas do gateway, comprador que nunca passou pelo site) passa a entrar
+  na **receita** do GA4, e a receita do GA4 se aproxima da do gateway — mas **sem atribuicao**: essas
+  vendas aparecem sem campanha nem origem ("(not set)"). Sem a flag, elas ficam fora do GA4 e gravam
+  `missing_ga_client_id`.
+- **Sem resposta = nao liga.** So `sim` explicito vira `"unattributed_purchases": true` em
+  `platforms.ga4`; gravar a resposta no `tracking_memory.md` (`ga4_unattributed_purchases: sim | nao`).
+- **Como aparece:** a venda sai com `client_id` sintetico (derivado do pedido, nunca de e-mail ou
+  telefone), sem sessao e sem `engagement_time_msec`; o D1 grava `204` +
+  `aviso_client_id_sintetico` (nao e erro — ver "Validacao").
+
+---
+
 ## Mapeamento de eventos
 
 Extraido de `src/shared/event-names.js` coluna `ga4`:

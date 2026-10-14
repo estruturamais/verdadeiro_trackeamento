@@ -267,6 +267,17 @@ onde o dado falta. Ao reportar, lembrar a **origem** de cada parametro:
 | email/phone/name | **web (form)** ou webhook | `user_store` (lead) / `webhook_raw.payload` (compra) |
 | value/currency/product/order_id | so webhook | `webhook_raw.payload` |
 
+**`fbp` no `PageView` (Meta).** O `fbp` do `PageView` vem do cookie `_fbp`, que o pixel so cria depois
+de carregar: na 1a pagina, ate a 1.9.0, o beacon saia antes dele. Desde a 1.9.1 o `page_view` espera o
+`_fbp` (teto de 3 s) — ver `.claude/playbooks/meta_ads.md`. % de `PageView` com `fbp` no
+`sent_payload` (repetir com a janela de antes e de depois do deploy para comparar):
+```bash
+npx wrangler d1 execute tracking_db --remote --command "SELECT COUNT(*) AS pageviews, SUM(json_valid(sent_payload)) AS legiveis, SUM(CASE WHEN json_valid(sent_payload) THEN json_extract(sent_payload,'$.data[0].user_data.fbp') IS NOT NULL ELSE 0 END) AS com_fbp, ROUND(100.0 * SUM(CASE WHEN json_valid(sent_payload) THEN json_extract(sent_payload,'$.data[0].user_data.fbp') IS NOT NULL ELSE 0 END) / MAX(SUM(json_valid(sent_payload)), 1), 1) AS pct_fbp FROM events WHERE site_id = '{site_id}' AND platform = 'meta_ads' AND channel = 'web' AND event_name = 'PageView' AND timestamp >= datetime('now','-{X} days');"
+```
+`pct_fbp` e sobre as linhas `legiveis` (o `sent_payload` e cortado em 2000 caracteres; URL muito longa
+deixa o JSON ilegivel). Baixo mesmo na 1.9.1 = pixel bloqueado/lento no navegador desses visitantes
+(sai no teto sem `fbp`) — o proxy `pixel_proxy` resgata parte deles.
+
 ### 2.4b GA4 — `204` em tudo e o relatorio por pagina vazio
 
 **Rodar so quando o baseline tiver GA4.** O sintoma que o cliente ve: no GA4, **usuario ativo no Tempo
@@ -394,11 +405,11 @@ nenhum `marca_user`; `true` = havia indexador, mas o visitante nunca teve o `_ga
 **Por que aparece "de repente":** enquanto existia um emissor antigo (integracao nativa do gateway,
 Stape/sGTM), ele mandava **toda** venda ao GA4 e mascarava o buraco. Quando o cliente desliga o antigo
 (o certo), toda venda sem identidade some e a receita do GA4 despenca — caso real: "Receita de compra
-R$ 0,00" com duas vendas no periodo. Assinaturas reais (Kiwify, 10/2026), lidas no `webhook_raw.payload`:
+R$ 0,00" com duas vendas no periodo. Assinaturas reais, lidas no `webhook_raw.payload` (campos da Kiwify):
 
 | No payload | Leitura |
 |---|---|
-| `TrackingParameters.sck` com formato que **nao e do VT** (VT = `{ms}-{uuid}`), ex. `1788792865427-1788792865428.438712.2`, e sem linha no `user_store` | Link de checkout **antigo/salvo** (indexador de antes do VT, recuperacao de carrinho). O `sck` nao recupera; o e-mail (FDV por e-mail) ou o IP (`fdv.ip_fallback`, se ligado) ainda podem |
+| `TrackingParameters.sck` com formato que **nao e do VT** (VT = `{ms}-{uuid}`), ex. `{ms}-{ms}.{n}.{n}`, e sem linha no `user_store` | Link de checkout **antigo/salvo** (indexador de antes do VT, recuperacao de carrinho). O `sck` nao recupera; o e-mail (FDV por e-mail) ou o IP (`fdv.ip_fallback`, se ligado) ainda podem |
 | `TrackingParameters.src = "kiwify_sales_agent"` | Venda feita pelo **agente de vendas da Kiwify**, fora do site. Nao ha navegador para atribuir — caso (A) legitimo |
 
 **Correcao para a receita bater:** `platforms.ga4.unattributed_purchases: true` (opt-in) — a venda sai
@@ -408,8 +419,8 @@ confirmar que nao ha outro emissor de purchase no GA4** (contaria em dobro). Ver
 ao GA4 — secao GA4 do `.claude/playbooks/reenvio_dados.md`.
 
 > **GA4 com valor/ID diferentes dos do VT = outro emissor.** O VT envia `transaction_id = order_id`
-> (UUID na Kiwify) e `value` = valor pago. Receita igual a `my_commission` e ID curto (`order_ref`, ex.:
-> `uXxikuj`) = webhook antigo (Stape/sGTM) ou integracao nativa do gateway ainda ligados → GA4 conta 2x.
+> (UUID na Kiwify) e `value` = valor pago. Receita igual a `my_commission` e ID curto (um `order_ref`
+> curto) = webhook antigo (Stape/sGTM) ou integracao nativa do gateway ainda ligados → GA4 conta 2x.
 
 ### 2.7 Reconciliacao de volume
 ```bash
@@ -534,6 +545,7 @@ pelo servidor ...` — o Worker so sabe que o **beacon** chegou, nunca que o gta
 | `403` + `api_nao_habilitada` | **Data Manager API desligada** no projeto do Google Cloud — o passo mais esquecido da implantacao | Cloud Console > APIs e servicos > Biblioteca > "Data Manager API" > Ativar |
 | `403` + `escopo_oauth_insuficiente` | Refresh token emitido so com `adwords` | Reemitir com `npm run gads:oauth` (pede `adwords` **+** `datamanager`). **Token antigo nunca ganha escopo novo** |
 | `400` + `conversion_upload_bloqueado` | `upload_api: "conversion_upload"` em conta nao allowlisted | Trocar para `data_manager` (ou remover o campo — e o default) |
+| `400` + `DESTINATION_ACCOUNT_NOT_ENABLED_ENHANCED_CONVERSIONS_FOR_LEADS` no `error_message`, so nas vendas **sem** `gclid` | **"Conversões otimizadas para leads" desligada na conta.** E pre-requisito bloqueante: venda so com e-mail/telefone (a maioria) e recusada; com `gclid` passa — por isso o erro aparece numa parte das vendas e um teste com `gclid` nao o mostra | Google Ads > Metas > Conversoes > Configuracoes > "Conversões otimizadas para leads" > ativar + método "Tag do Google" > Salvar. Confirmar pela linha recolhida "Gerenciadas usando a tag do Google" e pela consulta de pre-requisitos abaixo. **Nao** e a secao "Conversões otimizadas" (sem "para leads"), que nao destrava o upload |
 | `200` + `partial_failure: ...EXPIRED_CLICK` | A Google **aceitou o request e descartou a conversao** (clique fora da janela) | Nao e bug: e venda de um clique antigo demais |
 | `200` sem `error_message` | Request aceito. **So isso** — o casamento com o clique e assincrono | Provar pelas consultas abaixo, nunca pelo D1 |
 
@@ -591,6 +603,10 @@ Saudavel: `status = EXCELLENT`, `success_rate = 1`, **`pending = 0`**.
   Configuracoes da conta > Marcacao automatica. Sem isso resta so o match por e-mail/telefone.
 - `accepted_customer_data_terms = false` → o e-mail hasheado **nao casa**. Aceitar os termos de dados
   do cliente no painel.
+- `enhanced_conversions_for_leads_enabled = false` → toda venda **sem `gclid`** e recusada com
+  `DESTINATION_ACCOUNT_NOT_ENABLED_ENHANCED_CONVERSIONS_FOR_LEADS`. Ligar "Conversões otimizadas para
+  leads" (método "Tag do Google") — passo a passo no Step 3 do `.claude/playbooks/google_ads.md`. Nao
+  confundir com "Conversões otimizadas" (sem "para leads").
 
 #### A armadilha do `EXCELLENT` com `0,00` no relatorio
 

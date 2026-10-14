@@ -13,9 +13,6 @@ Lido por caminho pelo onboarding (`overview.md`), pela skill `new-gateway` e pel
 `web.js`. Identifica o mesmo usuario entre sessoes. Todos os eventos web carregam `marca_user` no
 payload.
 
-O nome da chave no navegador e configuravel (`cookies.user`, para herdar o id de uma solucao
-anterior); payload, D1 e indexador seguem `marca_user` — ver `.claude/references/site-config-format.md`.
-
 ---
 
 ## Invariante (regra de ouro)
@@ -95,9 +92,9 @@ Investigar de tras pra frente (do dado disponivel ate a origem), localizando o e
    **Cuidado antes de concluir (A):** o webhook pode vir sem `marca_user` mesmo com o comprador
    TENDO passado pelo site — o `sck` so existe na URL que ele usou para pagar. Se ele abandonou o
    checkout e voltou por **link sem parametros** (recuperacao de carrinho da gateway, link
-   reaberto/digitado), o gateway devolve tudo nulo. Caso real (Kiwify, 05/10/2026): `TrackingParameters`
-   inteiro `null`, e o D1 tinha a visita dele (Instagram → checkout 2x → compra 8 min depois) com
-   `fbp`/`fbc`/`ga_client_id`. **Antes de classificar como (A), cruzar o IP do webhook**:
+   reaberto/digitado), o gateway devolve tudo nulo — na Kiwify, o `TrackingParameters` inteiro `null`,
+   enquanto o D1 tem a visita dele, com clique no checkout, `fbp`/`fbc`/`ga_client_id`. **Antes de
+   classificar como (A), cruzar o IP do webhook**:
    ```sql
    SELECT marca_user, COUNT(*) FROM events
     WHERE site_id = '{site_id}' AND platform = 'collect' AND source_ip = '{ip do payload}'
