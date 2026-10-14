@@ -47,7 +47,8 @@ negocio ("suas vendas passam a cair na planilha", nao "novo conector `sendSheets
 
 | Para chegar em | Acao de banco | Acao de config | Quebra algo? |
 |---|---|---|---|
-| **1.9.0** | — (nenhuma migracao) | Opcional, tudo opt-in: `platforms.ga4.unattributed_purchases`, `fdv.ip_fallback`, `cookies.user`, `collect_url` — ver abaixo. **Excecao:** quem tinha `collect_url` absoluto como patch local no `serve-webjs.js` poe a chave no `SITE_CONFIG` no **mesmo** deploy | Nao — sem as chaves nada some; ver "Mudancas de comportamento da 1.9.0" |
+| **1.9.1** | — (nenhuma migracao) | — (nenhuma). O bloco `cookies` do `SITE_CONFIG` passa a ser ignorado e pode sair | So para quem configurou o `cookies.user` da 1.9.0: os visitantes que so tinham o id na chave antiga ganham id novo — ver "Mudancas de comportamento da 1.9.1" |
+| **1.9.0** | — (nenhuma migracao) | Opcional, tudo opt-in: `platforms.ga4.unattributed_purchases`, `fdv.ip_fallback`, `collect_url` — ver abaixo (o `cookies.user` que a 1.9.0 trazia saiu na 1.9.1). **Excecao:** quem tinha `collect_url` absoluto como patch local no `serve-webjs.js` poe a chave no `SITE_CONFIG` no **mesmo** deploy | Nao — sem as chaves nada some; ver "Mudancas de comportamento da 1.9.0" |
 | **1.8.0** | — | Opcional: route `{dominio}/fb/*` no `wrangler.toml` (o `git pull` nao a traz) + `platforms.meta.pixel_proxy: true` — ver abaixo | Nao — sem a flag nada muda |
 | **1.7.0** | `migrations/005_add_user_store_email_index.sql` (**todos**) + `migrations/004_add_subscriptions_table.sql` (**so** projeto de assinatura) | Opcional: `subscription_tracking` (ver abaixo) | Nao — ver "Mudancas de comportamento" |
 | **1.6.0** | `migrations/003_add_gclid_columns.sql` | Opcional: bloco `google_ads` (ver abaixo) | Nao — ver "Mudanca de comportamento" |
@@ -56,6 +57,28 @@ negocio ("suas vendas passam a cair na planilha", nao "novo conector `sendSheets
 
 **Pulou versoes?** Rode as migracoes **em ordem crescente**, uma de cada vez, conferindo cada uma
 antes da proxima.
+
+### Mudancas de comportamento da 1.9.1
+
+**Sem migracao de banco e sem config novo.** Duas mudancas de comportamento — avise o cliente antes
+do deploy:
+
+**1. `cookies.user` removido: a identidade no navegador e sempre `marca_user`.** A 1.9.0 tinha tornado
+configuravel o nome da chave em que o navegador guarda o id do visitante (`cookies.user`). A 1.9.1
+tira a opcao: o bloco `cookies` do `SITE_CONFIG` passa a ser ignorado inteiro (o `email`, o `phone` e
+o `name` dele nunca tiveram efeito) e saiu do `config.example.json`. Sem `cookies.user` no config — o
+caso de quase toda instalacao — nada muda. **Quem o configurou volta a `marca_user`:** o visitante
+que so tinha o id na chave antiga ganha um id **novo** na proxima visita, e a atribuicao de quem ja
+estava no meio da jornada cai. O bloco `cookies` pode sair do `SITE_CONFIG` (sem efeito, so confunde
+a proxima leitura do config).
+
+**2. O `page_view` espera o `_fbp` quando ha Meta no config.** Na 1a pagina o beacon saia antes de o
+pixel criar o cookie `_fbp`, e a CAPI do `PageView` ia sem `fbp`. Agora ele espera o `_fbp` no mesmo
+teto de 3 s em que ja esperava o `<title>` e o gtag (e sai no `pagehide` se o visitante for embora
+antes). Efeito: a cobertura de `fbp` no `PageView` da CAPI sobe (consulta da 2.4 do
+`audit-tracking`). Com o pixel bloqueado ou lento, o `page_view` sai no teto — ate 3 s depois da
+carga, como ja acontecia com o gtag bloqueado. Cliques e demais eventos nao esperam nada. Sem Meta no
+config, nada muda.
 
 ### Mudancas de comportamento da 1.9.0
 
@@ -103,11 +126,8 @@ o mesmo formato dos outros gateways. Venda antiga nao e corrigida retroativament
   no **mesmo** deploy. Deployar o codigo sem a chave volta o beacon para relativo e a coleta web morre
   **sem erro** (o script carrega, o console mostra o `page_view` e o `events` fica vazio).
   `cookie_domain` tambem e novo, opcional e quase nunca necessario.
-- **`cookies.user`** — nome da chave em que o navegador guarda o id do visitante, para herdar a base
-  de uma solucao anterior (GTM etc.) sem zera-la. Payload, D1 e indexador seguem `marca_user`. A tag
-  antiga que gravava a chave sai junto (o Worker regrava o cookie como `HttpOnly`). So
-  `cookies.user` vale: `email`/`phone`/`name` do bloco `cookies` seguem sem efeito. ⚠️ **Ligar e
-  seguro, desligar nao** — ver "Rollback".
+- **`cookies.user`** — removido na 1.9.1: quem o configurou volta a `marca_user`, e os visitantes que
+  so tinham o id na chave antiga ganham id novo. Ver "Mudancas de comportamento da 1.9.1".
 - **`fdv.ip_fallback`** — 3o caminho do FDV merge (indexador → e-mail → **IP do aparelho** que clicou
   no checkout nas 12h anteriores). **So ligar se todo gateway do projeto com IP no parser estiver ✅**
   na tabela "IP do payload = aparelho?" de `.claude/references/gateway-webhooks.md` (hoje so a
@@ -121,8 +141,8 @@ o mesmo formato dos outros gateways. Venda antiga nao e corrigida retroativament
 `oauth_refresh_failed(400)` + `invalid_grant` em todas as vendas ~7 dias depois do `gads:oauth`**
 tem o app OAuth "Em teste": publicar o app e reemitir o token com `npm run gads:oauth` (secao
 "Credenciais OAuth" do playbook); e a retencao documentada passou a ser a real — no `auto_clean`,
-`events` 7 dias, `webhook_raw` 14, `user_store` 90 (os playbooks diziam 30: quem prometeu 30 dias de
-historico ao cliente deve corrigir a expectativa).
+`events` 7 dias, `webhook_raw` 14, `user_store` 90 (os playbooks antigos prometiam uma janela maior:
+quem passou ao cliente o numero antigo deve corrigir a expectativa de historico).
 
 ### Mudanca de comportamento da 1.9.0 — GA4
 
@@ -283,11 +303,15 @@ npx wrangler d1 execute tracking_db --remote --command "SELECT COUNT(*) FROM sub
 
 ## Passo 5 — Config novo (so o que a versao pede)
 
+**A 1.9.1 nao exige config novo.** O bloco `cookies` passa a ser ignorado: o `cookies.user` foi
+removido, quem o configurou volta a `marca_user` e os visitantes que so tinham o id na chave antiga
+ganham id novo (ver "Mudancas de comportamento da 1.9.1").
+
 **A 1.9.0 nao exige config novo**, com uma excecao: instalacao que tinha o `collect_url` absoluto como
 patch local no `serve-webjs.js` poe `"collect_url": "https://track.{dominio}/collect/event"` no
-`SITE_CONFIG` no mesmo deploy (ver "Mudancas de comportamento da 1.9.0"). Os quatro opt-ins
-(`collect_url`, `cookies.user`, `fdv.ip_fallback`, `platforms.ga4.unattributed_purchases`) so entram
-se o caso do cliente pedir — cada um tem a sua condicao descrita la.
+`SITE_CONFIG` no mesmo deploy (ver "Mudancas de comportamento da 1.9.0"). Os tres opt-ins
+(`collect_url`, `fdv.ip_fallback`, `platforms.ga4.unattributed_purchases`) so entram se o caso do
+cliente pedir — cada um tem a sua condicao descrita la.
 
 **A 1.8.0 nao exige config novo.** O proxy do Meta Pixel e opt-in — route `/fb/*` + `pixel_proxy`,
 descritos em "Mudanca de comportamento da 1.8.0" acima. Sem os dois, nada muda.
@@ -412,11 +436,10 @@ Para achar o ponto de volta: `git tag` lista as versoes tagueadas e
 tag). **Nao** tente reverter a migracao: `DROP COLUMN` em SQLite/D1 e mais arriscado do que a coluna
 ociosa que voce quer remover.
 
-> ⚠️ **Com `cookies.user` ligado (1.9.0+), voltar nao e neutro.** A leitura de fallback vale num
-> sentido so (chave configurada → `marca_user`). Voltar para ≤ 1.8.0 **ou** tirar o `cookies.user` do
-> config da um id **novo** a quem so tem a chave configurada — os visitantes que chegaram depois da
-> troca e toda a base legada herdada. Se precisar mesmo voltar, avisar o cliente da quebra de
-> identidade (atribuicao do periodo seguinte cai) antes do deploy.
+> ⚠️ **`cookies.user` (1.9.1).** O `cookies.user` foi removido na 1.9.1: quem o configurou na 1.9.0
+> volta a `marca_user`, e os visitantes que so tinham o id na chave antiga ganham id novo. Avisar o
+> cliente da quebra de identidade (a atribuicao de quem estava no meio da jornada cai) antes do
+> deploy — ver "Mudancas de comportamento da 1.9.1".
 
 ---
 

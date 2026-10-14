@@ -19,7 +19,7 @@ zero até o tracking validado em produção.
 
 ## Versão
 
-**Versão atual: 1.9.0**
+**Versão atual: 1.9.1**
 
 Para saber qual versão uma instalação roda, pergunte ao assistente *"qual a versão do seu VT?"* — ele
 lê o número (a) deste README e do `package.json` e (b) **direto da Cloudflare**: na 1ª linha do script
@@ -27,6 +27,30 @@ servido em `https://{dominio}/tracking/web.js` (e no campo `vt_version` do confi
 (b) sobrevive mesmo que o usuário apague os arquivos locais. O histórico abaixo mapeia cada versão às
 novidades:
 
+- **1.9.1** — **`fbp` no `PageView` desde a 1ª página, identidade sempre em `marca_user` e um
+  onboarding que desliga o que contaria em dobro.** **`fbp`:** o `web.js` é o 1º elemento do `<head>` e
+  o cookie `_fbp` só nasce depois que o pixel da Meta carrega — na 1ª página do visitante o beacon do
+  `page_view` saía antes, e o `PageView` da CAPI ia sem `fbp` (a espera pelo gtag da 1.9.0 já tinha
+  levado a cobertura de cerca de 32% para 65% de carona). Agora, com Meta no config, o `page_view`
+  espera também o `_fbp`, no mesmo teto de 3 s do `<title>` e do gtag, e sai no `pagehide` se o
+  visitante for embora antes; sem Meta, e nos cliques, nada espera. **`cookies.user` removido:** a
+  chave de identidade no navegador volta a ser sempre `marca_user`; o bloco `cookies` do `SITE_CONFIG`
+  passa a ser ignorado (o `email`/`phone`/`name` dele nunca fizeram efeito) e saiu do
+  `config.example.json`. Sem `cookies.user` no config nada muda; quem o configurou volta a
+  `marca_user`, e o visitante que só tinha o id na chave antiga ganha id novo. **Onboarding:** o
+  checklist de integrações antigas passa a rodar **antes** do teste de webhook e do go-live —
+  integração GA4 nativa do gateway, tags do GA4 no GTM, webhooks antigos de servidor (Stape, sGTM),
+  Meta, TikTok e Google Ads —, cada item com o jeito de confirmar que saiu; a entrega do Step 6 vira
+  três blocos (tracking ativo / onde funciona e onde não / obrigatório desligar); o
+  `platforms.ga4.unattributed_purchases` passa a ser **oferecido** depois desse checklist, com o
+  trade-off dito ao cliente (a venda sem visita entra na receita, sem atribuição) e sem resposta = não
+  liga; e "Conversões otimizadas para leads" entra como pré-requisito obrigatório do Google Ads — sem
+  ele, toda venda sem `gclid` (a maioria) é recusada com
+  `DESTINATION_ACCOUNT_NOT_ENABLED_ENHANCED_CONVERSIONS_FOR_LEADS`. **Correção:** o comando
+  documentado do OAuth do Google Ads (`npm run gads:oauth --client-id=...`) não entregava as
+  credenciais ao script — o npm 11 fica com as flags e o script parava pedindo o Client ID; o certo é
+  `npm run gads:oauth -- --client-id=... --client-secret=...`. **Sem migração de banco e sem config
+  novo.**
 - **1.9.0** — **GA4 com dado de verdade, Google Ads pelo navegador, identidade em `.com.br` e FDV
   merge por IP**. Release de correções de falha silenciosa, achadas e validadas em produção em
   clientes reais (Kiwify, `.com.br`). **GA4:** o `page_view` do Measurement Protocol chegava **sem

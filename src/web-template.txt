@@ -1,4 +1,4 @@
-/*! Verdadeiro Trackeamento v1.9.0 | criado por @estruturamais | https://instagram.com/estruturamais */
+/*! Verdadeiro Trackeamento v1.9.1 | criado por @estruturamais | https://instagram.com/estruturamais */
 (function() {
   'use strict';
 
@@ -79,41 +79,29 @@
     return timestamp + '-' + uuid;
   }
 
-  // NOME sob o qual o navegador guarda a identidade (cookie + localStorage +
-  // sessionStorage): `cookies.user` do SITE_CONFIG, para herdar a base de um id que o
-  // site ja tinha (GTM/solucao anterior). O campo do payload, as colunas do D1 e o
-  // indexador dos gateways seguem `marca_user`. A chave `marca_user` continua lida
-  // depois da configurada: trocar o nome numa instalacao em andamento nao zera quem
-  // ja tem id. Espelho do `userCookieName` de serve-webjs.js e collect/event.js.
-  var USER_KEY = (__CONFIG__.cookies && __CONFIG__.cookies.user) || 'marca_user';
-  var USER_KEYS = USER_KEY === 'marca_user' ? ['marca_user'] : [USER_KEY, 'marca_user'];
-
-  // Identidade que ESTE navegador ja tem: cookie legivel pelo JS -> localStorage ->
-  // sessionStorage, da chave configurada e depois da `marca_user`. Cada leitura
-  // isolada: storage bloqueado (iframe sandbox, modo restrito) lanca, e nao pode
-  // derrubar as outras fontes.
+  // Identidade que ESTE navegador ja tem, sempre sob a chave `marca_user` — o mesmo nome
+  // do campo do payload, das colunas do D1, do indexador dos gateways sem parametro
+  // proprio e do Set-Cookie do Worker (serve-webjs.js e collect/event.js). Ordem: cookie
+  // legivel pelo JS -> localStorage -> sessionStorage. Cada leitura isolada: storage
+  // bloqueado (iframe sandbox, modo restrito) lanca, e nao pode derrubar as outras fontes.
   function readMarcaUserLocal() {
-    for (var i = 0; i < USER_KEYS.length; i++) {
-      var key = USER_KEYS[i];
-      try {
-        var re = new RegExp('(?:^|;\\s*)' + key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '=([^;]+)');
-        var m = document.cookie.match(re);
-        if (m && m[1]) return m[1];
-      } catch(e) {}
-      try { var l = localStorage.getItem(key); if (l) return l; } catch(e) {}
-      try { var s = sessionStorage.getItem(key); if (s) return s; } catch(e) {}
-    }
+    try {
+      var m = document.cookie.match(/(?:^|;\s*)marca_user=([^;]+)/);
+      if (m && m[1]) return m[1];
+    } catch(e) {}
+    try { var l = localStorage.getItem('marca_user'); if (l) return l; } catch(e) {}
+    try { var s = sessionStorage.getItem('marca_user'); if (s) return s; } catch(e) {}
     return '';
   }
 
-  // Grava nas tres fontes, so com a chave configurada. O cookie do Worker e HttpOnly
-  // (invisivel ao JS) e o getAamaisId() le daqui.
+  // Grava nas tres fontes. O cookie do Worker e HttpOnly (invisivel ao JS): a copia
+  // legivel e a que o readMarcaUserLocal() encontra na pagina seguinte.
   function persistMarcaUser(id) {
-    try { localStorage.setItem(USER_KEY, id); } catch(e) {}
-    try { sessionStorage.setItem(USER_KEY, id); } catch(e) {}
+    try { localStorage.setItem('marca_user', id); } catch(e) {}
+    try { sessionStorage.setItem('marca_user', id); } catch(e) {}
     try {
       var cd = getCookieDomain(window.location.hostname);
-      document.cookie = USER_KEY + '=' + id + ';path=/;max-age=63072000;SameSite=Lax' + (cd ? ';domain=' + cd : '');
+      document.cookie = 'marca_user=' + id + ';path=/;max-age=63072000;SameSite=Lax' + (cd ? ';domain=' + cd : '');
     } catch(e) {}
   }
 
@@ -315,10 +303,6 @@
     return sckOrder.join('|');
   }
 
-  function getAamaisId() {
-    return readMarcaUserLocal();
-  }
-
   function detectGateway(targetUrl) {
     try {
       var urlObj = new URL(targetUrl, window.location.origin);
@@ -366,7 +350,7 @@
     var email = getCookie('marca_email') || '';
     var phone = getCookie('marca_phone') || '';
     var name = getCookie('marca_name') || '';
-    var userId = __MARCA_USER__ || getAamaisId();
+    var userId = __MARCA_USER__ || readMarcaUserLocal();
 
     // UTMs do link de destino tem prioridade; se ausentes, usa UTMs da pagina atual
     var UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'utm_id'];
@@ -1027,9 +1011,8 @@
   //   GS1.1.1700000000.3.1.1700000500.0.0.0           (legado: campos por posicao)
   //   GS2.1.s1700000000$o3$g1$t1700000500$j60$l0$h0   (atual: s=sessao, o=numero, t=ultimo hit)
   // As regex antigas (/s(\d+)j/ e /j(\d+)t/) nao casavam com NENHUM dos dois: o
-  // session_id nunca foi extraido (0 de 189 visitantes no D1 em 10/2026), e sem ele o
-  // GA4 nao liga o evento do MP a sessao do navegador — o page_view nao aparecia no
-  // Tempo real nem nos relatorios por pagina.
+  // session_id nunca foi extraido, e sem ele o GA4 nao liga o evento do MP a sessao do
+  // navegador — o page_view nao aparecia no Tempo real nem nos relatorios por pagina.
   // Com cookie duplicado, vale o de atividade mais recente (`t`): e o que o gtag acabou
   // de atualizar. O outro e uma sessao velha que ninguem mais escreve.
   function readGaSessionCookie() {
@@ -1245,22 +1228,38 @@
   // (o 1o page_view de todo visitante novo morria em `missing_ga_client_id`). Entao
   // ele espera as duas coisas, com teto: gtag bloqueado ou lento nao pode custar o
   // evento, e se o visitante sair antes, envia o que tiver (sendBeacon sobrevive ao
-  // unload). Efeito colateral bom: `_fbp`/`_ttp` relidos no envio, se os pixels ja
-  // tiverem carregado.
+  // unload). Com Meta no config espera tambem o `_fbp`, no mesmo teto: o pixel so cria
+  // o cookie depois de carregar o fbevents.js, e na 1a pagina o beacon saia antes — a
+  // CAPI do page_view ia sem fbp. `_ttp` e os demais sao relidos no envio.
   var PAGE_VIEW_MAX_WAIT_MS = 3000;
+
+  function fbpPronto() {
+    return !__CONFIG__.meta_pixel_id || !!getCookie('_fbp');
+  }
 
   function whenPageViewReady(send) {
     var done = false;
+    var fbpPoll = null;
     function fire() {
       if (done) return;
       done = true;
+      if (fbpPoll) clearInterval(fbpPoll);
       try { send(); } catch(e) {}
     }
     function check() {
-      if (gaIds.resolved && (document.title || document.readyState !== 'loading')) fire();
+      if (gaIds.resolved && (document.title || document.readyState !== 'loading') && fbpPronto()) fire();
     }
     onGaIdsResolved(check);
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', check);
+    // Criar cookie nao dispara evento: re-checa o `_fbp` ate ele aparecer (ou o envio).
+    if (!fbpPronto()) {
+      fbpPoll = setInterval(function() {
+        if (!fbpPronto()) return;
+        clearInterval(fbpPoll);
+        fbpPoll = null;
+        check();
+      }, 100);
+    }
     setTimeout(fire, PAGE_VIEW_MAX_WAIT_MS);
     window.addEventListener('pagehide', fire);
     document.addEventListener('visibilitychange', function() {
@@ -1355,9 +1354,9 @@
     }
 
     // 5. sendBeacon ao Worker — alimenta TODAS as plataformas server-side.
-    //    O page_view espera o <title> e a identidade do GA4 (ver whenPageViewReady)
-    //    e rele os dados de navegador na hora do envio. Os eventos de clique
-    //    acontecem depois disso tudo e seguem saindo na hora.
+    //    O page_view espera o <title>, a identidade do GA4 e, com Meta, o `_fbp` (ver
+    //    whenPageViewReady) e rele os dados de navegador na hora do envio. Os eventos
+    //    de clique nao esperam nada: saem na hora.
     try {
       if (eventName === 'page_view') {
         whenPageViewReady(function() {
