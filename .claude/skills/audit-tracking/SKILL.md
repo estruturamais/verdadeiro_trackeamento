@@ -55,7 +55,7 @@ todas essas causas se parecem (ausencia de linha), mas a solucao de cada uma e o
 | Compra nao chega | Webhook nao configurado no gateway | sim |
 | Lead nao cai na planilha | ID/script do Sheets nao configurado | sim |
 | Evento X "faltando" | Evento nunca foi configurado (nao pediram, ou pediram e nao foi feito) | sim |
-| Tudo zerado | Sem trafego/compra real no periodo (ou fora dos 30 dias de retencao) | sim |
+| Tudo zerado | Sem trafego/compra real no periodo (ou fora da janela de retencao do D1 — ver 0.3) | sim |
 | Google Ads com `0,00` conversao | Upload aceito **sem clique correspondente** (campanha parada, anuncio reprovado) — ver 2.10 | sim |
 | Google Ads sem conversao, D1 "verde" | `channel` errado no config: instalacao antiga em `server` grava `200` para evento de navegador que nunca disparou — ver 2.10 | sim |
 | **Nenhuma invocacao do Worker** (`wrangler tail` conecta e nao mostra nada), com rotas registradas | o host e servido por **plataforma SaaS** (Lovable/Vercel/Netlify/Framer) por custom hostname — o request nao entra na zona do cliente. 🛑 **Nunca "resolver" ligando o proxy no apex**: isso ja derrubou site em producao e a validacao imediata **passa mesmo assim**. Tracking so em `track.{dominio}` — ver `.claude/references/saas-hospedado.md` | sim |
@@ -80,7 +80,7 @@ A 1a linha e o banner `/*! Verdadeiro Trackeamento vX.Y.Z | @estruturamais | htt
 Listar: eventos configurados (com o canal de envio por evento), plataformas confirmadas, gateways
 detectados, Sheets (sim/nao), pixels espelho Meta. **Este e o gabarito da auditoria.**
 
-### 0.3 Ha dados? (D1 — janela <= 30 dias)
+### 0.3 Ha dados? (D1 — em `auto_clean`: `events` <= 7 dias, `webhook_raw` <= 14 dias; em `keep_all`: desde a instalacao)
 
 ```bash
 npx wrangler d1 execute tracking_db --remote --command "SELECT platform, COUNT(*) AS total, MAX(timestamp) AS ultimo FROM events WHERE site_id = '{site_id}' AND timestamp >= datetime('now','-{X} days') GROUP BY platform ORDER BY platform;"

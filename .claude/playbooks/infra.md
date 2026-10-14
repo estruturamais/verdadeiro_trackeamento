@@ -289,8 +289,8 @@ crons = ["0 3 * * *"]
 ```
 
 **O que a retencao faz (ja implementado no Worker):**
-- Deleta registros da tabela `events` com mais de 30 dias (coluna `timestamp`)
-- Deleta registros da tabela `webhook_raw` com mais de 30 dias (coluna `timestamp`)
+- Deleta registros da tabela `events` com mais de **7 dias** (coluna `timestamp`) — modo `auto_clean`, o padrao; em `keep_all` a limpeza de rotina das tres tabelas nao roda (ver a pergunta de retencao no `workflow.md`)
+- Deleta registros da tabela `webhook_raw` com mais de **14 dias** (coluna `timestamp`)
 - Deleta registros da tabela `user_store` nao atualizados ha mais de 90 dias (coluna `updated_at`)
 
 **IMPORTANTE:** A delecao usa as colunas de data (`timestamp`, `updated_at`) — nunca o `id`. IDs nao sao sequenciais de forma confiavel no D1 sem `sqlite_sequence`, entao usar `id` para identificar registros "antigos" seria um erro.
