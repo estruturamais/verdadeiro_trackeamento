@@ -65,6 +65,12 @@ gtag('event', 'conversion', {
 Quem envia e o **navegador**. O Worker apenas **registra o log** — ele nao tem como enviar por este
 caminho. Requer `channel: "web"` (o default) e o rotulo do evento no config.
 
+O `web.js` carrega o gtag e faz `gtag('config', 'AW-...')` na carga da pagina — com ou sem GA4 no
+config. Sem esse `config` o gtag nao despacha o `send_to` de forma confiavel. Por isso a linha
+`google_ads | web` no D1 **nao prova envio**: ela prova que o beacon chegou, e grava
+`web: despacho do navegador nao confirmado pelo servidor` no `error_message` (status `200`).
+**Conversao de navegador se valida no navegador** — ver "Validacao (Step 4)".
+
 ### Canal `webhook` — `purchase` server-side
 
 O gateway avisa o Worker da compra aprovada; o Worker faz o FDV merge (recupera `gclid`, e-mail e
@@ -79,6 +85,12 @@ telefone da sessao do visitante) e sobe a conversao para a **Data Manager API**.
 navegador nao disparava **e** o Worker gravava `status_code: 200` mesmo assim. Isso produzia **zero
 conversao no Google Ads com o D1 inteiro verde**. Da 1.6.0 em diante o default e `web` e o canal
 `server` grava o motivo real de nada ter sido despachado.
+
+**E ate a 1.8.0, mesmo com `channel: "web"`:** o `web.js` so configurava o GA4 no gtag — o destino
+`AW-` nunca recebia `config`, e a conversao de navegador se perdia (o gtag so tentava carregar o
+destino no clique, correndo contra a navegacao). **Sem GA4** no config, o `gtag` nem existia: o
+`ReferenceError` abortava o beacon e o evento sumia de **todas** as plataformas, nao so do Google Ads.
+O D1 gravava `200` do mesmo jeito. Instalacao nessa faixa: atualizar (`atualizar.md`).
 
 ---
 
@@ -379,16 +391,27 @@ nao casa — e nao ha erro nenhum no upload.
 | `403` + `escopo_oauth_insuficiente` | Refresh token sem o escopo `datamanager` | `npm run gads:oauth` e resubir o secret. Token antigo **nao** ganha escopo novo |
 | `400` + `conversion_upload_bloqueado` | Conta nao allowlisted no servico legado | `upload_api: "data_manager"` (ou remover o campo) |
 | `200` + `partial_failure ... EXPIRED_CLICK` | Clique fora da janela de conversao | Nao e bug — venda de clique antigo demais |
-| Tag Assistant nao mostra a conversao | `channel` != `web`, rotulo ausente, ou `conversion_id` errado | Conferir os tres, nesta ordem |
+| `web` com `200` + `web: despacho do navegador nao confirmado pelo servidor` | **Normal** — o Worker nao enxerga o gtag | Validar no navegador (Step 4, canal web) |
+| `web` com `200` e `error_message` vazio | Versao **1.6.0 a 1.8.0**: destino `AW-` nunca configurado no gtag — o `200` nao prova nada | Atualizar; ate la, validar no navegador |
+| Tag Assistant / Network nao mostra a conversao | `channel` != `web`, rotulo ausente, `conversion_id` errado, ou versao **<= 1.8.0** | Conferir os quatro, nesta ordem |
 
 ---
 
 ## Validacao (Step 4)
 
 ### Canal web
-1. **Google Tag Assistant** (extensao Chrome): resultado imediato — mostra se a tag de conversao
-   disparou e para qual `send_to`
-2. **Painel Google Ads > Conversoes**: delay de ate 3h
+**Valida-se no navegador, nunca pelo D1** — a linha `web` so prova que o beacon chegou.
+1. Abrir o site com `?debug=1`. No console: `[Tracking] Google Ads (web) configurado: AW-...`
+2. **DevTools > Network** (marcar *Preserve log*), filtro = o numero do `AW-`. Na carga: requisicoes
+   com o numero (`gtag/js?id=AW-...`, `viewthroughconversion/...`) — o destino esta configurado. Ao
+   disparar o evento (ex.: clique no WhatsApp): `pagead/conversion/...` e/ou
+   `pagead/1p-conversion/...` **com o rotulo do evento na URL**. Sem o rotulo na URL, a conversao nao
+   saiu
+3. **Google Tag Assistant** (`tagassistant.google.com`): mesmo resultado sem DevTools — mostra se a
+   tag de conversao disparou e para qual `send_to`
+4. **Painel Google Ads > Conversoes**: delay de ate 3h
+
+Roteiro de diagnostico quando o rotulo nao aparece: `audit-tracking`, secao 2.10.
 
 ### Canal webhook (purchase)
 1. Aguardar (ou fazer) uma compra aprovada real
@@ -405,12 +428,13 @@ npx wrangler d1 execute tracking_db --remote --command "SELECT event_name, platf
 **Resultado esperado com `channel: "web"` + purchase configurado:**
 ```
 purchase | google_ads | webhook | hotmart | 200 |
-lead     | google_ads | web     | collect | 200 |
-contact  | google_ads | web     | collect | 200 |
+lead     | google_ads | web     | collect | 200 | web: despacho do navegador nao confirmado pelo servidor ...
+contact  | google_ads | web     | collect | 200 | web: despacho do navegador nao confirmado pelo servidor ...
 ```
-As linhas `web` registram que o **navegador** despachou (o `sent_payload` mostra o `send_to` usado);
-a linha `webhook` com `200` significa **request aceito pela Data Manager** — confirmar o casamento
-pela 2.10.
+As linhas `web` registram que o **beacon** do evento chegou e qual `send_to` o navegador deveria usar
+(`sent_payload`) — **nao** que o gtag despachou. O `error_message` diz isso de proposito; a prova e a
+validacao no navegador acima. A linha `webhook` com `200` significa **request aceito pela Data
+Manager** — confirmar o casamento pela 2.10.
 
 **Houve clique de anuncio?** (pre-requisito de toda atribuicao offline)
 ```bash

@@ -299,8 +299,8 @@ mudo = atribuicao perdida).
 
 ### 2.10 Google Ads — conversao offline que "chega" e nao aparece
 
-Duas armadilhas distintas moram aqui, e cada uma se disfarca da outra. **Nao mexer em credencial,
-secret ou payload antes de separar as duas.**
+Tres armadilhas distintas moram aqui, e cada uma se disfarca das outras. **Nao mexer em credencial,
+secret ou payload antes de separar as tres.**
 
 **Armadilha A — log verde, zero envio.** Ate a 1.5.0 o conector gravava `status_code = 200` com
 `web-only: dispatched via gtag in browser` **em qualquer canal**, e o default de `channel` era
@@ -311,9 +311,21 @@ Ads com o D1 inteiro verde**. Da 1.6.0 em diante o canal `server` grava `status_
 
 **Armadilha B — `EXCELLENT` com `0,00`.** Ver o bloco proprio abaixo.
 
+**Armadilha C — canal `web` verde com o destino `AW-` nunca configurado.** Ate a 1.8.0 o `web.js` so
+emitia `gtag('config')` para o GA4. O destino `AW-` nao era configurado na carga da pagina, e a
+conversao de navegador dependia do gtag carregar o destino no proprio clique, correndo contra os
+500 ms da navegacao — no caso real, **zero** requisicao com o rotulo. **Sem GA4** no config era pior:
+o `gtag` nem existia, o `ReferenceError` abortava o beacon e o evento sumia de **todas** as plataformas
+(Meta CAPI, TikTok, GA4). O D1 gravava `google_ads | web | 200` o tempo todo. Depois da correcao, a
+linha `web` com rotulo segue `200`, mas com `error_message` `web: despacho do navegador nao confirmado
+pelo servidor ...` — o Worker so sabe que o **beacon** chegou, nunca que o gtag despachou.
+
 | Assinatura em `events` | Causa provavel | Correcao |
 |---|---|---|
 | `google_ads` com `200` e `web-only: dispatched via gtag` em **qualquer** canal | Instalacao **pre-1.6.0** — log mentiroso, nao prova nada | Conferir a versao no ar (0.1). Ate atualizar, validar o Google Ads pelo Tag Assistant, nunca pelo D1. Para atualizar: `.claude/playbooks/atualizar.md` |
+| `google_ads` / `web` com `200`, `error_message` **vazio** e `sent_payload` `web: gtag conversion send_to=...` | Instalacao **1.6.0 a 1.8.0** — Armadilha C: o destino `AW-` nao era configurado no gtag; o `200` so prova que o beacon chegou | Atualizar (`atualizar.md`). Ate la, provar no navegador (abaixo) |
+| `google_ads` / `web` com `200` + `web: despacho do navegador nao confirmado pelo servidor` | **Normal** — o servidor nao enxerga o gtag | Provar no navegador (abaixo), nunca pelo D1 |
+| Site **sem GA4**, versao **<= 1.8.0**: evento com rotulo do Google Ads (ex.: `contact`) **sem nenhuma linha** em `events`, enquanto o `page_view` aparece | Armadilha C: o `ReferenceError` do `gtag` abortava o beacon — o evento sumiu de **todas** as plataformas | Atualizar. Nao e falha de Meta/TikTok/GA4: o evento nunca saiu do navegador |
 | Aviso `colunas de click id ausentes` no log do Worker (`wrangler tail`) | Codigo 1.6.0 deployado sem a `migrations/003` | **Nada quebrou** — o `user_store` segue gravando. Rodar a migracao habilita o `gclid`, sem novo deploy |
 | `status_code = 0` + `canal_server_nao_despacha_navegador` | `channel: "server"` com evento de navegador. Correto e honesto: nada foi despachado | Trocar para `channel: "web"`. Os dois canais convivem — web por rotulo, webhook por id numerico |
 | `status_code = 0` + `missing_conversion_label_{evento}` | Opt-in: aquele evento nao tem rotulo no config | Preencher `conversion_label_{evento}`, ou ignorar se o evento nao deve ser conversao |
@@ -328,6 +340,25 @@ Ads com o D1 inteiro verde**. Da 1.6.0 em diante o canal `server` grava `status_
 > **A regra que generaliza:** `200` da Data Manager significa **request aceito**, nao conversao
 > registrada. O D1 prova que **nos enviamos**; so o diagnostico da propria Google prova que **ela
 > casou**. Auditar conversao offline pelo D1 e o erro classico.
+>
+> No canal `web` e ainda menos: quem envia e o navegador, e o D1 **nem prova que enviamos** — so que
+> o beacon chegou. Conversao de navegador se valida no navegador.
+
+**Prova da conversao de navegador (canal `web`) — no navegador, nunca no D1.** Abrir o site com
+`?debug=1` e o DevTools:
+
+1. Console: `[Tracking] Google Ads (web) configurado: AW-...` na carga. Ausente → `channel` diferente
+   de `web`, `conversion_id` vazio, ou versao **<= 1.8.0** (Armadilha C).
+2. Aba **Network** (marcar *Preserve log*), filtro = o **numero** do `AW-`. Na **carga** ja aparecem
+   requisicoes com ele (`gtag/js?id=AW-...`, `viewthroughconversion/<numero>`) — e o destino
+   configurado. Ao **disparar** o evento (ex.: clique no WhatsApp para o `contact`):
+   `pagead/conversion/<numero>/` e/ou `pagead/1p-conversion/<numero>/` **com o rotulo do evento na
+   URL**. Sem requisicao com o rotulo, a conversao nao saiu.
+3. Alternativa sem DevTools: **Google Tag Assistant** (`tagassistant.google.com`) — a conversao
+   aparece com o `send_to` `AW-.../rotulo`.
+
+Sem requisicao com o rotulo, conferir nesta ordem: `channel: "web"`, `conversion_label_{evento}`,
+`conversion_id`, versao no ar (0.1). Evento **sem** rotulo no config nao dispara — por design (opt-in).
 
 **Prova definitiva — o diagnostico da propria Google** (Google Ads > Ferramentas > Editor de
 consultas, ou via API). Pedir ao cliente ou rodar com as credenciais do onboarding:
