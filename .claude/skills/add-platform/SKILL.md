@@ -101,7 +101,9 @@ npx wrangler d1 execute tracking_db --remote --command "SELECT platform, event_n
 
 Criterios de sucesso:
 - `status_code` 200 (ou 204 para GA4) para a nova plataforma
-- `error_message` nulo
+- `error_message` nulo — exceto na linha `google_ads | web`, que vem `200` **com** `error_message`
+  `web: despacho do navegador nao confirmado pelo servidor…`. E aviso, nao erro: a conversao de
+  navegador do Google Ads se valida no navegador (`.claude/playbooks/google_ads.md`, Step 4)
 
 Delegar validacao visual para a skill especializada da plataforma:
 - Meta Ads → Events Manager > Testar Eventos

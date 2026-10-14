@@ -353,6 +353,10 @@ Vale para gateway novo ou reconfigurado (`new-gateway`) numa instalacao que ja v
 esse teste sem o `shadow`: o webhook de teste chega como compra aprovada e sai como `Purchase` real
 para todas as plataformas — na Meta nao ha como apagar.
 
+> 🛑 **Exige VT >= 1.7.0 no ar** (Passo 1). O `purchase_dispatch` nasceu na 1.7.0: abaixo dela a
+> chave e **ignorada sem aviso** e o teste sai como venda real, com o roteiro inteiro parecendo certo.
+> Instalacao mais antiga: atualizar primeiro (Passos 2-7), testar depois.
+
 O roteiro e o do Step 5.4 do `overview.md` — **ligar → testar → conferir → desligar → conferir que
 desligou**, com `"purchase_dispatch": "shadow"` na raiz do `SITE_CONFIG`. O que muda em producao e o
 custo da janela:

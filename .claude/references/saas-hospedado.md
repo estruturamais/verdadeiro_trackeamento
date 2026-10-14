@@ -66,13 +66,13 @@ Com o tracking num subdomínio dedicado, o beacon **precisa** apontar para lá e
 plataforma — que **não tem Worker Route** — e `navigator.sendBeacon` **não reporta
 erro**: a coleta morre em silêncio, com o site aparentemente saudável.
 
-> ⚠️ **Estado atual do repositório:** `collect_url` ainda é fixo em
-> `'/collect/event'` (`src/worker/routes/serve-webjs.js`). Torná-lo configurável é o
-> item **`RDOM-4`**, ainda pendente. Enquanto ele não entrar, um cliente nesta
-> topologia exige o script servido pelo mesmo host do beacon — confirme a coleta pelo
-> D1 (`SELECT COUNT(*) FROM events WHERE platform='collect'`) antes de dar a
-> implantação por entregue. **Nunca** conclua que a coleta funciona só porque o site
-> carrega o script.
+> ⚠️ **Defina `collect_url` absoluto no `SITE_CONFIG`** (configurável desde a 1.9.0):
+> `"collect_url": "https://track.{dominio}/collect/event"`. Vazio, o `web.js` usa
+> `/collect/event` relativo e o beacon cai no host da plataforma. O host do valor precisa
+> da route `/collect/*`. Detalhe no Step 2 do `overview.md` ("Pagina e Worker no mesmo
+> host?") e no `config.example.json` (`_doc_collect_url`). Confirme a coleta pelo D1
+> (`SELECT COUNT(*) FROM events WHERE platform='collect'`) antes de dar a implantação por
+> entregue. **Nunca** conclua que a coleta funciona só porque o site carrega o script.
 
 ## Checklist para o agente
 
@@ -90,4 +90,4 @@ erro**: a coleta morre em silêncio, com o site aparentemente saudável.
 | `wrangler tail` conecta e mostra **zero invocações**, com rotas registradas | o host é servido por custom hostname da plataforma; o request não entra na zona | mover o tracking para `track.{dominio}` — **não** ligar o proxy no host atual |
 | Site fora do ar depois de ligar o proxy (Error 1000/525/526 **ou nada**) | Cloudflare na frente de Cloudflare com custom hostname | **voltar para cinza imediatamente**, depois investigar |
 | Ligou o proxy, testou e "ficou 200" | falso negativo — quebra na próxima reemissão de certificado | voltar para cinza mesmo assim; o teste não prova nada aqui |
-| Site OK, script carrega, mas `events` vazio no D1 | beacon indo para o host da plataforma (sem Worker Route); `sendBeacon` não reporta erro | conferir o host do `collect_url`; ver `RDOM-4` |
+| Site OK, script carrega, mas `events` vazio no D1 | beacon indo para o host da plataforma (sem Worker Route); `sendBeacon` não reporta erro | conferir que o `collect_url` do `SITE_CONFIG` é absoluto e aponta para `track.{dominio}` (ver "Consequência para o `collect_url`") |

@@ -637,7 +637,7 @@ Apos confirmacao, verificar tabela `events` no D1:
 npx wrangler d1 execute tracking_db --remote --command "SELECT event_name, platform, channel, source, status_code, error_message FROM events WHERE site_id = '{site_id}' ORDER BY id DESC LIMIT 20;"
 ```
 
-Verificar: `status_code` 200 ou 204 para cada plataforma, nenhum `error_message`. Se algum evento falhar, diagnosticar e resolver antes de continuar.
+Verificar: `status_code` 200 ou 204 para cada plataforma, nenhum `error_message` — **com uma excecao**: a linha `google_ads | web` vem `200` **com** `error_message` comecando por `web: despacho do navegador nao confirmado pelo servidor`. E aviso, nao erro: o Worker nao ve o navegador, entao a conversao de navegador do Google Ads se valida **no navegador** (`.claude/playbooks/google_ads.md`, Step 4), nunca pelo D1. Se algum outro evento falhar, diagnosticar e resolver antes de continuar.
 
 ### 5.2a — Solicitar funil de conversao completo
 
@@ -667,6 +667,9 @@ Com base no resultado, gravar imediatamente no `tracking_memory.md` a secao de v
 ```
 
 Se algum evento retornou erro: diagnosticar e resolver antes de continuar para o Step 6.
+
+A linha `google_ads | web` com `200` **nao** confirma a conversao (ver 5.1): registrar o Google Ads web
+como OK so depois da validacao no navegador do 5.3.
 
 ### 5.3 Validacao visual por plataforma
 
